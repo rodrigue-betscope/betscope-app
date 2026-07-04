@@ -77,5 +77,4 @@ elif menu == "👑 Espace VIP Privé":
     
     # Remplace le numéro ci-dessous par ton vrai numéro WhatsApp (ex: 237600000000)
     lien_whatsapp = "https://wa.me/237600000000?text=Bonjour%20Rodrigue,%20je%20souhaite%20acheter%20la%20cle%20VIP%20BetScope"
-    st.a_link_button("💬 Acheter mon accès VIP sur WhatsApp", lien_whatsapp, use_container_width=True)
-                
+    st.link_button("💬 Acheter mon accès VIP sur WhatsApp", lien_whatsapp, use_container_width=True)
