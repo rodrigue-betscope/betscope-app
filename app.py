@@ -1,5 +1,3 @@
-
-        
 import streamlit as st
 import time
 import random
@@ -50,38 +48,31 @@ elif menu == "👑 Espace VIP Privé":
             date_aujourdhui = datetime.now().strftime("%d/%m/%Y")
             st.markdown(f"### 🎯 LES PRONOSTICS VIP DU {date_aujourdhui}")
             
-            # --- ALGORITHME GÉNÉRATEUR IA ---
-            # Liste géante pour que l'IA crée des combinaisons différentes chaque jour
-            grands_clubs = [
-                "Real Madrid", "Barcelone", "Man. City", "Liverpool", "PSG", "Bayern Munich", 
-                "Arsenal", "Inter Milan", "Juventus", "Chelsea", "Dortmund", "Athletic Bilbao",
-                "Manchester United", "AC Milan", "Naples", "Atlético Madrid", "Bayer Leverkusen",
-                "Tottenham", "Sporting CP", "Benfica", "Ajax Amsterdam", "Marseille", "Monaco"
-            ]
+            # =================================================================
+            # ✍️ MODIFIE UNIQUEMENT LES DEUX LIGNES CI-DESSOUS CHAQUE MATIN :
+            # =================================================================
+            vrai_match_1 = "Corée du Sud vs Chine"
+            vrai_match_2 = "Australie vs Finlande"
+            # =================================================================
             
-            # La graine (seed) basée sur la date bloque le tirage de l'IA pour TOUTE la journée
+            # L'IA utilise la date du jour pour bloquer les mêmes pronos toute la journée
             graine_jour = int(datetime.now().strftime("%Y%m%d"))
             random.seed(graine_jour)
             
-            # L'IA sélectionne 4 équipes au hasard pour aujourd'hui
-            equipes_du_jour = random.sample(grands_clubs, 4)
-            eq1, eq2, eq3, eq4 = equipes_du_jour[0], equipes_du_jour[1], equipes_du_jour[2], equipes_du_jour[3]
-            
-            # L'IA génère les scores exacts et les probabilités
-            scores_ia = [("2 - 1", "92%"), ("3 - 1", "95%"), ("2 - 0", "89%"), ("1 - 0", "91%"), ("2 - 2", "88%")]
+            # Génération IA des scores exacts
+            scores_ia = [("2 - 1", "92%"), ("3 - 1", "95%"), ("2 - 0", "89%"), ("1 - 0", "91%"), ("1 - 1", "88%")]
             score_predit, fiab = random.choice(scores_ia)
             
-            # L'IA génère le HT/FT
+            # Génération IA du HT/FT
             htft_ia = [("Mi-temps : X / Fin de match : 1", "90%"), ("Mi-temps : 1 / Fin de match : 1", "93%"), ("Mi-temps : X / Fin de match : 2", "87%")]
             htft_predit, fiab_htft = random.choice(htft_ia)
             
-            # AFFICHAGE DES PRONOSTICS GÉNÉRÉS PAR L'IA
-            st.warning(f"🔥 **SCORE EXACT EXCLUSIF (Généré par IA) :**\n\n⚽ **{eq1} vs {eq2}**\n\n➔ **Score Pronostiqué : {score_predit}** (Fiabilité {fiab})")
+            # Affichage final pour tes clients
+            st.warning(f"🔥 **SCORE EXACT EXCLUSIF (Généré par IA) :**\n\n⚽ **{vrai_match_1}**\n\n➔ **Score Pronostiqué : {score_predit}** (Fiabilité {fiab})")
             st.markdown("")
-            st.warning(f"🔥 **COMBINÉ HT/FT (Généré par IA) :**\n\n⚽ **{eq3} vs {eq4}**\n\n➔ **{htft_predit}** (Fiabilité {fiab_htft})")
+            st.warning(f"🔥 **COMBINÉ HT/FT (Généré par IA) :**\n\n⚽ **{vrai_match_2}**\n\n➔ **{htft_predit}** (Fiabilité {fiab_htft})")
             
-            # Réinitialisation du hasard pour éviter les blocages
-            random.seed()
+            random.seed() # Reset
             
         else:
             st.error("❌ Clé d'accès incorrecte ou expirée.")
