@@ -63,15 +63,15 @@ elif menu == "👑 Espace VIP Privé":
             # =================================================================
             # ✍️ MODIFIE UNIQUEMENT CES LIGNES CHAQUE MATIN AVEC TES DEUX MATCHS :
             # =================================================================
-            match_1 = "Canada vs Maroc"
-            cote_1_M1 = 5.64
-            cote_X_M1 = 3.535
-            cote_2_M1 = 1.801
+            match_1 = "Paraguay vs France"
+            cote_1_M1 = 15.5
+            cote_X_M1 = 7.8
+            cote_2_M1 = 1.212
             
-            match_2 = "Paraguay vs France"
-            cote_1_M2 = 16.0
-            cote_X_M2 = 7.90
-            cote_2_M2 = 1.207
+            match_2 = "gremio porto vs chapecoense"
+            cote_1_M2 = 1.56
+            cote_X_M2 = 4.1
+            cote_2_M2 = 5.49
             # =================================================================
             
             # --- ANALYSE DE L'IA (MATCH 1) ---
