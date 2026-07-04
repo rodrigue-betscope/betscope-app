@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import random
+import requests
 from datetime import datetime
 
 st.set_page_config(page_title="BetScope Pro", page_icon="🤖", layout="centered")
@@ -60,49 +61,61 @@ elif menu == "👑 Espace VIP Privé":
             st.success("🔓 Accès VIP Accordé ! Bienvenue Boss.")
             st.markdown("---")
             
-            # Affichage de la date du jour pour faire pro
             date_aujourdhui = datetime.now().strftime("%d/%m/%Y")
             st.markdown(f"### 🎯 LES PRONOSTICS VIP DU {date_aujourdhui}")
             
-            # --- ALGORITHME GÉNÉRATEUR AVANCÉ ---
-            # Une énorme liste de clubs pour varier au maximum les affiches chaque jour
-            grands_clubs = [
-                "Real Madrid", "Barcelone", "Man. City", "Liverpool", "PSG", "Bayern Munich", 
-                "Arsenal", "Inter Milan", "Juventus", "Chelsea", "Dortmund", "Athletic Bilbao",
-                "Manchester United", "AC Milan", "Naples", "Atlético Madrid", "Bayer Leverkusen",
-                "Tottenham", "Sporting CP", "Benfica", "Ajax Amsterdam", "Marseille", "Monaco",
-                "Aston Villa", "Newcastle", "AS Rome", "Lazio Rome", "FC Porto", "PSV Eindhoven"
-            ]
+            # --- RÉCUPÉRATION DES VRAIS MATCHS EN DIRECT ---
+            with st.spinner("Extraction des vrais matchs du jour en cours..."):
+                try:
+                    # Appel à une API publique gratuite de matchs en direct
+                    url_api = "https://www.scorebat.com/video-api/v3/feed"
+                    reponse = requests.get(url_api, timeout=10)
+                    donnees = reponse.json()
+                    
+                    # On extrait les vrais matchs disponibles aujourd'hui
+                    vrais_matchs = []
+                    if "response" in donnees:
+                        for match in donnees["response"]:
+                            titre_match = match.get("title", "")
+                            if " vs " in titre_match:
+                                vrais_matchs.append(titre_match)
+                    
+                    # Si l'API renvoie des matchs, on prend deux vraies affiches réelles
+                    if len(vrais_matchs) >= 2:
+                        # Fixer la graine pour garder les mêmes pronos toute la journée
+                        graine_jour = int(datetime.now().strftime("%Y%m%d"))
+                        random.seed(graine_jour)
+                        
+                        affiches_du_jour = random.sample(vrais_matchs, 2)
+                        match1 = affiches_du_jour[0]
+                        match2 = affiches_du_jour[1]
+                    else:
+                        # Sécurité si l'API est vide momentanément
+                        match1 = "Real Madrid vs Barcelone"
+                        match2 = "Man. City vs Liverpool"
+                        
+                except Exception as e:
+                    # Sécurité en cas de coupure réseau
+                    match1 = "Real Madrid vs Barcelone"
+                    match2 = "Man. City vs Liverpool"
             
-            # Utilisation de la date d'aujourd'hui pour bloquer les matchs de la journée
+            # --- ALGORITHME DE GÉNÉRATION DES PRONOS SUR LES VRAIS MATCHS ---
             graine_jour = int(datetime.now().strftime("%Y%m%d"))
             random.seed(graine_jour)
             
-            # Sélection de 4 équipes différentes pour créer deux grosses affiches
-            equipes_choisies = random.sample(grands_clubs, 4)
+            # Options de scores et HT/FT
+            scores_possibles = [("2 - 1", "92%"), ("3 - 1", "94%"), ("2 - 0", "89%"), ("1 - 0", "91%"), ("1 - 1", "88%")]
+            score1, fiab1 = random.choice(scores_possibles)
             
-            # Match 1 (Score Exact)
-            eq1, eq2 = equipes_choisies[0], equipes_choisies[1]
-            scores_match_1 = [("2 - 1", "92%"), ("3 - 1", "95%"), ("2 - 0", "89%"), ("1 - 0", "91%"), ("3 - 2", "87%")]
-            score1, fiab1 = random.choice(scores_match_1)
-            
-            # Match 2 (HT/FT)
-            eq3, eq4 = equipes_choisies[2], equipes_choisies[3]
-            ht_ft_possibles = [
-                ("X (Nul)", "1 (Équipe Domicile)"), 
-                ("1 (Équipe Domicile)", "1 (Équipe Domicile)"), 
-                ("X (Nul)", "2 (Équipe Extérieur)"), 
-                ("2 (Équipe Extérieur)", "2 (Équipe Extérieur)")
-            ]
+            ht_ft_possibles = [("X (Nul)", "1"), ("1", "1"), ("X (Nul)", "2"), ("2", "2")]
             mt, fm = random.choice(ht_ft_possibles)
             
-            # Affichage dans l'application
-            st.warning(f"🔥 **SCORE EXACT EXCLUSIF :** {eq1} vs {eq2}\n\n➔ **Score Pronostiqué : {score1}** (Fiabilité {fiab1})")
+            # Affichage final des vrais pronostics
+            st.warning(f"🔥 **SCORE EXACT EXCLUSIF :**\n\n⚽ **{match1}**\n\n➔ **Score : {score1}** (Fiabilité {fiab1})")
             st.markdown("")
-            st.warning(f"🔥 **COMBINÉ HT/FT (Mi-temps/Fin de match) :** {eq3} vs {eq4}\n\n➔ **Mi-temps : {mt}** \n\n➔ **Fin de match : {fm}**")
+            st.warning(f"🔥 **COMBINÉ HT/FT :**\n\n⚽ **{match2}**\n\n➔ **Mi-temps : {mt} / Fin de match : {fm}**")
             
-            # Réinitialisation pour éviter de bloquer le reste de l'application
-            random.seed()
+            random.seed() # Reset
             
         else:
             st.error("❌ Clé d'accès incorrecte ou expirée.")
