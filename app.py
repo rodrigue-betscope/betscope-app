@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import random
+from datetime import datetime
 
 st.set_page_config(page_title="BetScope Pro", page_icon="🤖", layout="centered")
 
@@ -50,7 +51,7 @@ elif menu == "👑 Espace VIP Privé":
     st.write("Accédez aux algorithmes de Scores Exacts et aux pronostics Mi-temps/Fin de match (HT/FT) à haute fiabilité.")
     
     # Système de verrouillage par clé
-    mot_de_passe_correct = "RODRIGUE2026" # Tu pourras changer ce mot de passe quand tu veux
+    mot_de_passe_correct = "RODRIGUE2026"
     
     code_entre = st.text_input("Entrez votre clé d'accès VIP :", type="password", placeholder="Clé Secrète VIP...")
     
@@ -59,11 +60,36 @@ elif menu == "👑 Espace VIP Privé":
             st.success("🔓 Accès VIP Accordé ! Bienvenue Boss.")
             st.markdown("---")
             
-            # Contenu ultra fiable réservé aux VIP
             st.markdown("### 🎯 LES PRONOSTICS VIP DU JOUR")
             
-            st.warning("🔥 **SCORE EXACT EXCLUSIF :** Real Madrid vs Barcelone ➔ **Score : 3 - 1** (Fiabilité 92%)")
-            st.warning("🔥 **COMBINÉ HT/FT :** Man. City vs Liverpool ➔ **Mi-temps : X / Fin de match : 1**")
+            # --- ALGORITHME GÉNÉRATEUR AUTOMATIQUE DE MATCHS ---
+            # Liste de grands clubs pour simuler des affiches réalistes
+            clubs = ["Real Madrid", "Barcelone", "Man. City", "Liverpool", "PSG", "Bayern Munich", 
+                     "Arsenal", "Inter Milan", "Juventus", "Chelsea", "Dortmund", "Athletic Bilbao"]
+            
+            # Utilisation de la date d'aujourd'hui comme graine (seed) pour que les matchs 
+            # restent identiques TOUTE la journée du client, mais changent le lendemain.
+            graine_jour = int(datetime.now().strftime("%Y%md"))
+            random.seed(graine_jour)
+            
+            # Sélection des équipes du jour
+            equipes_choisies = random.sample(clubs, 4)
+            eq1, eq2, eq3, eq4 = equipes_choisies[0], equipes_choisies[1], equipes_choisies[2], equipes_choisies[3]
+            
+            # Génération de scores exacts réalistes (ex: 2-1, 3-1, 1-0, 2-2)
+            scores_possibles = [("2 - 1", "91%"), ("3 - 1", "94%"), ("2 - 0", "89%"), ("1 - 1", "88%"), ("1 - 2", "92%")]
+            score1, fiab1 = random.choice(scores_possibles)
+            
+            # Génération HT/FT cohérent
+            ht_ft_possibles = [("1", "1"), ("X", "1"), ("2", "2"), ("X", "2")]
+            mt, fm = random.choice(ht_ft_possibles)
+            
+            # Affichage dynamique des pronostics générés
+            st.warning(f"🔥 **SCORE EXACT EXCLUSIF :** {eq1} vs {eq2} ➔ **Score : {score1}** (Fiabilité {fiab1})")
+            st.warning(f"🔥 **COMBINÉ HT/FT :** {eq3} vs {eq4} ➔ **Mi-temps : {mt} / Fin de match : {fm}**")
+            
+            # Réinitialisation du hasard pour le reste de l'appli
+            random.seed()
             
         else:
             st.error("❌ Clé d'accès incorrecte ou expirée.")
@@ -75,6 +101,5 @@ elif menu == "👑 Espace VIP Privé":
     Pour intégrer le groupe privé et recevoir votre clé VIP instantanément, cliquez sur le bouton ci-dessous pour m'écrire directement sur WhatsApp.
     """)
     
-    # Remplace le numéro ci-dessous par ton vrai numéro WhatsApp (ex: 237600000000)
     lien_whatsapp = "https://wa.me/237600000000?text=Bonjour%20Rodrigue,%20je%20souhaite%20acheter%20la%20cle%20VIP%20BetScope"
     st.link_button("💬 Acheter mon accès VIP sur WhatsApp", lien_whatsapp, use_container_width=True)
