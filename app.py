@@ -51,8 +51,8 @@ elif menu == "👑 Espace VIP Privé":
             # =================================================================
             # ✍️ MODIFIE UNIQUEMENT LES DEUX LIGNES CI-DESSOUS CHAQUE MATIN :
             # =================================================================
-            vrai_match_1 = "Corée du Sud vs Chine"
-            vrai_match_2 = "Australie vs Finlande"
+            vrai_match_1 = "canada  vs maroc"
+            vrai_match_2 = "Paraguay vs France"
             # =================================================================
             
             # L'IA utilise la date du jour pour bloquer les mêmes pronos toute la journée
