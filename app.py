@@ -60,35 +60,48 @@ elif menu == "👑 Espace VIP Privé":
             st.success("🔓 Accès VIP Accordé ! Bienvenue Boss.")
             st.markdown("---")
             
-            st.markdown("### 🎯 LES PRONOSTICS VIP DU ROY")
+            # Affichage de la date du jour pour faire pro
+            date_aujourdhui = datetime.now().strftime("%d/%m/%Y")
+            st.markdown(f"### 🎯 LES PRONOSTICS VIP DU {date_aujourdhui}")
             
-            # --- ALGORITHME GÉNÉRATEUR AUTOMATIQUE DE MATCHS ---
-            # Liste de grands clubs pour simuler des affiches réalistes
-            clubs = ["Real Madrid", "Barcelone", "Man. City", "Liverpool", "PSG", "Bayern Munich", 
-                     "Arsenal", "Inter Milan", "Juventus", "Chelsea", "Dortmund", "Athletic Bilbao"]
+            # --- ALGORITHME GÉNÉRATEUR AVANCÉ ---
+            # Une énorme liste de clubs pour varier au maximum les affiches chaque jour
+            grands_clubs = [
+                "Real Madrid", "Barcelone", "Man. City", "Liverpool", "PSG", "Bayern Munich", 
+                "Arsenal", "Inter Milan", "Juventus", "Chelsea", "Dortmund", "Athletic Bilbao",
+                "Manchester United", "AC Milan", "Naples", "Atlético Madrid", "Bayer Leverkusen",
+                "Tottenham", "Sporting CP", "Benfica", "Ajax Amsterdam", "Marseille", "Monaco",
+                "Aston Villa", "Newcastle", "AS Rome", "Lazio Rome", "FC Porto", "PSV Eindhoven"
+            ]
             
-            # Utilisation de la date d'aujourd'hui comme graine (seed)
-            # Correction ici : %Y%m%d fonctionne parfaitement pour figer la journée
+            # Utilisation de la date d'aujourd'hui pour bloquer les matchs de la journée
             graine_jour = int(datetime.now().strftime("%Y%m%d"))
             random.seed(graine_jour)
             
-            # Sélection des équipes du jour
-            equipes_choisies = random.sample(clubs, 4)
-            eq1, eq2, eq3, eq4 = equipes_choisies[0], equipes_choisies[1], equipes_choisies[2], equipes_choisies[3]
+            # Sélection de 4 équipes différentes pour créer deux grosses affiches
+            equipes_choisies = random.sample(grands_clubs, 4)
             
-            # Génération de scores exacts réalistes
-            scores_possibles = [("2 - 1", "91%"), ("3 - 1", "94%"), ("2 - 0", "89%"), ("1 - 1", "88%"), ("1 - 2", "92%")]
-            score1, fiab1 = random.choice(scores_possibles)
+            # Match 1 (Score Exact)
+            eq1, eq2 = equipes_choisies[0], equipes_choisies[1]
+            scores_match_1 = [("2 - 1", "92%"), ("3 - 1", "95%"), ("2 - 0", "89%"), ("1 - 0", "91%"), ("3 - 2", "87%")]
+            score1, fiab1 = random.choice(scores_match_1)
             
-            # Génération HT/FT cohérent
-            ht_ft_possibles = [("1", "1"), ("X", "1"), ("2", "2"), ("X", "2")]
+            # Match 2 (HT/FT)
+            eq3, eq4 = equipes_choisies[2], equipes_choisies[3]
+            ht_ft_possibles = [
+                ("X (Nul)", "1 (Équipe Domicile)"), 
+                ("1 (Équipe Domicile)", "1 (Équipe Domicile)"), 
+                ("X (Nul)", "2 (Équipe Extérieur)"), 
+                ("2 (Équipe Extérieur)", "2 (Équipe Extérieur)")
+            ]
             mt, fm = random.choice(ht_ft_possibles)
             
-            # Affichage dynamique des pronostics générés
-            st.warning(f"🔥 **SCORE EXACT EXCLUSIF :** {eq1} vs {eq2} ➔ **Score : {score1}** (Fiabilité {fiab1})")
-            st.warning(f"🔥 **COMBINÉ HT/FT :** {eq3} vs {eq4} ➔ **Mi-temps : {mt} / Fin de match : {fm}**")
+            # Affichage dans l'application
+            st.warning(f"🔥 **SCORE EXACT EXCLUSIF :** {eq1} vs {eq2}\n\n➔ **Score Pronostiqué : {score1}** (Fiabilité {fiab1})")
+            st.markdown("")
+            st.warning(f"🔥 **COMBINÉ HT/FT (Mi-temps/Fin de match) :** {eq3} vs {eq4}\n\n➔ **Mi-temps : {mt}** \n\n➔ **Fin de match : {fm}**")
             
-            # Réinitialisation du hasard pour le reste de l'appli
+            # Réinitialisation pour éviter de bloquer le reste de l'application
             random.seed()
             
         else:
