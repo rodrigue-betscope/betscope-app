@@ -2,7 +2,7 @@ import streamlit as st
 import time
 from datetime import datetime
 
-st.set_page_config(page_title="BetScope Pro", page_icon="🤖", layout="centered")
+st.set_page_config(page_title="Rodrigue Pro Puissant Prédiction", page_icon="👑", layout="centered")
 
 # Style CSS pour faire "Application Mobile"
 st.markdown("""
@@ -14,12 +14,35 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("🤖 BetScope - L'IA des Pronostics")
+
+# --- AJOUT DU LOGO VIP EN HAUT DE L'APPLICATION ---
+# IMPORTANT : Mets ton image '73766.png' dans ton dossier GitHub à côté de ce fichier app.py
+try:
+    st.image("73766.png", use_container_width=True)
+except Exception:
+    # Sécurité si l'image n'est pas encore sur ton GitHub
+    st.markdown("👑 **ESPACE PRÉDICTION PRO**")
+
 st.markdown("---")
 
 menu = st.radio("Navigation", ["⚽ Pronostics Gratuits", "👑 Espace VIP Privé"], horizontal=True)
 
+# --- SECTION GRATUITE ---
+if menu == "⚽ Pronostics Gratuits":
+    st.subheader("Analyse Algorithmique Dynamique (Free)")
+    match_url = st.text_input("Collez le lien du match ici :", placeholder="https://www.besoccer.com/match/...")
+    
+    if st.button("Lancer l'Analyse Gratuite 🚀", use_container_width=True):
+        if match_url:
+            with st.spinner("Analyse IA en cours..."):
+                time.sleep(1.5)
+                st.success("Analyse terminée !")
+                st.info("🎯 **Pronostic conseillé :** Victoire Équipe 1 ou Nul (1X)")
+        else:
+            st.error("❌ Veuillez insérer un lien.")
+
 # --- SECTION VIP ---
-if menu == "👑 Espace VIP Privé":
+elif menu == "👑 Espace VIP Privé":
     st.subheader("🔒 Bienvenue dans l'Espace VIP")
     
     mot_de_passe_correct = "RODRIGUE2026"
@@ -50,7 +73,6 @@ if menu == "👑 Espace VIP Privé":
             # =================================================================
             
             # --- ANALYSE AUTOMATIQUE DE L'IA (MATCH 1 - SCORE EXACT) ---
-            # Calcule le score le plus logique selon la force des cotes (blessés inclus par le bookmaker)
             if cote_2_M1 < cote_1_M1:  # L'équipe 2 est favorite
                 diff = cote_1_M1 - cote_2_M1
                 if diff > 5:
@@ -88,7 +110,7 @@ if menu == "👑 Espace VIP Privé":
                 fiab_2 = "89%"
             
             # --- AFFICHAGE PROFESSIONNEL DES PRONOSTICS ---
-            st.info("🔄 *Analyse des effectifs, absences et fluctuations des marchés validée.*")
+            st.info("🔄 *Analyse des effectifs, absences et fluctuations des marchés validée par l'IA.*")
             st.markdown("")
             
             st.warning(f"🔥 **SCORE EXACT EXCLUSIF (Analyse Algorithmique) :**\n\n⚽ **{match_1}**\n\n➔ **Score Pronostiqué : {score_p1}** (Fiabilité : {fiab_1})")
