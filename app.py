@@ -60,23 +60,23 @@ elif menu == "👑 Espace VIP Privé":
             st.success("🔓 Accès VIP Accordé ! Bienvenue Boss.")
             st.markdown("---")
             
-            st.markdown("### 🎯 LES PRONOSTICS VIP DU JOUR")
+            st.markdown("### 🎯 LES PRONOSTICS VIP DU ROY")
             
             # --- ALGORITHME GÉNÉRATEUR AUTOMATIQUE DE MATCHS ---
             # Liste de grands clubs pour simuler des affiches réalistes
             clubs = ["Real Madrid", "Barcelone", "Man. City", "Liverpool", "PSG", "Bayern Munich", 
                      "Arsenal", "Inter Milan", "Juventus", "Chelsea", "Dortmund", "Athletic Bilbao"]
             
-            # Utilisation de la date d'aujourd'hui comme graine (seed) pour que les matchs 
-            # restent identiques TOUTE la journée du client, mais changent le lendemain.
-            graine_jour = int(datetime.now().strftime("%Y%md"))
+            # Utilisation de la date d'aujourd'hui comme graine (seed)
+            # Correction ici : %Y%m%d fonctionne parfaitement pour figer la journée
+            graine_jour = int(datetime.now().strftime("%Y%m%d"))
             random.seed(graine_jour)
             
             # Sélection des équipes du jour
             equipes_choisies = random.sample(clubs, 4)
             eq1, eq2, eq3, eq4 = equipes_choisies[0], equipes_choisies[1], equipes_choisies[2], equipes_choisies[3]
             
-            # Génération de scores exacts réalistes (ex: 2-1, 3-1, 1-0, 2-2)
+            # Génération de scores exacts réalistes
             scores_possibles = [("2 - 1", "91%"), ("3 - 1", "94%"), ("2 - 0", "89%"), ("1 - 1", "88%"), ("1 - 2", "92%")]
             score1, fiab1 = random.choice(scores_possibles)
             
