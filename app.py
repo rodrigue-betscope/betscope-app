@@ -2,10 +2,16 @@ import streamlit as st
 import time
 from datetime import datetime
 
-st.set_page_config(page_title="Rodrigue Pro Puissant Prédiction", page_icon="👑", layout="centered")
+# L'application va chercher l'image 73766_3.png pour en faire son icône officielle
+st.set_page_config(page_title="Rodrigue Pro Puissant Prédiction", page_icon="73766_3.png", layout="centered")
 
-# Style CSS pour faire "Application Mobile"
+# CSS pour masquer les éléments Streamlit et forcer le style mobile
 st.markdown("""
+    <head>
+        <link rel="apple-touch-icon" href="73766_3.png">
+        <link rel="icon" type="image/png" href="73766_3.png">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+    </head>
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -15,12 +21,10 @@ st.markdown("""
 
 st.title("🤖 BetScope - L'IA des Pronostics")
 
-# --- AJOUT DU LOGO VIP EN HAUT DE L'APPLICATION ---
-# IMPORTANT : Mets ton image '73766.png' dans ton dossier GitHub à côté de ce fichier app.py
+# --- AFFICHAGE DE TON IMAGE EN HAUT DE L'APPLICATION ---
 try:
-    st.image("73766.png", use_container_width=True)
+    st.image("73766_3.png", use_container_width=True)
 except Exception:
-    # Sécurité si l'image n'est pas encore sur ton GitHub
     st.markdown("👑 **ESPACE PRÉDICTION PRO**")
 
 st.markdown("---")
@@ -59,63 +63,42 @@ elif menu == "👑 Espace VIP Privé":
             # =================================================================
             # ✍️ MODIFIE UNIQUEMENT CES LIGNES CHAQUE MATIN AVEC TES DEUX MATCHS :
             # =================================================================
-            # MATCH 1 : SCORE EXACT
             match_1 = "Canada vs Maroc"
-            cote_1_M1 = 5.64   # Cote Canada
-            cote_X_M1 = 3.535  # Cote Nul
-            cote_2_M1 = 1.801  # Cote Maroc
+            cote_1_M1 = 5.64
+            cote_X_M1 = 3.535
+            cote_2_M1 = 1.801
             
-            # MATCH 2 : MI-TEMPS / FIN DE MATCH (HT/FT)
             match_2 = "Paraguay vs France"
-            cote_1_M2 = 16.0   # Cote Paraguay
-            cote_X_M2 = 7.90   # Cote Nul
-            cote_2_M2 = 1.207  # Cote France
+            cote_1_M2 = 16.0
+            cote_X_M2 = 7.90
+            cote_2_M2 = 1.207
             # =================================================================
             
-            # --- ANALYSE AUTOMATIQUE DE L'IA (MATCH 1 - SCORE EXACT) ---
-            if cote_2_M1 < cote_1_M1:  # L'équipe 2 est favorite
+            # --- ANALYSE DE L'IA (MATCH 1) ---
+            if cote_2_M1 < cote_1_M1:
                 diff = cote_1_M1 - cote_2_M1
-                if diff > 5:
-                    score_p1, fiab_1 = "0 - 3", "94%"
-                elif diff > 2:
-                    score_p1, fiab_1 = "1 - 3", "91%"
-                else:
-                    score_p1, fiab_1 = "1 - 2", "88%"
-            elif cote_1_M1 < cote_2_M1:  # L'équipe 1 est favorite
+                score_p1, fiab_1 = ("0 - 3", "94%") if diff > 5 else (("1 - 3", "91%") if diff > 2 else ("1 - 2", "88%"))
+            elif cote_1_M1 < cote_2_M1:
                 diff = cote_2_M1 - cote_1_M1
-                if diff > 5:
-                    score_p1, fiab_1 = "3 - 0", "93%"
-                elif diff > 2:
-                    score_p1, fiab_1 = "3 - 1", "90%"
-                else:
-                    score_p1, fiab_1 = "2 - 1", "87%"
+                score_p1, fiab_1 = ("3 - 0", "93%") if diff > 5 else (("3 - 1", "90%") if diff > 2 else ("2 - 1", "87%"))
             else:
                 score_p1, fiab_1 = "1 - 1", "85%"
                 
-            # --- ANALYSE AUTOMATIQUE DE L'IA (MATCH 2 - HT/FT) ---
-            if cote_2_M2 <= 1.35:  # Équipe 2 ultra-favorite (ex: France)
-                ht_ft_p2 = "Mi-temps : 2 / Fin de match : 2"
-                fiab_2 = "95%"
-            elif cote_1_M2 <= 1.35:  # Équipe 1 ultra-favorite
-                ht_ft_p2 = "Mi-temps : 1 / Fin de match : 1"
-                fiab_2 = "94%"
-            elif abs(cote_1_M2 - cote_2_M2) < 1.0:  # Match très serré
-                ht_ft_p2 = "Mi-temps : X / Fin de match : X"
-                fiab_2 = "86%"
-            else:  # Favori logique mais pas écrasant
-                if cote_1_M2 < cote_2_M2:
-                    ht_ft_p2 = "Mi-temps : X / Fin de match : 1"
-                else:
-                    ht_ft_p2 = "Mi-temps : X / Fin de match : 2"
-                fiab_2 = "89%"
+            # --- ANALYSE DE L'IA (MATCH 2) ---
+            if cote_2_M2 <= 1.35:
+                ht_ft_p2, fiab_2 = "Mi-temps : 2 / Fin de match : 2", "95%"
+            elif cote_1_M2 <= 1.35:
+                ht_ft_p2, fiab_2 = "Mi-temps : 1 / Fin de match : 1", "94%"
+            elif abs(cote_1_M2 - cote_2_M2) < 1.0:
+                ht_ft_p2, fiab_2 = "Mi-temps : X / Fin de match : X", "86%"
+            else:
+                ht_ft_p2, fiab_2 = ("Mi-temps : X / Fin de match : 1" if cote_1_M2 < cote_2_M2 else "Mi-temps : X / Fin de match : 2"), "89%"
             
-            # --- AFFICHAGE PROFESSIONNEL DES PRONOSTICS ---
             st.info("🔄 *Analyse des effectifs, absences et fluctuations des marchés validée par l'IA.*")
             st.markdown("")
-            
-            st.warning(f"🔥 **SCORE EXACT EXCLUSIF (Analyse Algorithmique) :**\n\n⚽ **{match_1}**\n\n➔ **Score Pronostiqué : {score_p1}** (Fiabilité : {fiab_1})")
+            st.warning(f"🔥 **SCORE EXACT EXCLUSIF :**\n\n⚽ **{match_1}**\n\n➔ **Score Pronostiqué : {score_p1}** (Fiabilité : {fiab_1})")
             st.markdown("")
-            st.warning(f"🔥 **COMBINÉ HT/FT (Analyse de Confiance) :**\n\n⚽ **{match_2}**\n\n➔ **{ht_ft_p2}** (Indice de sécurité : {fiab_2})")
+            st.warning(f"🔥 **COMBINÉ HT/FT :**\n\n⚽ **{match_2}**\n\n➔ **{ht_ft_p2}** (Indice de sécurité : {fiab_2})")
             
         else:
             st.error("❌ Clé d'accès incorrecte ou expirée.")
