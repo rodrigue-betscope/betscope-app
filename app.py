@@ -49,7 +49,7 @@ if menu == "⚽ Pronostics Gratuits":
 elif menu == "👑 Espace VIP Privé":
     st.subheader("🔒 Bienvenue dans l'Espace VIP")
     
-    mot_de_passe_correct = "RODRIGUE2026"
+    mot_de_passe_correct = "DADY2026"
     code_entre = st.text_input("Entrez votre clé d'accès VIP :", type="password", placeholder="Clé Secrète VIP...")
     
     if code_entre:
