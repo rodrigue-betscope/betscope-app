@@ -41,10 +41,10 @@ elif navigation == "👑 Espace VIP Privé":
             # =========================================================================
             
             # --- MATCH 1 ---
-            match_1 = "Canada vs Maroc"
-            cote_1_M1 = 5.64
-            cote_X_M1 = 3.535
-            cote_2_M1 = 1.801
+            match_1 = "persiga vs persipani"
+            cote_1_M1 = 4.25
+            cote_X_M1 = 2.488
+            cote_2_M1 = 2.165
             
             # --- MATCH 2 ---
             match_2 = "Paraguay vs France"
