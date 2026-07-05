@@ -63,15 +63,15 @@ elif menu == "👑 Espace VIP Privé":
             # =================================================================
             # ✍️ MODIFIE UNIQUEMENT CES LIGNES CHAQUE MATIN AVEC TES DEUX MATCHS :
             # =================================================================
-            match_1 = "Shanghai vs zhejiang"
+            match_1 = "SerbiaU19 vs Croatia U19"
             cote_1_M1 = 1.35
             cote_X_M1 = 4.80
             cote_2_M1 = 6.50
             
-            match_2 = "Qingdao vs Chengdu"
-            cote_1_M2 = 4.20
-            cote_X_M2 = 3.65
-            cote_2_M2 = 1.62
+            match_2 = "IF Elfsbo vs Hammarby IF "
+            cote_1_M2 = 3.745
+            cote_X_M2 = 3.68
+            cote_2_M2 = 1.89
             # =================================================================
             
             # --- 🤖 ALGORITHME AVANCÉ IA : MATCH 1 (SCORE EXACT DE HAUTE PRÉCISION) ---
