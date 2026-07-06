@@ -134,7 +134,7 @@ elif menu == "🏆 Résultats":
 # ==========================================
 # 🟢 BOUTON WHATSAPP GLOBAL (Visible partout)
 # ==========================================
-if menu != "⚽ Gratuit":  # On peut l'afficher partout sauf peut-être dans le gratuit si tu veux, ou partout !
+if menu != "⚽ Gratuit":
     message_bienvenue = """Bonjour BetScope ! 👑 ✅✅
 Je souhaite m'abonner à l'Espace VIP BetScope. Voici les forfaits :
 
@@ -145,6 +145,8 @@ Je souhaite m'abonner à l'Espace VIP BetScope. Voici les forfaits :
 Comment puis-je procéder au paiement s'il te plaît ?"""
 
     message_encode = urllib.parse.quote(message_bienvenue)
-    lien_whatsapp = f"https://wa.me/237698902204?text={message_encode}"
+    
+    # LIGNE CORRIGÉE ICI POUR L'APK :
+    lien_whatsapp = f"https://api.whatsapp.com/send?phone=237698902204&text={message_encode}"
     
     st.link_button("💬 Acheter mon accès VIP sur WhatsApp", lien_whatsapp, use_container_width=True)
