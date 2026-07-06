@@ -1,5 +1,5 @@
 import streamlit as st
-import time
+            p1_raw, px_raw, pimport time
 from datetime import datetime
 import urllib.parse
 
@@ -82,7 +82,7 @@ elif menu == "👑 VIP Privé":
             cote_2_M2 = 1.81
             
             # --- CALCULS IA ---
-            p1_raw, px_raw, p2_raw = 1/cote_1_M1, 1/cote_X_M1, 1/cote_2_M1
+2_raw = 1/cote_1_M1, 1/cote_X_M1, 1/cote_2_M1
             total_p = p1_raw + px_raw + p2_raw
             p1, p2 = p1_raw / total_p, p2_raw / total_p
             
@@ -123,8 +123,8 @@ elif menu == "🏆 Résultats":
     st.markdown("---")
     
     # ✍️ MODIFIE CETTE SECTION CHAQUE JOUR POUR AFFICHER TES VICTOIRES DE LA VEILLE
-    st.success("✅ **05/07/2026** | Shanghai vs Zhejiang\n\n➔ **Score Exact 2-0** validé ! 🏆")
-    st.success("✅ **05/07/2026** | Qingdao vs Chengdu\n\n➔ **HT/FT 2/2** validé ! 🏆")
+    st.success("✅ **06/07/2026** | brommapojkarma vs gais\n\n➔ **Score Exact 1-1** validé ! 🏆")
+    st.success("✅ **06/07/2026** | hacken vs djurgardens\n\n➔ **HT/FT X/2** validé ! 🏆")
     
     # Tu peux ajouter autant de lignes "st.success" que tu veux pour montrer ton historique
     
