@@ -64,15 +64,15 @@ elif menu == "👑 Espace VIP Privé":
             # =================================================================
             # ✍️ MODIFIE UNIQUEMENT CES LIGNES CHAQUE MATIN AVEC TES DEUX MATCHS :
             # =================================================================
-            match_1 = "Shanghai vs zhejiang"
-            cote_1_M1 = 1.35
-            cote_X_M1 = 4.80
-            cote_2_M1 = 6.50
+            match_1 = "Portugal vs espagne"
+            cote_1_M1 = 4.125
+            cote_X_M1 = 3.69
+            cote_2_M1 = 1.991
             
-            match_2 = "Qingdao vs Chengdu"
-            cote_1_M2 = 4.20
-            cote_X_M2 = 3.65
-            cote_2_M2 = 1.62
+            match_2 = "etats Unis vs Belgique"
+            cote_1_M2 = 2.653
+            cote_X_M2 = 3.51
+            cote_2_M2 = 2.829
             # =================================================================
             
             # --- 🤖 ALGORITHME AVANCÉ IA : MATCH 1 (SCORE EXACT DE HAUTE PRÉCISION) ---
