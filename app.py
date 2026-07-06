@@ -32,16 +32,16 @@ elif menu == "👑 VIP":
     
     if cle_acces:
         # ✍️ MATCH 1 : SCORE EXACT (MODIFIE LE NOM ET LES COTES ICI)
-        match_1 = "Real Madrid vs Barcelone"   # <--- ÉCRIS LE NOM DU MATCH 1 ICI
-        cote_1_M1 = 1.32                       # <--- Cote Victoire Équipe 1
-        cote_X_M1 = 4.75                       # <--- Cote Match Nul
-        cote_2_M1 = 7.5                        # <--- Cote Victoire Équipe 2
+        match_1 = "etats Unis vs Belgique"   # <--- ÉCRIS LE NOM DU MATCH 1 ICI
+        cote_1_M1 = 2.589                   # <--- Cote Victoire Équipe 1
+        cote_X_M1 = 3.505                      # <--- Cote Match Nul
+        cote_2_M1 = 2.909                        # <--- Cote Victoire Équipe 2
         
         # ✍️ MATCH 2 : MI-TEMPS / FIN DE MATCH (HT/FT)
-        match_2 = "Keflavik vs knattspyrnufel" # <--- ÉCRIS LE NOM DU MATCH 2 ICI
-        cote_1_M2 = 3.495                      # <--- Cote 1
-        cote_X_M2 = 4.25                       # <--- Cote X
-        cote_2_M2 = 1.81                       # <--- Cote 2
+        match_2 = "Suisse vs Colombie" # <--- ÉCRIS LE NOM DU MATCH 2 ICI
+        cote_1_M2 = 3.18                      # <--- Cote 1
+        cote_X_M2 = 3.25                       # <--- Cote X
+        cote_2_M2 = 2.333                       # <--- Cote 2
         
         # --- CALCULS IA ---
         p1_raw, px_raw, p2_raw = 1/cote_1_M1, 1/cote_X_M1, 1/cote_2_M1
