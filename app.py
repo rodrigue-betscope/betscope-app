@@ -1,60 +1,67 @@
-            # =========================================================
-            # ✍️ MATCH 1 : SCORE EXACT (MODIFIE LE NOM ET LES COTES ICI)
-            # =========================================================
-            match_1 = "Real Madrid vs Barcelone"   # <--- ÉCRIS LE NOM DU MATCH 1 ICI
-            cote_1_M1 = 1.32                       # <--- Cote Victoire Équipe 1
-            cote_X_M1 = 4.75                       # <--- Cote Match Nul
-            cote_2_M1 = 7.5                        # <--- Cote Victoire Équipe 2
-            
-            # =========================================================
-            # ✍️ MATCH 2 : MI-TEMPS / FIN DE MATCH (HT/FT)
-            # =========================================================
-            match_2 = "Keflavik vs knattspyrnufel" # <--- ÉCRIS LE NOM DU MATCH 2 ICI
-            cote_1_M2 = 3.495                      # <--- Cote 1
-            cote_X_M2 = 4.25                       # <--- Cote X
-            cote_2_M2 = 1.81                       # <--- Cote 2
-            
-            # --- CALCULS IA ---
-            p1_raw, px_raw, p2_raw = 1/cote_1_M1, 1/cote_X_M1, 1/cote_2_M1
-            total_p = p1_raw + px_raw + p2_raw
-            p1, p2 = p1_raw / total_p, p2_raw / total_p
-            
-            if p1 > 0.60:
-                score_p1, fiab_1 = "3 - 0", 94.2
-            elif p1 > 0.50:
-                score_p1, fiab_1 = "2 - 0", 92.1
-            elif p1 > 0.40:
-                score_p1, fiab_1 = "2 - 1", 89.4
-            elif p2 > 0.60:
-                score_p1, fiab_1 = "0 - 3", 94.5
-            elif p2 > 0.50:
-                score_p1, fiab_1 = "0 - 2", 91.8
-            elif p2 > 0.40:
-                score_p1, fiab_1 = "1 - 2", 88.7
-            else:
-                score_p1, fiab_1 = ("0 - 0", 86.4) if cote_X_M1 < 3.20 else ("1 - 1", 88.1)
-                    
-            if cote_1_M2 <= 1.45:
-                ht_ft_p2, fiab_2 = "Mi-temps : 1 / Fin de match : 1", 95.2
-            elif cote_2_M2 <= 1.45:
-                ht_ft_p2, fiab_2 = "Mi-temps : 2 / Fin de match : 2", 94.8
-            elif abs(cote_1_M2 - cote_2_M2) < 0.50:
-                ht_ft_p2, fiab_2 = "Mi-temps : X / Fin de match : X", 89.1
-            else:
-                if cote_1_M2 < cote_2_M2:
-                    ht_ft_p2, fiab_2 = ("Mi-temps : X / Fin de match : 1", 91.4) if cote_1_M2 > 1.75 else ("Mi-temps : 1 / Fin de match : 1", 91.4)
-                else:
-                    ht_ft_p2, fiab_2 = ("Mi-temps : X / Fin de match : 2", 90.7) if cote_2_M2 > 1.75 else ("Mi-temps : 2 / Fin de match : 2", 90.7)
-            
-            # --- AFFICHAGE VIP ---
-            st.info("🔄 *Analyse des probabilités implicites du marché validée par l'IA.*")
-            st.markdown("")
-            st.warning(f"🔥 **SCORE EXACT EXCLUSIF :**\n\n⚽ **{match_1}**\n\n➔ **Score Pronostiqué : {score_p1}** (Fiabilité : {fiab_1}%)")
-            st.markdown("")
-            st.warning(f"🔥 **COMBINÉ HT/FT :**\n\n⚽ **{match_2}**\n\n➔ **{ht_ft_p2}** (Indice de sécurité : {fiab_2}%)")
-            
+if menu == "👑 VIP":
+    st.title("👑 Espace VIP")
+    
+    # Zone de saisie de la clé d'accès
+    cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
+    
+    if cle_acces:
+        # =========================================================
+        # ✍️ MATCH 1 : SCORE EXACT (MODIFIE LE NOM ET LES COTES ICI)
+        # =========================================================
+        match_1 = "Real Madrid vs Barcelone"   # <--- ÉCRIS LE NOM DU MATCH 1 ICI
+        cote_1_M1 = 1.32                       # <--- Cote Victoire Équipe 1
+        cote_X_M1 = 4.75                       # <--- Cote Match Nul
+        cote_2_M1 = 7.5                        # <--- Cote Victoire Équipe 2
+        
+        # =========================================================
+        # ✍️ MATCH 2 : MI-TEMPS / FIN DE MATCH (HT/FT)
+        # =========================================================
+        match_2 = "Keflavik vs knattspyrnufel" # <--- ÉCRIS LE NOM DU MATCH 2 ICI
+        cote_1_M2 = 3.495                      # <--- Cote 1
+        cote_X_M2 = 4.25                       # <--- Cote X
+        cote_2_M2 = 1.81                       # <--- Cote 2
+        
+        # --- CALCULS IA ---
+        p1_raw, px_raw, p2_raw = 1/cote_1_M1, 1/cote_X_M1, 1/cote_2_M1
+        total_p = p1_raw + px_raw + p2_raw
+        p1, p2 = p1_raw / total_p, p2_raw / total_p
+        
+        if p1 > 0.60:
+            score_p1, fiab_1 = "3 - 0", 94.2
+        elif p1 > 0.50:
+            score_p1, fiab_1 = "2 - 0", 92.1
+        elif p1 > 0.40:
+            score_p1, fiab_1 = "2 - 1", 89.4
+        elif p2 > 0.60:
+            score_p1, fiab_1 = "0 - 3", 94.5
+        elif p2 > 0.50:
+            score_p1, fiab_1 = "0 - 2", 91.8
+        elif p2 > 0.40:
+            score_p1, fiab_1 = "1 - 2", 88.7
         else:
-            st.error("❌ Clé d'accès incorrecte ou expirée.")
+            score_p1, fiab_1 = ("0 - 0", 86.4) if cote_X_M1 < 3.20 else ("1 - 1", 88.1)
+                
+        if cote_1_M2 <= 1.45:
+            ht_ft_p2, fiab_2 = "Mi-temps : 1 / Fin de match : 1", 95.2
+        elif cote_2_M2 <= 1.45:
+            ht_ft_p2, fiab_2 = "Mi-temps : 2 / Fin de match : 2", 94.8
+        elif abs(cote_1_M2 - cote_2_M2) < 0.50:
+            ht_ft_p2, fiab_2 = "Mi-temps : X / Fin de match : X", 89.1
+        else:
+            if cote_1_M2 < cote_2_M2:
+                ht_ft_p2, fiab_2 = ("Mi-temps : X / Fin de match : 1", 91.4) if cote_1_M2 > 1.75 else ("Mi-temps : 1 / Fin de match : 1", 91.4)
+            else:
+                ht_ft_p2, fiab_2 = ("Mi-temps : X / Fin de match : 2", 90.7) if cote_2_M2 > 1.75 else ("Mi-temps : 2 / Fin de match : 2", 90.7)
+        
+        # --- AFFICHAGE VIP ---
+        st.info("🔄 *Analyse des probabilités implicites du marché validée par l'IA.*")
+        st.markdown("")
+        st.warning(f"🔥 **SCORE EXACT EXCLUSIF :**\n\n⚽ **{match_1}**\n\n➔ **Score Pronostiqué : {score_p1}** (Fiabilité : {fiab_1}%)")
+        st.markdown("")
+        st.warning(f"🔥 **COMBINÉ HT/FT :**\n\n⚽ **{match_2}**\n\n➔ **{ht_ft_p2}** (Indice de sécurité : {fiab_2}%)")
+        
+    else:
+        st.error("❌ Clé d'accès incorrecte ou expirée.")
 
 # ---------------------------------------------------------
 # SECTION 3 : RÉSULTATS
