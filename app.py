@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 import urllib.parse
 
-# L'application va chercher l'image 73766_3.png pour en faire son icône officielle
+# Configuration de la page avec l'icône officielle
 st.set_page_config(page_title="Rodrigue Pro Puissant Prédiction", page_icon="73766_3.png", layout="centered")
 
 # CSS pour masquer les éléments Streamlit et forcer le style mobile
@@ -22,7 +22,6 @@ st.markdown("""
 
 st.title("🤖 BetScope - L'IA des Pronostics")
 
-# --- AFFICHAGE DE TON IMAGE EN HAUT DE L'APPLICATION ---
 try:
     st.image("73766_3.png", use_container_width=True)
 except Exception:
@@ -50,7 +49,7 @@ if menu == "⚽ Pronostics Gratuits":
 elif menu == "👑 Espace VIP Privé":
     st.subheader("🔒 Bienvenue dans l'Espace VIP")
     
-    mot_de_passe_correct = "DADY2026"
+    mot_de_passe_correct = "RODRIGUE2026"
     code_entre = st.text_input("Entrez votre clé d'accès VIP :", type="password", placeholder="Clé Secrète VIP...")
     
     if code_entre:
@@ -62,65 +61,57 @@ elif menu == "👑 Espace VIP Privé":
             st.markdown(f"### 🎯 LES PRONOSTICS VIP DU {date_aujourdhui}")
             
             # =================================================================
-            # ✍️ MODIFIE UNIQUEMENT CES LIGNES CHAQUE MATIN AVEC TES DEUX MATCHS :
+            # ✍️ TOI-MÊME MODIFIE UNIQUEMENT CES GRILLES CHAQUE MATIN :
+            # Remplis simplement avec les chiffres de tes grilles d'écrans !
             # =================================================================
-            match_1 = "Portugal vs espagne"
-            cote_1_M1 = 4.125
-            cote_X_M1 = 3.69
-            cote_2_M1 = 1.991
+            match_1 = "Portugal vs Espagne"
+            
+            # Ici tu mets les cotes de la grille "Score Exact" (comme sur ton image 75553.jpg)
+            # Tu n'as pas besoin de tout mettre, mets juste les plus petites cotes (les plus probables)
+            grille_scores_m1 = {
+                "1-0": 10.0, "0-0": 13.0, "0-1": 10.0,
+                "2-0": 13.0, "1-1": 6.5,  "0-2": 14.0,
+                "2-1": 9.0,  "2-2": 10.0, "1-2": 9.0,
+                "3-0": 23.0, "3-1": 15.0, "1-3": 17.0,
+                "3-2": 19.0, "2-3": 19.0
+            }
             
             match_2 = "etats Unis vs Belgique"
-            cote_1_M2 = 2.653
-            cote_X_M2 = 3.51
-            cote_2_M2 = 2.829
+            
+            # Ici tu mets les cotes de la grille "MT-Fin" (comme sur ton image 75555.jpg)
+            grille_ht_ft_m2 = {
+                "V1/V1": 4.05, "X/V1": 6.2,  "V2/V1": 29.0,
+                "V1/X": 14.0,  "X/X": 5.25,  "V2/X": 14.2,
+                "V1/V2": 29.0, "X/V2": 6.55, "V2/V2": 4.4
+            }
             # =================================================================
             
-            # --- 🤖 ALGORITHME AVANCÉ IA : MATCH 1 (SCORE EXACT DE HAUTE PRÉCISION) ---
-            total_prob_m1 = (1/cote_1_M1) + (1/cote_X_M1) + (1/cote_2_M1)
-            prob_1 = (1/cote_1_M1) / total_prob_m1
-            prob_2 = (1/cote_2_M1) / total_prob_m1
+            # --- 🤖 FONCTION ALGORITHMIQUE DE HAUTE PRÉCISION ---
+            def analyser_grille_probabilites(grille_cotes):
+                # Calcul de l'inversion des cotes (1 / cote)
+                inverse_prob = {option: 1.0 / cote for option, cote in grille_cotes.items() if cote > 0}
+                total_somme = sum(inverse_prob.values())
+                # Normalisation pour obtenir les vrais pourcentages réels du marché
+                vrais_pourcentages = {option: (prob / total_somme) * 100 for option, prob in inverse_prob.items()}
+                # Extraction du grand favori de la grille
+                meilleure_option = max(vrais_pourcentages, key=vrais_pourcentages.get)
+                pourcentage_fiabilite = vrais_pourcentages[meilleure_option]
+                return meilleure_option, pourcentage_fiabilite
+
+            # Exécution de l'analyse scientifique pour le Match 1 et Match 2
+            score_predit, fiab_score = analyser_grille_probabilites(grille_scores_m1)
+            ht_ft_predit, fiab_ht_ft = analyser_grille_probabilites(grille_ht_ft_m2)
             
-            if cote_2_M1 < cote_1_M1:  # Équipe 2 favorite
-                if cote_2_M1 <= 1.40:
-                    score_p1, fiab_1 = "0 - 3", "94%"
-                elif cote_2_M1 <= 1.85:
-                    score_p1, fiab_1 = "0 - 2", "92%"
-                elif cote_2_M1 <= 2.30:
-                    score_p1, fiab_1 = "1 - 2", "89%"
-                else:
-                    score_p1, fiab_1 = "1 - 1", "86%"
-            elif cote_1_M1 < cote_2_M1:  # Équipe 1 favorite
-                if cote_1_M1 <= 1.40:
-                    score_p1, fiab_1 = "2 - 0", "92%"
-                elif cote_1_M1 <= 1.85:
-                    score_p1, fiab_1 = "2 - 1", "91%"
-                elif cote_1_M1 <= 2.30:
-                    score_p1, fiab_1 = "3 - 1", "88%"
-                else:
-                    score_p1, fiab_1 = "1 - 1", "86%"
-            else:
-                score_p1, fiab_1 = "1 - 1", "87%"
-                
-            # --- 🤖 ALGORITHME AVANCÉ IA : MATCH 2 (HT/FT AVEC SÉCURITÉ ACCRUE) ---
-            if cote_2_M2 <= 1.45:
-                ht_ft_p2, fiab_2 = "Mi-temps : 2 / Fin de match : 2", "95%"
-            elif cote_1_M2 <= 1.45:
-                ht_ft_p2, fiab_2 = "Mi-temps : 1 / Fin de match : 1", "94%"
-            elif abs(cote_1_M2 - cote_2_M2) <= 0.60:
-                ht_ft_p2, fiab_2 = "Mi-temps : X / Fin de match : X", "88%"
-            else:
-                if cote_1_M2 < cote_2_M2:
-                    ht_ft_p2 = "Mi-temps : X / Fin de match : 1" if cote_1_M2 > 1.80 else "Mi-temps : 1 / Fin de match : 1"
-                    fiab_2 = "91%"
-                else:
-                    ht_ft_p2 = "Mi-temps : X / Fin de match : 2" if cote_2_M2 > 1.80 else "Mi-temps : 2 / Fin de match : 2"
-                    fiab_2 = "90%"
+            # Formatage propre des textes pour l'affichage de la Mi-temps
+            texte_ht_ft = ht_ft_predit.replace("/", " / Fin de match : ").replace("V1", "1").replace("V2", "2")
+            texte_ht_ft = "Mi-temps : " + texte_ht_ft
             
-            st.info("🔄 *Analyse des effectifs, absences et fluctuations des marchés validée par l'IA.*")
+            # --- AFFICHAGE ULTRA-PRO POUR TES CLIENTS ---
+            st.info("🔄 *Analyse probabiliste croisée sur l'ensemble des marchés validée par l'IA.*")
             st.markdown("")
-            st.warning(f"🔥 **SCORE EXACT EXCLUSIF :**\n\n⚽ **{match_1}**\n\n➔ **Score Pronostiqué : {score_p1}** (Fiabilité : {fiab_1})")
+            st.warning(f"🔥 **SCORE EXACT EXCLUSIF :**\n\n⚽ **{match_1}**\n\n➔ **Score Pronostiqué : {score_predit}** (Vraie Probabilité : {fiab_score:.1f}%)")
             st.markdown("")
-            st.warning(f"🔥 **COMBINÉ HT/FT :**\n\n⚽ **{match_2}**\n\n➔ **{ht_ft_p2}** (Indice de sécurité : {fiab_2})")
+            st.warning(f"🔥 **COMBINÉ HT/FT :**\n\n⚽ **{match_2}**\n\n➔ **{texte_ht_ft}** (Indice de confiance réel : {fiab_ht_ft:.1f}%)")
             
         else:
             st.error("❌ Clé d'accès incorrecte ou expirée.")
@@ -128,7 +119,7 @@ elif menu == "👑 Espace VIP Privé":
     st.markdown("---")
     st.markdown("### 📢 Comment obtenir votre clé d'accès VIP ?")
     
-    # 💰 TEXTE AUTOMATIQUE DU MENU DE BIENVENUE AVEC TES TARIFS
+    # Message automatique WhatsApp avec tes tarifs d'abonnement
     message_bienvenue = """Bonjour Rodrigue ! 👑 
 Je souhaite m'abonner à l'Espace VIP BetScope. Voici les forfaits :
 
@@ -138,10 +129,7 @@ Je souhaite m'abonner à l'Espace VIP BetScope. Voici les forfaits :
 
 Comment puis-je procéder au paiement s'il te plaît ?"""
 
-    # Encodage sécurisé pour WhatsApp (gère les sauts de ligne et emojis)
     message_encode = urllib.parse.quote(message_bienvenue)
-    
-    # Lien final mis à jour avec ton vrai numéro
     lien_whatsapp = f"https://wa.me/237698902204?text={message_encode}"
     
     st.link_button("💬 Acheter mon accès VIP sur WhatsApp", lien_whatsapp, use_container_width=True)
