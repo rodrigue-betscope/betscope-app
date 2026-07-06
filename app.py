@@ -1,21 +1,43 @@
-if menu == "👑 VIP":
+import streamlit as st
+import urllib.parse
+
+# Configuration globale de l'application
+st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered")
+
+# =========================================================
+# 🧭 BARRE LATÉRALE DE NAVIGATION (Ligne obligatoire)
+# =========================================================
+menu = st.sidebar.radio(
+    "Navigation", 
+    ["⚽ Gratuit", "👑 VIP", "🏆 Résultats", "📉 Chute des Cotes"]
+)
+
+# =========================================================
+# SECTION 1 : ⚽ GRATUIT
+# =========================================================
+if menu == "⚽ Gratuit":
+    st.title("⚽ Pronostics Gratuits")
+    st.write("Bienvenue sur BetScope Pro ! Voici le pronostic public du jour.")
+    
+    st.info("⚽ **Manchester City vs Liverpool**\n\n➔ Pronostic recommandé : **Plus de 2.5 buts** (Under/Over)")
+
+# =========================================================
+# SECTION 2 : 👑 VIP
+# =========================================================
+elif menu == "👑 VIP":
     st.title("👑 Espace VIP")
     
     # Zone de saisie de la clé d'accès
     cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
     if cle_acces:
-        # =========================================================
         # ✍️ MATCH 1 : SCORE EXACT (MODIFIE LE NOM ET LES COTES ICI)
-        # =========================================================
         match_1 = "Real Madrid vs Barcelone"   # <--- ÉCRIS LE NOM DU MATCH 1 ICI
         cote_1_M1 = 1.32                       # <--- Cote Victoire Équipe 1
         cote_X_M1 = 4.75                       # <--- Cote Match Nul
         cote_2_M1 = 7.5                        # <--- Cote Victoire Équipe 2
         
-        # =========================================================
         # ✍️ MATCH 2 : MI-TEMPS / FIN DE MATCH (HT/FT)
-        # =========================================================
         match_2 = "Keflavik vs knattspyrnufel" # <--- ÉCRIS LE NOM DU MATCH 2 ICI
         cote_1_M2 = 3.495                      # <--- Cote 1
         cote_X_M2 = 4.25                       # <--- Cote X
@@ -63,9 +85,9 @@ if menu == "👑 VIP":
     else:
         st.error("❌ Clé d'accès incorrecte ou expirée.")
 
-# ---------------------------------------------------------
-# SECTION 3 : RÉSULTATS
-# ---------------------------------------------------------
+# =========================================================
+# SECTION 3 : 🏆 RÉSULTATS
+# =========================================================
 elif menu == "🏆 Résultats":
     st.subheader("✅ Historique des Validations")
     st.markdown("Découvrez les derniers pronostics validés avec succès par l'algorithme BetScope.")
@@ -79,16 +101,14 @@ elif menu == "🏆 Résultats":
     st.markdown("---")
     st.markdown("### 📢 Envie d'obtenir les pronostics d'aujourd'hui ?")
 
-# ---------------------------------------------------------
-# SECTION 4 : 📉 CHUTE DES COTES 
-# ---------------------------------------------------------
+# =========================================================
+# SECTION 4 : 📉 CHUTE DES COTES
+# =========================================================
 elif menu == "📉 Chute des Cotes":
     st.title("📉 Détecteur de Chute de Cotes")
     st.write("Le robot analyse en temps réel les variations suspectes des cotes mondiales.")
 
-    # =========================================================
     # ✍️ TABLEAU DES CHUTES DE COTES (MODIFIE LES INFOS ICI)
-    # =========================================================
     matchs_analyses = [
         {
             "match": "Real Madrid vs Barcelone",          # <--- MODIFIE NOM MATCH 1
@@ -138,9 +158,9 @@ elif menu == "📉 Chute des Cotes":
     else:
         st.warning("Aucune anomalie ou chute de cote majeure détectée pour le moment.")
 
-# ==========================================
+# =========================================================
 # 🟢 BOUTON WHATSAPP GLOBAL DÉFINITIF
-# ==========================================
+# =========================================================
 if menu != "⚽ Gratuit":
     message_bienvenue = """Bonjour BetScope ! 👑 ✅✅
 Je souhaite m'abonner à l'Espace VIP BetScope. Voici les forfaits :
@@ -161,3 +181,4 @@ Comment puis-je procéder au paiement s'il te plaît ?"""
         </div>
     </a>
     """, unsafe_allow_html=True)
+    
