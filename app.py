@@ -1,88 +1,21 @@
-import streamlit as st
-            p1_raw, px_raw, pimport time
-from datetime import datetime
-import urllib.parse
-
-# Configuration de la page
-st.set_page_config(page_title="Rodrigue Pro Puissant Prédiction", page_icon="73766_3.png", layout="centered")
-
-# CSS pour le design mobile
-st.markdown("""
-    <head>
-        <link rel="apple-touch-icon" href="73766_3.png">
-        <link rel="icon" type="image/png" href="73766_3.png">
-        <meta name="apple-mobile-web-app-capable" content="yes">
-    </head>
-    <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    </style>
-    """, unsafe_allow_html=True)
-
-st.title("🤖 BetScope - L'IA des Pronostics")
-
-try:
-    st.image("73766_3.png", use_container_width=True)
-except Exception:
-    st.markdown("👑 **ESPACE PRÉDICTION PRO**")
-
-st.markdown("---")
-
-# ==========================================
-# 🗂️ LE NOUVEAU MENU À 3 SECTIONS
-# ==========================================
-menu = st.radio("Navigation", ["⚽ Gratuit", "👑 VIP Privé", "🏆 Résultats"], horizontal=True)
-
-# ---------------------------------------------------------
-# SECTION 1 : GRATUIT
-# ---------------------------------------------------------
-if menu == "⚽ Gratuit":
-    st.subheader("Analyse Algorithmique Dynamique (Free)")
-    match_url = st.text_input("Collez le lien du match ici :", placeholder="https://www.besoccer.com/match/...")
-    
-    if st.button("Lancer l'Analyse Gratuite 🚀", use_container_width=True):
-        if match_url:
-            with st.spinner("Analyse IA en cours..."):
-                time.sleep(1.5)
-                st.success("Analyse terminée !")
-                st.info("🎯 **Pronostic conseillé :** Victoire Équipe 1 ou Nul (1X)")
-        else:
-            st.error("❌ Veuillez insérer un lien.")
-
-# ---------------------------------------------------------
-# SECTION 2 : VIP PRIVÉ (Les matchs du jour)
-# ---------------------------------------------------------
-elif menu == "👑 VIP Privé":
-    st.subheader("🔒 Bienvenue dans l'Espace VIP")
-    
-    mot_de_passe_correct = "DADY2026"
-    code_entre = st.text_input("Entrez votre clé d'accès VIP :", type="password", placeholder="Clé Secrète VIP...")
-    
-    if code_entre:
-        if code_entre == mot_de_passe_correct:
-            st.success("🔓 Accès VIP Accordé ! Bienvenue Boss.")
-            st.markdown("---")
+            # =========================================================
+            # ✍️ MATCH 1 : SCORE EXACT (MODIFIE LE NOM ET LES COTES ICI)
+            # =========================================================
+            match_1 = "Real Madrid vs Barcelone"   # <--- ÉCRIS LE NOM DU MATCH 1 ICI
+            cote_1_M1 = 1.32                       # <--- Cote Victoire Équipe 1
+            cote_X_M1 = 4.75                       # <--- Cote Match Nul
+            cote_2_M1 = 7.5                        # <--- Cote Victoire Équipe 2
             
-            date_aujourdhui = datetime.now().strftime("%d/%m/%Y")
-            st.markdown(f"### 🎯 LES PRONOSTICS VIP DU {date_aujourdhui}")
-            
-            # ✍️ MODIFIE UNIQUEMENT CES COTES CHAQUE MATIN
-            
-            # MATCH 1 : SCORE EXACT
-            match_1 = "colwyn bay vs rhyl"
-            cote_1_M1 = 1.32
-            cote_X_M1 = 4.75
-            cote_2_M1 = 7.5
-            
-            # MATCH 2 : MI-TEMPS / FIN DE MATCH (HT/FT)
-            match_2 = "Keflavik vs knattspyrnufel"
-            cote_1_M2 = 3.495
-            cote_X_M2 = 4.25
-            cote_2_M2 = 1.81
+            # =========================================================
+            # ✍️ MATCH 2 : HT/FT (MODIFIE LE NOM ET LES COTES ICI)
+            # =========================================================
+            match_2 = "Keflavik vs knattspyrnufel" # <--- ÉCRIS LE NOM DU MATCH 2 ICI
+            cote_1_M2 = 3.495                      # <--- Cote 1
+            cote_X_M2 = 4.25                       # <--- Cote X
+            cote_2_M2 = 1.81                       # <--- Cote 2
             
             # --- CALCULS IA ---
-2_raw = 1/cote_1_M1, 1/cote_X_M1, 1/cote_2_M1
+            p1_raw, px_raw, p2_raw = 1/cote_1_M1, 1/cote_X_M1, 1/cote_2_M1
             total_p = p1_raw + px_raw + p2_raw
             p1, p2 = p1_raw / total_p, p2_raw / total_p
             
@@ -113,26 +46,83 @@ elif menu == "👑 VIP Privé":
         else:
             st.error("❌ Clé d'accès incorrecte ou expirée.")
 
-# ---------------------------------------------------------
-# SECTION 3 : RÉSULTATS (Historique pour attirer les clients)
+# ---------------- -----------------------------------------
+# SECTION 3 : RÉSULTATS
 # ---------------------------------------------------------
 elif menu == "🏆 Résultats":
     st.subheader("✅ Historique des Validations")
-    st.markdown("Découvrez les derniers pronostics validés avec succès par l'algorithme BetScope. Rejoignez le VIP pour ne plus rater ces cotes !")
+    st.markdown("Découvrez les derniers pronostics validés avec succès par l'algorithme BetScope.")
     
     st.markdown("---")
     
-    # ✍️ MODIFIE CETTE SECTION CHAQUE JOUR POUR AFFICHER TES VICTOIRES DE LA VEILLE
-    st.success("✅ **06/07/2026** | brommapojkarma vs gais\n\n➔ **Score Exact 1-1** validé ! 🏆")
-    st.success("✅ **06/07/2026** | hacken vs djurgardens\n\n➔ **HT/FT X/2** validé ! 🏆")
-    
-    # Tu peux ajouter autant de lignes "st.success" que tu veux pour montrer ton historique
+    # ✍️ MODIFIE CETTE SECTION CHAQUE JOUR POUR TES RÉSULTATS PASSÉS
+    st.success("✅ **05/07/2026** | Shanghai vs Zhejiang\n\n➔ **Score Exact 2-0** validé ! 🏆")
+    st.success("✅ **05/07/2026** | Qingdao vs Chengdu\n\n➔ **HT/FT 2/2** validé ! 🏆")
     
     st.markdown("---")
     st.markdown("### 📢 Envie d'obtenir les pronostics d'aujourd'hui ?")
 
+# ---------------------------------------------------------
+# SECTION 4 : 📉 CHUTE DES COTES 
+# ---------------------------------------------------------
+elif menu == "📉 Chute des Cotes":
+    st.title("📉 Détecteur de Chute de Cotes")
+    st.write("Le robot analyse en temps réel les variations suspectes des cotes mondiales.")
+
+    # =========================================================
+    # ✍️ TABLEAU DES CHUTES DE COTES (MODIFIE LES INFOS ICI)
+    # =========================================================
+    matchs_analyses = [
+        {
+            "match": "Real Madrid vs Barcelone",          # <--- MODIFIE NOM MATCH 1
+            "option": "Moins de 2.5 buts (Under 2.5)",    # <--- MODIFIE L'OPTION
+            "cote_ouverture": 2.50,                       # <--- MODIFIE COTE AVANT
+            "cote_actuelle": 1.65                         # <--- MODIFIE COTE APRÈS
+        },
+        {
+            "match": "Chelsea vs Arsenal",                # <--- MODIFIE NOM MATCH 2
+            "option": "Mi-temps / Fin de match (X/1)",    # <--- MODIFIE L'OPTION
+            "cote_ouverture": 4.50,                       # <--- MODIFIE COTE AVANT
+            "cote_actuelle": 4.10                         # <--- MODIFIE COTE APRÈS
+        },
+        {
+            "match": "Juventus vs AC Milan",              # <--- MODIFIE NOM MATCH 3
+            "option": "Score Exact (1-0)",                # <--- MODIFIE L'OPTION
+            "cote_ouverture": 7.00,                       # <--- MODIFIE COTE AVANT
+            "cote_actuelle": 6.80                         # <--- MODIFIE COTE APRÈS
+        }
+    ]
+
+    meilleure_opportunite = None
+    plus_grosse_chute = 0
+
+    st.subheader("📊 Variations détectées sur les marchés")
+
+    for match in matchs_analyses:
+        baisse = ((match["cote_ouverture"] - match["cote_actuelle"]) / match["cote_ouverture"]) * 100
+        
+        st.info(f"⚽ **{match['match']}**\n\n"
+                f"• Option analysée : **{match['option']}**\n\n"
+                f"• Ouverture : `{match['cote_ouverture']}` ➡️ Actuelle : `{match['cote_actuelle']}`\n\n"
+                f"📉 Chute de la valeur : **-{baisse:.2f}%**")
+        
+        if baisse > plus_grosse_chute:
+            plus_grosse_chute = baisse
+            meilleure_opportunite = match
+
+    st.markdown("---")
+    st.subheader("🎯 Le Conseil Algorithmique de l'IA")
+    
+    if meilleure_opportunite:
+        st.success(f"🔥 **MEILLEURE OPPORTUNITÉ DÉTECTÉE** 🔥\n\n"
+                   f"**Match :** {meilleure_opportunite['match']}\n\n"
+                   f"**Option recommandée :** {meilleure_opportunite['option']}\n\n"
+                   f"📊 **Indice de confiance :** Chute record de **-{plus_grosse_chute:.2f}%** sur le marché.")
+    else:
+        st.warning("Aucune anomalie ou chute de cote majeure détectée pour le moment.")
+
 # ==========================================
-# 🟢 BOUTON WHATSAPP GLOBAL DÉFINITIF (FORCER LE NAVIGATEUR EXTERNE)
+# 🟢 BOUTON WHATSAPP GLOBAL DÉFINITIF
 # ==========================================
 if menu != "⚽ Gratuit":
     message_bienvenue = """Bonjour BetScope ! 👑 ✅✅
@@ -147,7 +137,6 @@ Comment puis-je procéder au paiement s'il te plaît ?"""
     message_encode = urllib.parse.quote(message_bienvenue)
     lien_whatsapp = f"https://api.whatsapp.com/send?phone=237698902204&text={message_encode}"
     
-    # Correction ici : target="_blank" pour activer le mode "Default Browser" de ton APK
     st.markdown(f"""
     <a href="{lien_whatsapp}" target="_blank" style="text-decoration: none;">
         <div style="background-color: #25D366; color: white; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0px 4px 6px rgba(0,0,0,0.1);">
