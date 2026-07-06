@@ -30,7 +30,7 @@ elif menu == "👑 VIP":
     # Zone de saisie de la clé d'accès
     cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
-    if cle_acces:
+    if cle_acces == "DADY2026":
         # ✍️ MATCH 1 : SCORE EXACT (MODIFIE LE NOM ET LES COTES ICI)
         match_1 = "Real Madrid vs Barcelone"   # <--- ÉCRIS LE NOM DU MATCH 1 ICI
         cote_1_M1 = 1.32                       # <--- Cote Victoire Équipe 1
@@ -82,6 +82,8 @@ elif menu == "👑 VIP":
         st.markdown("")
         st.warning(f"🔥 **COMBINÉ HT/FT :**\n\n⚽ **{match_2}**\n\n➔ **{ht_ft_p2}** (Indice de sécurité : {fiab_2}%)")
         
+    elif cle_acces == "":
+        st.info("💡 Entrez votre clé d'accès pour débloquer les pronostics VIP.")
     else:
         st.error("❌ Clé d'accès incorrecte ou expirée.")
 
@@ -104,74 +106,84 @@ elif menu == "🏆 Résultats":
 # =========================================================
 elif menu == "📉 Chute des Cotes":
     st.title("📉 Détecteur de Chute de Cotes")
-    st.write("Le robot analyse en temps réel les variations suspectes des cotes mondiales.")
-
-    # 🔗 ZONE POUR COLLER LE LIEN INTERACTIF
-    lien_site = st.text_input("🔗 Collez le lien du site d'analyse ici :", placeholder="https://www.oddsportal.com/dropping-odds/")
     
-    if lien_site:
-        st.info(f"🔄 Connexion demandée vers : `{lien_site}`")
-        st.warning("⚠️ *Note : Les sites de cotes bloquent souvent les requêtes directes. Indique-moi le nom de ton site favori pour qu'on crée un décodeur spécialisé !*")
-
-    st.markdown("---")
-    st.subheader("✍️ Mettre à jour les Chutes du Jour")
+    # Zone de saisie sécurisée avec mot de passe identique
+    cle_chute = st.text_input("🔑 Entrez votre clé d'accès Détecteur :", type="password", key="chute_pass")
     
-    # Formulaire interactif pour ton téléphone
-    with st.expander("➕ Ajouter / Modifier un match en direct"):
-        nom_du_match = st.text_input("Nom du match :", "Real Madrid vs Barcelone")
-        option_jeu = st.text_input("Option (ex: Under 2.5, Victoire 1...) :", "Moins de 2.5 buts (Under 2.5)")
-        col1, col2 = st.columns(2)
-        with col1:
-            cote_ouvrir = st.number_input("Cote d'ouverture :", value=2.50, step=0.05)
-        with col2:
-            cote_actu = st.number_input("Cote actuelle :", value=1.65, step=0.05)
+    if cle_chute == "DADY2026":
+        st.write("Le robot analyse en temps réel les variations suspectes des cotes mondiales.")
 
-    # Récupération dynamique des données saisies
-    matchs_analyses = [
-        {
-            "match": nom_du_match,
-            "option": option_jeu,
-            "cote_ouverture": cote_ouvrir,
-            "cote_actuelle": cote_actu
-        },
-        {
-            "match": "Chelsea vs Arsenal",
-            "option": "Mi-temps / Fin de match (X/1)",
-            "cote_ouverture": 4.50,
-            "cote_actuelle": 4.10
-        }
-    ]
+        # 🔗 ZONE POUR COLLER LE LIEN INTERACTIF
+        lien_site = st.text_input("🔗 Collez le lien du site d'analyse ici :", placeholder="https://www.oddsportal.com/dropping-odds/")
+        
+        if lien_site:
+            st.info(f"🔄 Connexion demandée vers : `{lien_site}`")
+            st.warning("⚠️ *Note : Les sites de cotes bloquent souvent les requêtes directes. Indique-moi le nom de ton site favori pour qu'on crée un décodeur spécialisé !*")
 
-    meilleure_opportunite = None
-    plus_grosse_chute = 0
+        st.markdown("---")
+        st.subheader("✍️ Mettre à jour les Chutes du Jour")
+        
+        # Formulaire interactif pour ton téléphone
+        with st.expander("➕ Ajouter / Modifier un match en direct"):
+            nom_du_match = st.text_input("Nom du match :", "Real Madrid vs Barcelone")
+            option_jeu = st.text_input("Option (ex: Under 2.5, Victoire 1...) :", "Moins de 2.5 buts (Under 2.5)")
+            col1, col2 = st.columns(2)
+            with col1:
+                cote_ouvrir = st.number_input("Cote d'ouverture :", value=2.50, step=0.05)
+            with col2:
+                cote_actu = st.number_input("Cote actuelle :", value=1.65, step=0.05)
 
-    st.subheader("📊 Variations détectées sur les marchés")
+        # Récupération dynamique des données saisies
+        matchs_analyses = [
+            {
+                "match": nom_du_match,
+                "option": option_jeu,
+                "cote_ouverture": cote_ouvrir,
+                "cote_actuelle": cote_actu
+            },
+            {
+                "match": "Chelsea vs Arsenal",
+                "option": "Mi-temps / Fin de match (X/1)",
+                "cote_ouverture": 4.50,
+                "cote_actuelle": 4.10
+            }
+        ]
 
-    for match in matchs_analyses:
-        if match["cote_ouverture"] > 0:
-            baisse = ((match["cote_ouverture"] - match["cote_actuelle"]) / match["cote_ouverture"]) * 100
+        meilleure_opportunite = None
+        plus_grosse_chute = 0
+
+        st.subheader("📊 Variations détectées sur les marchés")
+
+        for match in matchs_analyses:
+            if match["cote_ouverture"] > 0:
+                baisse = ((match["cote_ouverture"] - match["cote_actuelle"]) / match["cote_ouverture"]) * 100
+            else:
+                baisse = 0
+            
+            st.info(f"⚽ **{match['match']}**\n\n"
+                    f"• Option analysée : **{match['option']}**\n\n"
+                    f"• Ouverture : `{match['cote_ouverture']}` ➡️ Actuelle : `{match['cote_actuelle']}`\n\n"
+                    f"📉 Chute de la valeur : **-{baisse:.2f}%**")
+            
+            if baisse > plus_grosse_chute:
+                plus_grosse_chute = baisse
+                meilleure_opportunite = match
+
+        st.markdown("---")
+        st.subheader("🎯 Le Conseil Algorithmique de l'IA")
+        
+        if meilleure_opportunite and plus_grosse_chute > 0:
+            st.success(f"🔥 **MEILLEURE OPPORTUNITÉ DÉTECTÉE** 🔥\n\n"
+                       f"**Match :** {meilleure_opportunite['match']}\n\n"
+                       f"**Option recommandée :** {meilleure_opportunite['option']}\n\n"
+                       f"📊 **Indice de confiance :** Chute record de **-{plus_grosse_chute:.2f}%** sur le marché.")
         else:
-            baisse = 0
-        
-        st.info(f"⚽ **{match['match']}**\n\n"
-                f"• Option analysée : **{match['option']}**\n\n"
-                f"• Ouverture : `{match['cote_ouverture']}` ➡️ Actuelle : `{match['cote_actuelle']}`\n\n"
-                f"📉 Chute de la valeur : **-{baisse:.2f}%**")
-        
-        if baisse > plus_grosse_chute:
-            plus_grosse_chute = baisse
-            meilleure_opportunite = match
-
-    st.markdown("---")
-    st.subheader("🎯 Le Conseil Algorithmique de l'IA")
-    
-    if meilleure_opportunite and plus_grosse_chute > 0:
-        st.success(f"🔥 **MEILLEURE OPPORTUNITÉ DÉTECTÉE** 🔥\n\n"
-                   f"**Match :** {meilleure_opportunite['match']}\n\n"
-                   f"**Option recommandée :** {meilleure_opportunite['option']}\n\n"
-                   f"📊 **Indice de confiance :** Chute record de **-{plus_grosse_chute:.2f}%** sur le marché.")
+            st.warning("Aucune anomalie ou chute de cote majeure détectée pour le moment.")
+            
+    elif cle_chute == "":
+        st.info("💡 Cette section est réservée aux membres VIP. Entrez votre clé pour y accéder.")
     else:
-        st.warning("Aucune anomalie ou chute de cote majeure détectée pour le moment.")
+        st.error("❌ Clé d'accès incorrecte ou expirée.")
 
 # =========================================================
 # 🟢 BOUTON WHATSAPP GLOBAL
@@ -196,4 +208,4 @@ Comment puis-je procéder au paiement s'il te plaît ?"""
         </div>
     </a>
     """, unsafe_allow_html=True)
-    
+        
