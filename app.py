@@ -135,7 +135,7 @@ elif menu == "🏆 Résultats":
 # 🟢 BOUTON WHATSAPP GLOBAL (Visible partout)
 # ==========================================
 if menu != "⚽ Gratuit":  # On peut l'afficher partout sauf peut-être dans le gratuit si tu veux, ou partout !
-    message_bienvenue = """Bonjour Rodrigue ! 👑 
+    message_bienvenue = """Bonjour BetScope ! 👑 ✅✅
 Je souhaite m'abonner à l'Espace VIP BetScope. Voici les forfaits :
 
 🔹 1 Semaine (7 jours) : 5 000 FCFA
