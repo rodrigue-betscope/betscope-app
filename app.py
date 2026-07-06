@@ -7,7 +7,7 @@
             cote_2_M1 = 7.5                        # <--- Cote Victoire Équipe 2
             
             # =========================================================
-            # ✍️ MATCH 2 : HT/FT (MODIFIE LE NOM ET LES COTES ICI)
+            # ✍️ MATCH 2 : MI-TEMPS / FIN DE MATCH (HT/FT)
             # =========================================================
             match_2 = "Keflavik vs knattspyrnufel" # <--- ÉCRIS LE NOM DU MATCH 2 ICI
             cote_1_M2 = 3.495                      # <--- Cote 1
@@ -19,17 +19,27 @@
             total_p = p1_raw + px_raw + p2_raw
             p1, p2 = p1_raw / total_p, p2_raw / total_p
             
-            if p1 > 0.60: score_p1, fiab_1 = "3 - 0", 94.2
-            elif p1 > 0.50: score_p1, fiab_1 = "2 - 0", 92.1
-            elif p1 > 0.40: score_p1, fiab_1 = "2 - 1", 89.4
-            elif p2 > 0.60: score_p1, fiab_1 = "0 - 3", 94.5
-            elif p2 > 0.50: score_p1, fiab_1 = "0 - 2", 91.8
-            elif p2 > 0.40: score_p1, fiab_1 = "1 - 2", 88.7
-            else: score_p1, fiab_1 = ("0 - 0", 86.4) if cote_X_M1 < 3.20 else ("1 - 1", 88.1)
+            if p1 > 0.60:
+                score_p1, fiab_1 = "3 - 0", 94.2
+            elif p1 > 0.50:
+                score_p1, fiab_1 = "2 - 0", 92.1
+            elif p1 > 0.40:
+                score_p1, fiab_1 = "2 - 1", 89.4
+            elif p2 > 0.60:
+                score_p1, fiab_1 = "0 - 3", 94.5
+            elif p2 > 0.50:
+                score_p1, fiab_1 = "0 - 2", 91.8
+            elif p2 > 0.40:
+                score_p1, fiab_1 = "1 - 2", 88.7
+            else:
+                score_p1, fiab_1 = ("0 - 0", 86.4) if cote_X_M1 < 3.20 else ("1 - 1", 88.1)
                     
-            if cote_1_M2 <= 1.45: ht_ft_p2, fiab_2 = "Mi-temps : 1 / Fin de match : 1", 95.2
-            elif cote_2_M2 <= 1.45: ht_ft_p2, fiab_2 = "Mi-temps : 2 / Fin de match : 2", 94.8
-            elif abs(cote_1_M2 - cote_2_M2) < 0.50: ht_ft_p2, fiab_2 = "Mi-temps : X / Fin de match : X", 89.1
+            if cote_1_M2 <= 1.45:
+                ht_ft_p2, fiab_2 = "Mi-temps : 1 / Fin de match : 1", 95.2
+            elif cote_2_M2 <= 1.45:
+                ht_ft_p2, fiab_2 = "Mi-temps : 2 / Fin de match : 2", 94.8
+            elif abs(cote_1_M2 - cote_2_M2) < 0.50:
+                ht_ft_p2, fiab_2 = "Mi-temps : X / Fin de match : X", 89.1
             else:
                 if cote_1_M2 < cote_2_M2:
                     ht_ft_p2, fiab_2 = ("Mi-temps : X / Fin de match : 1", 91.4) if cote_1_M2 > 1.75 else ("Mi-temps : 1 / Fin de match : 1", 91.4)
@@ -46,7 +56,7 @@
         else:
             st.error("❌ Clé d'accès incorrecte ou expirée.")
 
-# ---------------- -----------------------------------------
+# ---------------------------------------------------------
 # SECTION 3 : RÉSULTATS
 # ---------------------------------------------------------
 elif menu == "🏆 Résultats":
