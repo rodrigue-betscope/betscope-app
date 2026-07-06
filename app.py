@@ -70,16 +70,16 @@ elif menu == "👑 VIP Privé":
             # ✍️ MODIFIE UNIQUEMENT CES COTES CHAQUE MATIN
             
             # MATCH 1 : SCORE EXACT
-            match_1 = "brommapojka vs gais"
-            cote_1_M1 = 2.999
-            cote_X_M1 = 3.38
-            cote_2_M1 = 2.28
+            match_1 = "colwyn bay vs rhyl"knattspyrnufel
+            cote_1_M1 = 1.32
+            cote_X_M1 = 4.75
+            cote_2_M1 = 7.5
             
             # MATCH 2 : MI-TEMPS / FIN DE MATCH (HT/FT)
-            match_2 = "hacken vs djurgardens"
-            cote_1_M2 = 2.425 
-            cote_X_M2 = 3.79  
-            cote_2_M2 = 2.656
+            match_2 = "Keflavik vs "
+            cote_1_M2 = 3.495
+            cote_X_M2 = 4.25
+            cote_2_M2 = 1.81
             
             # --- CALCULS IA ---
             p1_raw, px_raw, p2_raw = 1/cote_1_M1, 1/cote_X_M1, 1/cote_2_M1
