@@ -107,45 +107,51 @@ elif menu == "🏆 Résultats":
 elif menu == "📉 Chute des Cotes":
     st.title("📉 Détecteur de Chute de Cotes")
     
-    # Zone de saisie sécurisée avec mot de passe identique
+    # Zone de saisie sécurisée
     cle_chute = st.text_input("🔑 Entrez votre clé d'accès Détecteur :", type="password", key="chute_pass")
     
     if cle_chute == "DADY2026":
         st.write("Le robot analyse en temps réel les variations suspectes des cotes mondiales.")
 
         # 🔗 ZONE POUR COLLER LE LIEN INTERACTIF
-        lien_site = st.text_input("🔗 Collez le lien du site d'analyse ici :", placeholder="https://www.oddsportal.com/dropping-odds/")
+        lien_site = st.text_input("🔗 Collez le lien du site d'analyse ici :", placeholder="https://www.besoccer.com/match/...")
         
-        if lien_site:
-            st.info(f"🔄 Connexion demandée vers : `{lien_site}`")
-            st.warning("⚠️ *Note : Les sites de cotes bloquent souvent les requêtes directes. Indique-moi le nom de ton site favori pour qu'on crée un décodeur spécialisé !*")
+        # Configuration des valeurs par défaut
+        default_match = "Real Madrid vs Barcelone"
+        
+        # Détecteur automatique de lien BeSoccer
+        if lien_site and "besoccer.com/match/" in lien_site:
+            try:
+                # Extrait proprement les noms des équipes depuis l'URL textuelle
+                parties_url = lien_site.split("besoccer.com/match/")[1].split("/")
+                if len(parties_url) >= 2:
+                    equipe1 = parties_url[0].replace("-", " ").title()
+                    equipe2 = parties_url[1].replace("-", " ").title()
+                    default_match = f"{equipe1} vs {equipe2}"
+                st.success(f"🎯 Match détecté automatiquement : **{default_match}**")
+            except:
+                pass
 
         st.markdown("---")
-        st.subheader("✍️ Mettre à jour les Chutes du Jour")
+        st.subheader("✍️ Ajuster les Cotes du Match")
         
-        # Formulaire interactif pour ton téléphone
-        with st.expander("➕ Ajouter / Modifier un match en direct"):
-            nom_du_match = st.text_input("Nom du match :", "Real Madrid vs Barcelone")
-            option_jeu = st.text_input("Option (ex: Under 2.5, Victoire 1...) :", "Moins de 2.5 buts (Under 2.5)")
+        # Formulaire interactif pré-rempli avec le match détecté
+        with st.expander("➕ Configurer les cotes du match en direct"):
+            nom_du_match = st.text_input("Nom du match :", default_match)
+            option_jeu = st.text_input("Option analysée :", "Moins de 2.5 buts (Under 2.5)")
             col1, col2 = st.columns(2)
             with col1:
-                cote_ouvrir = st.number_input("Cote d'ouverture :", value=2.50, step=0.05)
+                cote_ouvrir = st.number_input("Cote d'ouverture :", value=2.20, step=0.05)
             with col2:
-                cote_actu = st.number_input("Cote actuelle :", value=1.65, step=0.05)
+                cote_actu = st.number_input("Cote actuelle :", value=1.55, step=0.05)
 
-        # Récupération dynamique des données saisies
+        # Calcul dynamique des données
         matchs_analyses = [
             {
                 "match": nom_du_match,
                 "option": option_jeu,
                 "cote_ouverture": cote_ouvrir,
                 "cote_actuelle": cote_actu
-            },
-            {
-                "match": "Chelsea vs Arsenal",
-                "option": "Mi-temps / Fin de match (X/1)",
-                "cote_ouverture": 4.50,
-                "cote_actuelle": 4.10
             }
         ]
 
