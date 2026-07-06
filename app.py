@@ -132,7 +132,7 @@ elif menu == "🏆 Résultats":
     st.markdown("### 📢 Envie d'obtenir les pronostics d'aujourd'hui ?")
 
 # ==========================================
-# 🟢 BOUTON WHATSAPP GLOBAL CORRIGÉ EN HTML
+# 🟢 BOUTON WHATSAPP GLOBAL DÉFINITIF (FORCER LE NAVIGATEUR EXTERNE)
 # ==========================================
 if menu != "⚽ Gratuit":
     message_bienvenue = """Bonjour BetScope ! 👑 ✅✅
@@ -147,12 +147,11 @@ Comment puis-je procéder au paiement s'il te plaît ?"""
     message_encode = urllib.parse.quote(message_bienvenue)
     lien_whatsapp = f"https://api.whatsapp.com/send?phone=237698902204&text={message_encode}"
     
-    # Code HTML pour créer un beau bouton vert WhatsApp qui ne bloque pas l'APK
+    # Correction ici : target="_blank" pour activer le mode "Default Browser" de ton APK
     st.markdown(f"""
-    <a href="{lien_whatsapp}" target="_self" style="text-decoration: none;">
+    <a href="{lien_whatsapp}" target="_blank" style="text-decoration: none;">
         <div style="background-color: #25D366; color: white; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0px 4px 6px rgba(0,0,0,0.1);">
             💬 Acheter mon accès VIP sur WhatsApp
         </div>
     </a>
     """, unsafe_allow_html=True)
-
