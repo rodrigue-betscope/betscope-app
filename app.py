@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 from datetime import datetime
+import urllib.parse
 
 # L'application va chercher l'image 73766_3.png pour en faire son icône officielle
 st.set_page_config(page_title="Rodrigue Pro Puissant Prédiction", page_icon="73766_3.png", layout="centered")
@@ -49,7 +50,7 @@ if menu == "⚽ Pronostics Gratuits":
 elif menu == "👑 Espace VIP Privé":
     st.subheader("🔒 Bienvenue dans l'Espace VIP")
     
-    mot_de_passe_correct = "DADY2026"
+    mot_de_passe_correct = "RODRIGUE2026"
     code_entre = st.text_input("Entrez votre clé d'accès VIP :", type="password", placeholder="Clé Secrète VIP...")
     
     if code_entre:
@@ -63,15 +64,15 @@ elif menu == "👑 Espace VIP Privé":
             # =================================================================
             # ✍️ MODIFIE UNIQUEMENT CES LIGNES CHAQUE MATIN AVEC TES DEUX MATCHS :
             # =================================================================
-            match_1 = "Ryazan II vs Fakel II "
-            cote_1_M1 = 2.60
-            cote_X_M1 = 4.4
-            cote_2_M1 = 1.97
+            match_1 = "Shanghai vs zhejiang"
+            cote_1_M1 = 1.35
+            cote_X_M1 = 4.80
+            cote_2_M1 = 6.50
             
-            match_2 = "Heegan vs Gaadiidka"
-            cote_1_M2 = 1.95
-            cote_X_M2 = 3.77
-            cote_2_M2 = 3.01
+            match_2 = "Qingdao vs Chengdu"
+            cote_1_M2 = 4.20
+            cote_X_M2 = 3.65
+            cote_2_M2 = 1.62
             # =================================================================
             
             # --- 🤖 ALGORITHME AVANCÉ IA : MATCH 1 (SCORE EXACT DE HAUTE PRÉCISION) ---
@@ -127,6 +128,20 @@ elif menu == "👑 Espace VIP Privé":
     st.markdown("---")
     st.markdown("### 📢 Comment obtenir votre clé d'accès VIP ?")
     
-    # Correction définitive du lien WhatsApp avec ton vrai numéro
-    lien_whatsapp = "https://wa.me/237698902204?text=Bonjour%20Rodrigue%20je%20veux%20mon%20accès%20VIP"
+    # 💰 TEXTE AUTOMATIQUE DU MENU DE BIENVENUE AVEC TES TARIFS
+    message_bienvenue = """Bonjour Rodrigue ! 👑 
+Je souhaite m'abonner à l'Espace VIP BetScope. Voici les forfaits :
+
+🔹 1 Semaine (7 jours) : 5 000 FCFA
+🔹 1 Mois (30 jours) : 15 000 FCFA
+🔹 1 An (365 jours) : 50 000 FCFA
+
+Comment puis-je procéder au paiement s'il te plaît ?"""
+
+    # Encodage sécurisé pour WhatsApp (gère les sauts de ligne et emojis)
+    message_encode = urllib.parse.quote(message_bienvenue)
+    
+    # Lien final mis à jour avec ton vrai numéro
+    lien_whatsapp = f"https://wa.me/237698902204?text={message_encode}"
+    
     st.link_button("💬 Acheter mon accès VIP sur WhatsApp", lien_whatsapp, use_container_width=True)
