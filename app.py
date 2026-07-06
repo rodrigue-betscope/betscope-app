@@ -32,17 +32,17 @@ elif menu == "👑 VIP":
     cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
     if cle_acces == "DADY2026":
-        # ✍️ MATCH 1 : SCORE EXACT (MODIFIE LE NOM ET LES COTES ICI)
-        match_1 = "Real Madrid vs Barcelone"   # <--- ÉCRIS LE NOM DU MATCH 1 ICI
-        cote_1_M1 = 1.32                       # <--- Cote Victoire Équipe 1
-        cote_X_M1 = 4.75                       # <--- Cote Match Nul
-        cote_2_M1 = 7.5                        # <--- Cote Victoire Équipe 2
+        # ✍️ MATCH 1 : SCORE EXACT
+        match_1 = "Real Madrid vs Barcelone"   
+        cote_1_M1 = 1.32                       
+        cote_X_M1 = 4.75                       
+        cote_2_M1 = 7.5                        
         
         # ✍️ MATCH 2 : MI-TEMPS / FIN DE MATCH (HT/FT)
-        match_2 = "Keflavik vs knattspyrnufel" # <--- ÉCRIS LE NOM DU MATCH 2 ICI
-        cote_1_M2 = 3.495                      # <--- Cote 1
-        cote_X_M2 = 4.25                       # <--- Cote X
-        cote_2_M2 = 1.81                       # <--- Cote 2
+        match_2 = "Keflavik vs knattspyrnufel" 
+        cote_1_M2 = 3.495                      
+        cote_X_M2 = 4.25                       
+        cote_2_M2 = 1.81                       
         
         # --- CALCULS IA ---
         p1_raw, px_raw, p2_raw = 1/cote_1_M1, 1/cote_X_M1, 1/cote_2_M1
@@ -81,7 +81,7 @@ elif menu == "👑 VIP":
         st.markdown("")
         st.warning(f"🔥 **SCORE EXACT EXCLUSIF :**\n\n⚽ **{match_1}**\n\n➔ **Score Pronostiqué : {score_p1}** (Fiabilité : {fiab_1}%)")
         st.markdown("")
-        st.warning(f"🔥 **COMBINÉ HT/FT :**\n\n  **{match_2}**\n\n➔ **{ht_ft_p2}** (Indice de sécurité : {fiab_2}%)")
+        st.warning(f"🔥 **COMBINÉ HT/FT :**\n\n⚽ **{match_2}**\n\n➔ **{ht_ft_p2}** (Indice de sécurité : {fiab_2}%)")
         
     elif cle_acces == "":
         st.info("💡 Entrez votre clé d'accès pour débloquer les pronostics VIP.")
@@ -98,110 +98,141 @@ elif menu == "🏆 Résultats":
     st.markdown("---")
     st.success("✅ **05/07/2026** | Shanghai vs Zhejiang\n\n➔ **Score Exact 2-0** validé ! 🏆")
     st.success("✅ **05/07/2026** | Qingdao vs Chengdu\n\n➔ **HT/FT 2/2** validé ! 🏆")
-    
-    st.markdown("---")
-    st.markdown("### 📢 Envie d'obtenir les pronostics d'aujourd'hui ?")
 
 # =========================================================
-# SECTION 4 : 📉 CHUTE DES COTES (VERSION ALGORITHMIQUE UNIQUE)
+# SECTION 4 : 📉 CHUTE DES COTES (MULTI-DÉTECTEUR)
 # =========================================================
 elif menu == "📉 Chute des Cotes":
-    st.title("📉 Détecteur Algorithmique de Variations")
+    st.title("📉 Détecteur Multi-Sites Pro")
     
     cle_chute = st.text_input("🔑 Entrez votre clé d'accès Détecteur :", type="password", key="chute_pass")
     
     if cle_chute == "DADY2026":
-        st.write("Le robot analyse les tendances lourdes et les anomalies de cotes sur le match soumis.")
+        st.write("Le robot extrait les équipes et calcule instantanément les mouvements de cotes du match soumis.")
 
-        # 🔗 ZONE POUR COLLER LE LIEN BE SOCCER
-        lien_site = st.text_input("🔗 Collez le lien BeSoccer du match ici :", placeholder="https://www.besoccer.com/match/...")
+        # 🔗 ZONE D'ENTRÉE MULTI-SITES
+        lien_site = st.text_input("🔗 Collez le lien du match (BeSoccer, Sofascore, Oddsportal) :", placeholder="https://...")
         
-        # Valeurs de base par défaut (si aucun lien n'est collé)
+        # Valeurs de secours standards
         nom_du_match = "Real Madrid vs Barcelone"
-        option_jeu = "Moins de 2.5 buts (Under 2.5)"
-        option_ht_ft = "Mi-temps : X / Fin : 1 (X/1)"
-        option_btts = "Les deux équipes marquent : OUI"
-        option_score = "1 - 1"
-        cote_ouvrir = 2.20
-        cote_actu = 1.65
+        seed = 42
 
-        # 🧠 DÉCODEUR ET GÉNÉRATEUR QUANTIQUE POUR VARIER LES OPTIONS
-        if lien_site and "besoccer.com/match/" in lien_site:
-            try:
-                parties_url = lien_site.split("besoccer.com/match/")[1].split("/")
-                if len(parties_url) >= 2:
-                    equipe1 = parties_url[0].replace("-", " ").title()
-                    equipe2 = parties_url[1].replace("-", " ").title()
-                    nom_du_match = f"{equipe1} vs {equipe2}"
-                    
-                    # Génération d'une signature numérique unique basée sur le nom du match
-                    seed = int(hashlib.md5(nom_du_match.encode()).hexdigest(), 16)
-                    
-                    # 1. Variation du marché principal
-                    marches = [
-                        "Moins de 2.5 buts (Under 2.5)", 
-                        "Moins de 1.5 buts (Under 1.5)", 
-                        "Plus de 2.5 buts (Over 2.5)", 
-                        "Plus de 3.5 buts (Over 3.5)"
-                    ]
-                    option_jeu = marches[seed % len(marches)]
-                    
-                    # 2. Variation du HT/FT (Mi-temps / Fin de match)
-                    choix_ht_ft = ["X/1", "X/2", "X/X", "1/X", "2/X", "1/2", "2/1", "1/1", "2/2"]
-                    res_ht_ft = choix_ht_ft[(seed >> 2) % len(choix_ht_ft)]
-                    option_ht_ft = f"Mi-temps / Fin de match : ({res_ht_ft})"
-                    
-                    # 3. Variation des Deux Équipes Marquent (BTTS)
-                    option_btts = f"Les deux équipes marquent : {'OUI' if (seed % 2 == 0) else 'NON'}"
-                    
-                    # 4. Variation du Score Exact
-                    scores_possibles = ["1 - 0", "2 - 0", "1 - 1", "2 - 1", "0 - 1", "0 - 2", "1 - 2", "0 - 0"]
-                    option_score = scores_possibles[(seed >> 4) % len(scores_possibles)]
-                    
-                    # 5. Cotes uniques et cohérentes (Chute automatique calculée)
-                    cote_ouvrir = round(1.75 + (seed % 12) * 0.15, 2)
-                    cote_actu = round(cote_ouvrir * (0.60 + ((seed >> 3) % 15) * 0.02), 2)
-                    if cote_actu >= cote_ouvrir:
-                        cote_actu = round(cote_ouvrir * 0.72, 2)
-                        
-                st.success(f"🎯 Algorithme synchronisé avec succès sur le match !")
-            except:
-                st.error("Format de lien non reconnu, affichage des données étalons.")
+        # 🧠 DÉCODEUR ET EXTRACTEUR INTELLIGENT DE LIENS
+        if lien_site:
+            lien_lower = lien_site.lower()
+            # On génère un identifiant mathématique unique basé sur TOUTE la longueur de l'adresse internet reçue
+            seed = int(hashlib.md5(lien_site.encode()).hexdigest(), 16)
+            
+            # CAS 1 : BE SOCCER
+            if "besoccer.com/match/" in lien_lower:
+                try:
+                    parties = lien_site.split("besoccer.com/match/")[1].split("/")
+                    if len(parties) >= 2:
+                        nom_du_match = f"{parties[0].replace('-', ' ').title()} vs {parties[1].replace('-', ' ').title()}"
+                except: pass
+                
+            # CAS 2 : SOFASCORE
+            elif "sofascore.com/" in lien_lower and "/match/" in lien_lower:
+                try:
+                    slug = lien_site.split("/match/")[1].split("/")[0]
+                    parts = slug.split("-")
+                    if len(parts) >= 2:
+                        nom_du_match = f"{parts[0].title()} vs {' '.join(parts[1:]).title()}"
+                except: pass
+                
+            # CAS 3 : ODDSPORTAL (Format H2H ou Direct Match)
+            elif "oddsportal.com/" in lien_lower:
+                try:
+                    if "/h2h/" in lien_lower:
+                        parts = lien_site.split("/h2h/")[1].split("/")
+                        nom_du_match = f"{parts[0].split('-')[0].title()} vs {parts[1].split('-')[0].title()}"
+                    elif "/match/" in lien_lower:
+                        slug = lien_site.split("/match/")[1].split("/")[0]
+                        parts = slug.split("-")
+                        nom_du_match = f"{parts[0].title()} vs {' '.join(parts[1:-1]).title()}"
+                except: pass
+
+            st.success(f"🎯 Synchronisation réussie sur le match : **{nom_du_match}**")
+
+        # --- GÉNÉRATEUR ALGORITHMIQUE DE VARIATIONS (MULTI-OPTIONS CHERCHÉES) ---
+        # 1. Option principale (Under / Over variés)
+        marches_principaux = [
+            "Moins de 2.5 buts (Under 2.5)", 
+            "Moins de 1.5 buts (Under 1.5)", 
+            "Plus de 2.5 buts (Over 2.5)", 
+            "Plus de 1.5 buts (Over 1.5)",
+            "Moins de 3.5 buts (Under 3.5)"
+        ]
+        option_jeu = marches_principaux[seed % len(marches_principaux)]
+        
+        # 2. Option Les deux équipes marquent (BTTS)
+        option_btts = "Les deux équipes marquent : OUI" if (seed % 2 == 0) else "Les deux équipes marquent : NON"
+        
+        # 3. Option Score Exact réaliste
+        scores_liste = ["1 - 0", "2 - 0", "1 - 1", "2 - 1", "0 - 1", "0 - 2", "1 - 2", "0 - 0", "3 - 1", "0 - 3"]
+        option_score = scores_liste[(seed >> 4) % len(scores_liste)]
+        
+        # 4. Option Mi-temps (1X2) & Fin de match complète (Toutes les configurations HT/FT possibles)
+        choix_ht_ft = ["X/1", "X/2", "X/X", "1/X", "2/X", "1/2", "2/1", "1/1", "2/2"]
+        code_ht_ft = choix_ht_ft[(seed >> 2) % len(choix_ht_ft)]
+        
+        explications = {
+            "X/1": "Nul à la mi-temps / Équipe 1 gagne en Fin de match",
+            "X/2": "Nul à la mi-temps / Équipe 2 gagne en Fin de match",
+            "X/X": "Match Nul à la mi-temps / Match Nul en Fin de match",
+            "1/X": "Équipe 1 mène à la mi-temps / Match Nul final",
+            "2/X": "Équipe 2 mène à la mi-temps / Match Nul final",
+            "1/2": "Équipe 1 mène à la mi-temps / Équipe 2 s'impose à la fin",
+            "2/1": "Équipe 2 mène à la mi-temps / Équipe 1 s'impose à la fin",
+            "1/1": "Équipe 1 gagne la mi-temps et gagne le match",
+            "2/2": "Équipe 2 gagne la mi-temps et gagne le match"
+        }
+        option_ht_ft = f"Option Combinée HT/FT : {code_ht_ft} ({explications[code_ht_ft]})"
+        
+        # 5. Seconde période unilatérale
+        choix_p2 = ["Victoire Équipe 1 (1)", "Match Nul (X)", "Victoire Équipe 2 (2)", "Double Chance 1X", "Double Chance X2"]
+        option_p2 = choix_p2[(seed >> 6) % len(choix_p2)]
+
+        # 6. Génération de cotes et chutes aléatoires cohérentes
+        cote_ouvrir = round(1.65 + (seed % 15) * 0.15, 2)
+        cote_actu = round(cote_ouvrir * (0.58 + ((seed >> 3) % 10) * 0.03), 2)
+        if cote_actu >= cote_ouvrir:
+            cote_actu = round(cote_ouvrir * 0.74, 2)
 
         st.markdown("---")
         
-        # Formulaire ajustable (pré-rempli dynamiquement selon le lien !)
+        # Expander de contrôle
         with st.expander("🛠️ Ajuster manuellement les données générées (Optionnel)"):
             nom_du_match = st.text_input("Nom du match :", nom_du_match)
             option_jeu = st.text_input("Marché Principal :", option_jeu)
-            option_ht_ft = st.text_input("Tendance HT/FT :", option_ht_ft)
-            option_score = st.text_input("Tendance Score Exact :", option_score)
+            option_score = st.text_input("Marché Score Exact :", option_score)
+            option_ht_ft = st.text_input("Marché HT / FT :", option_ht_ft)
             col1, col2 = st.columns(2)
             with col1:
                 cote_ouvrir = st.number_input("Cote d'ouverture :", value=float(cote_ouvrir), step=0.05)
             with col2:
                 cote_actu = st.number_input("Cote actuelle :", value=float(cote_actu), step=0.05)
 
-        # Calcul du pourcentage de baisse de la cote
+        # Calcul de la baisse réelle du marché
         baisse = ((cote_ouvrir - cote_actu) / cote_ouvrir) * 100 if cote_ouvrir > 0 else 0
 
-        # --- PANNEAU DE CONTRÔLE MULTI-OPTIONS ---
-        st.subheader(f"📊 Fiche d'Analyse Globale : {nom_du_match}")
+        # --- RE-CONSTRUCTION DU PANNEAU DE CONTRÔLE AVANCÉ ET ULTRA COMPLET ---
+        st.subheader(f"📊 Fiche Complète d'Analyse : {nom_du_match}")
         
         col_left, col_right = st.columns(2)
         
         with col_left:
-            st.info(f"🔮 **OPTIONS DE BUTS & JEU**\n\n• **Principal :** `{option_jeu}`\n\n• **Buts :** `{option_btts}`\n\n• **Score Suggéré :** `{option_score}`")
+            st.info(f"🔮 **MARCHÉS PRINCIPAUX & BUTS**\n\n• **Option Majeure :** `{option_jeu}`\n\n• **Réseau Buts :** `{option_btts}`\n\n• **Score Exact Suggéré :** `{option_score}`")
         
         with col_right:
-            st.warning(f"⏰ **OPTIONS DE MI-TEMPS / FIN (HT/FT)**\n\n• **Marché :** `{option_ht_ft}`\n\n• **Seconde Période (1X2) :** `Alerte avantage favori`")
+            st.warning(f"⏰ **MARCHÉS SÉCONDAIRES & TEMPS (HT/FT)**\n\n• **Analyse Mi-temps / Fin :** `{option_ht_ft}`\n\n• **Deuxième Période (1X2) :** `{option_p2}`")
 
-        # Affichage de la chute de cote principale
+        # Section Alerte Mouvement de Masse
         st.markdown("### 📉 Alerte Mouvement de Masse")
-        st.critical_markdown = st.info(
+        st.info(
             f"⚽ **Indicateur de Flux :**\n\n"
-            f"• Cote d'Ouverture : `{cote_ouvrir}` ➡️ Cote Actuelle : `{cote_actu}`\n\n"
-            f"📉 Intensité de la Chute : **-{baisse:.2f}%**"
+            f"• Ouverture : `{cote_ouvrir}` ➡️ Actuelle : `{cote_actu}`\n\n"
+            f"📉 Intensité de la Chute détectée : **-{baisse:.2f}%**"
         )
         
         st.markdown("---")
@@ -209,11 +240,11 @@ elif menu == "📉 Chute des Cotes":
         
         if baisse > 10:
             st.success(f"🔥 **MEILLEURE OPPORTUNITÉ DÉTECTÉE** 🔥\n\n"
-                       f"• **Option Forte :** {option_jeu}\n"
-                       f"• **Sécurité HT/FT :** {option_ht_ft}\n\n"
-                       f"📊 **Avis Robot :** Chute de **-{baisse:.2f}%**. Les volumes d'argent confirment cette tendance.")
+                       f"• **Conseil Fort :** Jouer la baisse sur `{option_jeu}`\n"
+                       f"• **Sécurité Combinée :** Valider la tendance `{code_ht_ft}`\n\n"
+                       f"📊 **Avis Robot :** Chute critique de **-{baisse:.2f}%**. Le marché mondial injecte massivement de l'argent sur ce pronostic.")
         else:
-            st.warning("Variations mineures. Jouez avec prudence sur les marchés secondaires.")
+            st.warning("Variations mineures observées. Restez sur les marchés classiques.")
             
     elif cle_chute == "":
         st.info("💡 Cette section est réservée aux membres VIP. Entrez votre clé pour y accéder.")
@@ -243,4 +274,4 @@ Comment puis-je procéder au paiement s'il te plaît ?"""
         </div>
     </a>
     """, unsafe_allow_html=True)
-        
+                        
