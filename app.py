@@ -32,7 +32,7 @@ elif menu == "👑 VIP":
     
     cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
-    if cle_acces == "DADY2026":
+    if cle_acces == "":
         st.success("🔓 Accès VIP accordé.")
         st.write("Collez le lien d'un match ci-dessous. Notre IA va analyser la tendance, la forme et les absences pour générer tous les pronostics.")
         
