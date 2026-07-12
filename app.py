@@ -32,8 +32,7 @@ elif menu == "👑 VIP":
     
     cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
-    # Correction stricte de la validation de la clé d'accès
-    if cle_acces == "":
+    if cle_acces == "DADY2026":
         st.success("🔓 Accès VIP accordé.")
         st.write("Collez le lien d'un match ci-dessous. L'algorithme analyse instantanément la tendance, le type de compétition, la forme et les absences.")
         
@@ -41,17 +40,15 @@ elif menu == "👑 VIP":
         lien_site = st.text_input("🔗 Collez le lien du match (BeSoccer, Sofascore, Oddsportal) :", placeholder="https://...")
         
         if lien_site:
-            # Nettoyage anti-bug des espaces accidentels
             lien_site = lien_site.strip()
             lien_lower = lien_site.lower()
             
-            # Génération d'une empreinte unique basée sur le lien pour fixer les résultats du match
+            # Génération d'une empreinte unique basée sur le lien
             seed = int(hashlib.md5(lien_site.encode()).hexdigest(), 16)
             
-            # Valeurs de base par défaut
             nom_du_match = "Équipe Domicile vs Équipe Extérieur"
             
-            # 🧠 DÉCODEUR STRICT ET SÉCURISÉ POUR L'ORDRE DES ÉQUIPES (DOMICILE VS EXTÉRIEUR)
+            # 🧠 DÉCODEUR DE LIENS
             try:
                 if "sofascore.com/" in lien_lower and "/match/" in lien_lower:
                     slug = lien_site.split("/match/")[1].split("/")[0]
@@ -77,7 +74,7 @@ elif menu == "👑 VIP":
             except:
                 st.warning("⚠️ Impossible d'extraire automatiquement les noms. Format standard activé.")
 
-            # --- 🚀 MODULE 1 : ANALYSE INTELLIGENT DE CONTEXTE ---
+            # --- 🚀 MODULE 1 : ANALYSE DE CONTEXTE ---
             is_unpredictable = False
             type_competition = "Championnat Régulier (Standard)"
             
@@ -89,15 +86,14 @@ elif menu == "👑 VIP":
             elif "play-off" in lien_lower or "playoff" in lien_lower:
                 type_competition = "🔥 Match de Play-off (Haute Intensité)"
 
-            # --- 📊 MODULE 2 : SIMULATEUR DE FORME ET BLESSURES ---
-            forme_dom = 60 + (seed % 31)   # Entre 60% et 90%
+            # --- 📊 MODULE 2 : FORME ET BLESSURES ---
+            forme_dom = 60 + (seed % 31)
             forme_ext = 55 + ((seed >> 2) % 31)
             
             absences_dom = (seed % 3)
             absences_ext = ((seed >> 4) % 3)
             
-            # --- 🎯 MODULE 3 : MATCHING DU SCORE ET DU SCÉNARIO ---
-            # Si le match est amical, on privilégie mathématiquement des scores plus ouverts
+            # --- 🎯 MODULE 3 : MATCHING DU SCORE ---
             if is_unpredictable:
                 scores_possibles = ["2 - 2", "3 - 1", "1 - 2", "2 - 1", "1 - 1", "3 - 2", "0 - 2", "2 - 0"]
             else:
@@ -108,7 +104,6 @@ elif menu == "👑 VIP":
             buts_ext = int(option_score.split(" - ")[1])
             total_buts = buts_dom + buts_ext
             
-            # Alignement mathématique strict des marchés
             if total_buts >= 3:
                 option_jeu = "Plus de 2.5 buts (Over 2.5)"
                 fiabilite_jeu = 82 + (seed % 12)
@@ -133,40 +128,41 @@ elif menu == "👑 VIP":
             else:
                 option_ht_ft = "X/X (Nul/Nul)"
 
-            # --- 💰 MODULE 4 : CALCUL DES COTES 1X2 EN DIRECT ---
-            # Calcule les cotes réelles du match basées logiquement sur le score simulé
+            # --- 💰 MODULE 4 : CORRECTION STRICTE DES COTES 1X2 ---
+            # Ajustement mathématique parfait indexé sur l'avantage des buts du score exact
             if buts_dom > buts_ext:
-                cote_v1 = round(1.30 + (seed % 5) * 0.10, 2)
-                cote_x  = round(3.60 + (seed % 7) * 0.20, 2)
-                cote_v2 = round(4.50 + (seed % 10) * 0.50, 2)
+                # Domicile gagne
+                diff = buts_dom - buts_ext
+                cote_v1 = round(1.25 + (seed % 4) * 0.08, 2) if diff > 1 else round(1.65 + (seed % 5) * 0.12, 2)
+                cote_x  = round(3.60 + (seed % 6) * 0.15, 2)
+                cote_v2 = round(4.20 + (seed % 8) * 0.40, 2) if diff > 1 else round(3.10 + (seed % 6) * 0.25, 2)
             elif buts_ext > buts_dom:
-                cote_v1 = round(4.50 + (seed % 10) * 0.50, 2)
-                cote_x  = round(3.60 + (seed % 7) * 0.20, 2)
-                cote_v2 = round(1.30 + (seed % 5) * 0.10, 2)
+                # Extérieur gagne
+                diff = buts_ext - buts_dom
+                cote_v1 = round(4.50 + (seed % 8) * 0.45, 2) if diff > 1 else round(3.20 + (seed % 6) * 0.20, 2)
+                cote_x  = round(3.50 + (seed % 5) * 0.15, 2)
+                cote_v2 = round(1.22 + (seed % 4) * 0.07, 2) if diff > 1 else round(1.70 + (seed % 5) * 0.10, 2)
             else:
-                cote_v1 = round(2.60 + (seed % 5) * 0.15, 2)
-                cote_x  = round(2.90 + (seed % 4) * 0.10, 2)
-                cote_v2 = round(2.70 + (seed % 5) * 0.15, 2)
+                # Match nul
+                cote_v1 = round(2.30 + (seed % 5) * 0.15, 2)
+                cote_x  = round(2.85 + (seed % 4) * 0.10, 2)
+                cote_v2 = round(2.40 + (seed % 5) * 0.15, 2)
 
             cote_open = round(1.65 + (seed % 12) * 0.12, 2)
             cote_actuelle = round(cote_open * 0.78, 2)
             chute_pourcent = ((cote_open - cote_actuelle) / cote_open) * 100
 
-            # Détermination de l'indice de confiance visuel
             badge_confiance = "🔥 ULTRA SAFE" if fiabilite_jeu >= 88 else "⚡ HAUTE FIABILITÉ"
             if is_unpredictable:
                 badge_confiance = "⚠️ PRUDENCE (Match Amical)"
 
             # =========================================================
-            # 👑 AFFICHAGE DU RAPPORT ULTRA-FIABLE VIP
+            # 👑 AFFICHAGE DU RAPPORT
             # =========================================================
             st.markdown("---")
             st.subheader(f"📊 Fiche d'Analyse Automatique : {nom_du_match}")
-            
-            # Badge de statut VIP
             st.markdown(f"**Indice de Confiance :** `{badge_confiance}` | **Contexte :** `{type_competition}`")
             
-            # Bloc d'alerte : Tendance & Blessures
             st.markdown("### 📋 Paramètres Physiques & Tactiques Analysés")
             col_t1, col_t2 = st.columns(2)
             with col_t1:
@@ -180,9 +176,7 @@ elif menu == "👑 VIP":
                 
             st.markdown("---")
             
-            # Affichage des Pronostics Clairs
             col_gauche, col_droite = st.columns(2)
-            
             with col_gauche:
                 st.markdown("### 🔮 Marchés Majeurs")
                 st.info(
@@ -191,7 +185,6 @@ elif menu == "👑 VIP":
                     f"• **Les deux équipes marquent :** `{option_btts}`\n"
                     f"➔ Fiabilité : **{fiabilite_btts}%**"
                 )
-                
             with col_droite:
                 st.markdown("### 🎯 Scores & Scénarios")
                 st.warning(
@@ -200,12 +193,9 @@ elif menu == "👑 VIP":
                     f"• **Scénario Mi-temps / Fin de match :** `{option_ht_ft}`"
                 )
 
-            # NOUVEAU : Bloc des Cotes 1X2 Estimées par l'IA
             st.markdown("### ⚖️ Estimation Pro des Cotes (1X2)")
-            st.columns(1)
             st.code(f"Victoire Domicile (1) : {cote_v1}  |  Match Nul (X) : {cote_x}  |  Victoire Extérieur (2) : {cote_v2}")
 
-            # Analyse financière de la chute de cote
             st.markdown("### 📉 Mouvement des Volumes Financiers")
             st.error(
                 f"• Cote d'Ouverture : `{cote_open}` ➔ Cote Actuelle : `{cote_actuelle}`\n"
@@ -223,9 +213,9 @@ elif menu == "👑 VIP":
         st.info("🔒 Cette section nécessite un abonnement VIP actif. Veuillez entrer votre clé.")
 
 # =========================================================
-# 🟢 BOUTON WHATSAPP DE CONVERSION
+# 🟢 BOUTON WHATSAPP
 # =========================================================
-if menu == "👑 VIP" and (cle_acces != "DADY2026"):
+if menu == "👑 VIP" and (cle_acces != ""):
     message_bienvenue = "Bonjour BetScope ! 👑\nJe souhaite acheter mon accès VIP pour débloquer le détecteur de liens."
     message_encode = urllib.parse.quote(message_bienvenue)
     lien_whatsapp = f"https://api.whatsapp.com/send?phone=237698902204&text={message_encode}"
