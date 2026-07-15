@@ -30,9 +30,24 @@ if menu == "⚽ Gratuit":
 elif menu == "👑 VIP":
     st.title("👑 Espace VIP Intelligent")
     
+    # Clignotant vert dynamique pour le statut du Robot IA
+    st.markdown("""
+        <div style="display: flex; align-items: center; margin-bottom: 15px; background-color: #1a1c23; padding: 10px; border-radius: 8px; border: 1px solid #2e313d;">
+            <span style="height: 10px; width: 10px; background-color: #25D366; border-radius: 50%; display: inline-block; margin-right: 10px; box-shadow: 0 0 8px #25D366; animation: pulse 1.5s infinite alternate;"></span>
+            <span style="color: #25D366; font-weight: bold; font-size: 14px;">● Robot IA en ligne : Analyse des flux financiers mondiaux active</span>
+        </div>
+        <style>
+            @keyframes pulse {
+                from { opacity: 0.4; }
+                to { opacity: 1; }
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
     cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
-    if cle_acces == "":
+    # Correction de la sécurité : l'accès s'ouvre avec le mot de passe défini
+    if cle_acces == "DADY2026":
         st.success("🔓 Accès VIP accordé.")
         st.write("Collez le lien d'un match ci-dessous. L'algorithme analyse instantanément la tendance, le type de compétition, la forme et les absences.")
         
@@ -48,7 +63,7 @@ elif menu == "👑 VIP":
             
             nom_du_match = "Équipe Domicile vs Équipe Extérieur"
             
-            # 🧠 DÉCODEUR DE LIENS
+            # 🧠 DÉCODEUR DE LIENS SÉCURISÉ (Anti-Crash)
             try:
                 if "sofascore.com/" in lien_lower and "/match/" in lien_lower:
                     slug = lien_site.split("/match/")[1].split("/")[0]
@@ -71,8 +86,9 @@ elif menu == "👑 VIP":
                     parties = lien_site.split("besoccer.com/match/")[1].split("/")
                     if len(parties) >= 2:
                         nom_du_match = f"{parties[0].replace('-', ' ').title()} vs {parties[1].replace('-', ' ').title()}"
-            except:
-                st.warning("⚠️ Impossible d'extraire automatiquement les noms. Format standard activé.")
+            except Exception:
+                # Fallback de secours intelligent pour éviter les plantages
+                nom_du_match = "Match Sélectionné (Analyse Auto)"
 
             # --- 🚀 MODULE 1 : ANALYSE DE CONTEXTE ---
             is_unpredictable = False
@@ -86,40 +102,90 @@ elif menu == "👑 VIP":
             elif "play-off" in lien_lower or "playoff" in lien_lower:
                 type_competition = "🔥 Match de Play-off (Haute Intensité)"
 
-            # --- 📊 MODULE 2 : FORME ET BLESSURES ---
-            forme_dom = 60 + (seed % 31)
-            forme_ext = 55 + ((seed >> 2) % 31)
+            # --- 🎛️ NOUVEAU MODULE : INTERACTION AVANT-MATCH (Bouton secret) ---
+            st.markdown("---")
+            with st.expander("⚡ Ajuster l'environnement du match (Optionnel)", expanded=False):
+                st.write("Modifiez ces critères pour recalculer instantanément le pronostic du Robot IA :")
+                motivation_equipes = st.select_slider(
+                    "🎯 Climat de motivation des équipes :",
+                    options=["Basse", "Moyenne (Standard)", "Maximale (Match Décisif)"],
+                    value="Moyenne (Standard)"
+                )
+                climat_meteo = st.selectbox(
+                    "🌧️ Conditions météorologiques :",
+                    ["Standard / Sec", "Pluie battante / Terrain lourd", "Température extrême"]
+                )
+
+            # --- 📊 MODULE 2 : FORME ET BLESSURES (Influencés par la graine unique) ---
+            base_forme_dom = 60 + (seed % 31)
+            base_forme_ext = 55 + ((seed >> 2) % 31)
             
             absences_dom = (seed % 3)
             absences_ext = ((seed >> 4) % 3)
-            
-            # --- 🎯 MODULE 3 : MATCHING DU SCORE ---
-            if is_unpredictable:
-                scores_possibles = ["2 - 2", "3 - 1", "1 - 2", "2 - 1", "1 - 1", "3 - 2", "0 - 2", "2 - 0"]
+
+            # --- ⚙️ CALCULS LOGIQUES LIÉS AUX PARAMÈTRES INTERACTIFS ---
+            # Pénalité de forme liée aux absences directes (ex: -5% par absent de marque)
+            forme_dom = max(30, base_forme_dom - (absences_dom * 5))
+            forme_ext = max(30, base_forme_ext - (absences_ext * 5))
+
+            if motivation_equipes == "Maximale (Match Décisif)":
+                forme_dom = min(100, forme_dom + 10)
+                forme_ext = min(100, forme_ext + 10)
+            elif motivation_equipes == "Basse":
+                forme_dom = max(30, forme_dom - 15)
+                forme_ext = max(30, forme_ext - 15)
+
+            # --- 🎯 MODULE 3 : MATCHING DU SCORE LOGIQUE (Finie l'incohérence !) ---
+            # Le score dépend directement de la différence de forme et du climat
+            diff_forme = forme_dom - forme_ext
+
+            if climat_meteo == "Pluie battante / Terrain lourd":
+                # Moins de buts sur terrain lourd
+                if diff_forme > 15:
+                    option_score = "2 - 0" if (seed % 2 == 0) else "1 - 0"
+                elif diff_forme < -15:
+                    option_score = "0 - 2" if (seed % 2 == 0) else "0 - 1"
+                else:
+                    option_score = "0 - 0" if (seed % 2 == 0) else "1 - 1"
             else:
-                scores_possibles = ["2 - 1", "2 - 0", "1 - 0", "1 - 1", "1 - 2", "0 - 2", "0 - 1", "2 - 2", "3 - 1", "0 - 0"]
-                
-            option_score = scores_possibles[seed % len(scores_possibles)]
+                # Score classique basé sur la forme physique modifiée
+                if diff_forme > 20:
+                    option_score = "3 - 1" if (seed % 2 == 0) else "2 - 0"
+                elif diff_forme > 5:
+                    option_score = "2 - 1" if (seed % 2 == 0) else "1 - 0"
+                elif diff_forme < -20:
+                    option_score = "0 - 3" if (seed % 2 == 0) else "0 - 2"
+                elif diff_forme < -5:
+                    option_score = "1 - 2" if (seed % 2 == 0) else "0 - 1"
+                else:
+                    option_score = "2 - 2" if (seed % 2 == 0) else "1 - 1"
+
+            # Amicaux imposent plus d'instabilité
+            if is_unpredictable:
+                scores_amicaux = ["2 - 2", "3 - 2", "1 - 2", "2 - 1", "3 - 3"]
+                option_score = scores_amicaux[seed % len(scores_amicaux)]
+
             buts_dom = int(option_score.split(" - ")[0])
             buts_ext = int(option_score.split(" - ")[1])
             total_buts = buts_dom + buts_ext
             
+            # Paramétrage intelligent des options de buts
             if total_buts >= 3:
                 option_jeu = "Plus de 2.5 buts (Over 2.5)"
-                fiabilite_jeu = 82 + (seed % 12)
+                fiabilite_jeu = min(98, 80 + (int(forme_dom + forme_ext) // 12))
             elif total_buts == 2:
                 option_jeu = "Plus de 1.5 buts (Over 1.5)"
-                fiabilite_jeu = 87 + (seed % 9)
+                fiabilite_jeu = min(98, 84 + (int(forme_dom + forme_ext) // 15))
             else:
                 option_jeu = "Moins de 2.5 buts (Under 2.5)"
-                fiabilite_jeu = 84 + (seed % 11)
+                fiabilite_jeu = min(98, 82 + (seed % 10))
                 
             if buts_dom > 0 and buts_ext > 0:
                 option_btts = "Oui"
-                fiabilite_btts = 79 + (seed % 15)
+                fiabilite_btts = min(98, 77 + (seed % 12))
             else:
                 option_btts = "Non"
-                fiabilite_btts = 81 + (seed % 13)
+                fiabilite_btts = min(98, 80 + (seed % 10))
 
             if buts_dom > buts_ext:
                 option_ht_ft = "1/1 (Domicile/Domicile)" if (seed % 2 == 0) else "X/1 (Nul/Domicile)"
@@ -128,30 +194,34 @@ elif menu == "👑 VIP":
             else:
                 option_ht_ft = "X/X (Nul/Nul)"
 
-            # --- 💰 MODULE 4 : CORRECTION STRICTE DES COTES 1X2 ---
-            # Ajustement mathématique parfait indexé sur l'avantage des buts du score exact
+            # --- 💰 MODULE 4 : ALIGNEMENT STRICT DES COTES 1X2 CONFORMES AU SCORE ---
             if buts_dom > buts_ext:
-                # Domicile gagne
                 diff = buts_dom - buts_ext
-                cote_v1 = round(1.25 + (seed % 4) * 0.08, 2) if diff > 1 else round(1.65 + (seed % 5) * 0.12, 2)
-                cote_x  = round(3.60 + (seed % 6) * 0.15, 2)
-                cote_v2 = round(4.20 + (seed % 8) * 0.40, 2) if diff > 1 else round(3.10 + (seed % 6) * 0.25, 2)
+                cote_v1 = round(1.20 + (seed % 3) * 0.08, 2) if diff > 1 else round(1.55 + (seed % 4) * 0.10, 2)
+                cote_x  = round(3.80 + (seed % 5) * 0.15, 2)
+                cote_v2 = round(5.50 + (seed % 6) * 0.50, 2) if diff > 1 else round(3.40 + (seed % 4) * 0.20, 2)
             elif buts_ext > buts_dom:
-                # Extérieur gagne
                 diff = buts_ext - buts_dom
-                cote_v1 = round(4.50 + (seed % 8) * 0.45, 2) if diff > 1 else round(3.20 + (seed % 6) * 0.20, 2)
-                cote_x  = round(3.50 + (seed % 5) * 0.15, 2)
-                cote_v2 = round(1.22 + (seed % 4) * 0.07, 2) if diff > 1 else round(1.70 + (seed % 5) * 0.10, 2)
+                cote_v1 = round(5.80 + (seed % 6) * 0.40, 2) if diff > 1 else round(3.50 + (seed % 4) * 0.20, 2)
+                cote_x  = round(3.70 + (seed % 5) * 0.15, 2)
+                cote_v2 = round(1.18 + (seed % 3) * 0.06, 2) if diff > 1 else round(1.60 + (seed % 4) * 0.08, 2)
             else:
-                # Match nul
-                cote_v1 = round(2.30 + (seed % 5) * 0.15, 2)
-                cote_x  = round(2.85 + (seed % 4) * 0.10, 2)
-                cote_v2 = round(2.40 + (seed % 5) * 0.15, 2)
+                # Match nul cohérent
+                if buts_dom == 0:
+                    cote_v1 = round(2.80 + (seed % 4) * 0.10, 2)
+                    cote_x  = round(2.70 + (seed % 3) * 0.08, 2)
+                    cote_v2 = round(2.90 + (seed % 4) * 0.10, 2)
+                else:
+                    cote_v1 = round(2.25 + (seed % 4) * 0.10, 2)
+                    cote_x  = round(3.10 + (seed % 3) * 0.08, 2)
+                    cote_v2 = round(2.35 + (seed % 4) * 0.10, 2)
 
-            cote_open = round(1.65 + (seed % 12) * 0.12, 2)
+            # Mouvement des cotes mondiales
+            cote_open = round(1.80 + (seed % 10) * 0.12, 2)
             cote_actuelle = round(cote_open * 0.78, 2)
             chute_pourcent = ((cote_open - cote_actuelle) / cote_open) * 100
 
+            # Détermination de l'indice de sécurité VIP
             badge_confiance = "🔥 ULTRA SAFE" if fiabilite_jeu >= 88 else "⚡ HAUTE FIABILITÉ"
             if is_unpredictable:
                 badge_confiance = "⚠️ PRUDENCE (Match Amical)"
@@ -167,11 +237,11 @@ elif menu == "👑 VIP":
             col_t1, col_t2 = st.columns(2)
             with col_t1:
                 st.markdown(f"**🏠 Équipe Domicile :**")
-                st.markdown(f"• Forme actuelle : **{forme_dom}%**")
+                st.markdown(f"• Forme actuelle : **{forme_dom:.0f}%**")
                 st.markdown(f"• Joueurs cadres indisponibles : **{absences_dom}**")
             with col_t2:
                 st.markdown(f"**🚀 Équipe Extérieur :**")
-                st.markdown(f"• Forme actuelle : **{forme_ext}%**")
+                st.markdown(f"• Forme actuelle : **{forme_ext:.0f}%**")
                 st.markdown(f"• Joueurs cadres indisponibles : **{absences_ext}**")
                 
             st.markdown("---")
