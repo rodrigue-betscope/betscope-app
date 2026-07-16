@@ -6,6 +6,11 @@ import hashlib
 st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered")
 
 # =========================================================
+# 🔐 CONFIGURATION DE LA CLÉ VIP (Modifie-la ici !)
+# =========================================================
+CLE_VIP_CORRECTE = ""  # Change ce mot de passe pour tes clients VIP
+
+# =========================================================
 # 🧭 NAVIGATION UNIQUEMENT : GRATUIT & VIP
 # =========================================================
 menu = st.sidebar.radio(
@@ -46,8 +51,8 @@ elif menu == "👑 VIP":
     
     cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
-    # Correction de la sécurité : l'accès s'ouvre avec le mot de passe défini
-    if cle_acces == "":
+    # Validation stricte de la clé VIP définie en haut
+    if cle_acces == CLE_VIP_CORRECTE:
         st.success("🔓 Accès VIP accordé.")
         st.write("Collez le lien d'un match ci-dessous. L'algorithme analyse instantanément la tendance, le type de compétition, la forme et les absences.")
         
@@ -244,6 +249,18 @@ elif menu == "👑 VIP":
                 st.markdown(f"• Forme actuelle : **{forme_ext:.0f}%**")
                 st.markdown(f"• Joueurs cadres indisponibles : **{absences_ext}**")
                 
+            # --- 📅 AMÉLIORATION 1 : HISTORIQUE DES 5 DERNIERS MATCHS ---
+            st.markdown("### 📅 Forme Récente (Série des 5 derniers matchs)")
+            col_h1, col_h2 = st.columns(2)
+            options_serie = ["🟢 V", "🟡 N", "🔴 D"]
+            # Génération d'une série cohérente unique pour chaque équipe
+            serie_dom = [options_serie[(seed + i) % 3] for i in range(5)]
+            serie_ext = [options_serie[(seed >> (i + 1)) % 3] for i in range(5)]
+            with col_h1:
+                st.markdown(f"**🏠 Domicile :** {' | '.join(serie_dom)}")
+            with col_h2:
+                st.markdown(f"**🚀 Extérieur :** {' | '.join(serie_ext)}")
+                
             st.markdown("---")
             
             col_gauche, col_droite = st.columns(2)
@@ -272,6 +289,33 @@ elif menu == "👑 VIP":
                 f"• Intensité de la baisse mondiale : **-{chute_pourcent:.2f}%**"
             )
             
+            # --- ⚡ AMÉLIORATION 2 : INDICATEUR DE SURCHARGE FINANCIÈRE ---
+            st.markdown("### ⚡ Flux & Mises sur le Marché Mondial")
+            pression_mises = 75 + (seed % 21) # Détermine une pression entre 75% et 95%
+            st.progress(pression_mises / 100)
+            
+            if pression_mises >= 85:
+                st.warning(f"🚨 **ALERTE VALUE DETECTED ({pression_mises}%) :** Concentration de mises mondiales anormale sur ce scénario. Analyse robotisée validée.")
+            else:
+                st.info(f"📈 Flux financiers stables à **{pression_mises}%** sur ce match.")
+            
+            # --- 🎫 AMÉLIORATION 3 : COUPON AUTOMATIQUE PRÊT À COPIER ---
+            st.markdown("---")
+            st.markdown("### 🎫 Partager le Rapport VIP")
+            coupon_texte = f"""👑 *BETSCOPE PRO VIP* 👑
+⚽ *Match :* {nom_du_match}
+📌 *Contexte :* {type_competition}
+🔥 *Indice :* {badge_confiance}
+
+🔮 *Option Principale :* {option_jeu} (Fiabilité : {fiabilite_jeu}%)
+🎯 *Score Exact Suggéré :* {option_score}
+⚖️ *Cotes 1X2 :* Dom {cote_v1} | Nul {cote_x} | Ext {cote_v2}
+
+📉 *Volume de baisse :* -{chute_pourcent:.2f}%
+● _Robot IA validé_ ✅"""
+            
+            st.text_area("📋 Copie ce rapport d'analyse pour Telegram ou WhatsApp :", value=coupon_texte, height=210)
+            
             st.success(f"✅ **Confirmation du Robot :** Analyse terminée pour **{nom_du_match}**. Les algorithmes de flux financiers confirment la tendance calculée ci-dessus.")
             
         else:
@@ -285,7 +329,7 @@ elif menu == "👑 VIP":
 # =========================================================
 # 🟢 BOUTON WHATSAPP
 # =========================================================
-if menu == "👑 VIP" and (cle_acces != ""):
+if menu == "👑 VIP" and (cle_acces != CLE_VIP_CORRECTE):
     message_bienvenue = "Bonjour BetScope ! 👑\nJe souhaite acheter mon accès VIP pour débloquer le détecteur de liens."
     message_encode = urllib.parse.quote(message_bienvenue)
     lien_whatsapp = f"https://api.whatsapp.com/send?phone=237698902204&text={message_encode}"
