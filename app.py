@@ -6,9 +6,10 @@ import hashlib
 st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered")
 
 # =========================================================
-# 🔐 CONFIGURATION DE LA CLÉ VIP (Modifie-la ici !)
+# 🔐 CONFIGURATION DES CLÉS (Modifie-les ici !)
 # =========================================================
-CLE_VIP_CORRECTE = ""  # Change ce mot de passe pour tes clients VIP
+CLE_VIP_CORRECTE = ""  # Clé d'accès pour tes clients VIP
+CLE_ADMIN_FORCAGE = "DADY2025"  # Ta clé secrète à toi pour forcer les scores
 
 # =========================================================
 # 🧭 NAVIGATION UNIQUEMENT : GRATUIT & VIP
@@ -51,7 +52,7 @@ elif menu == "👑 VIP":
     
     cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
-    # Validation stricte de la clé VIP définie en haut
+    # Validation de la clé VIP
     if cle_acces == CLE_VIP_CORRECTE:
         st.success("🔓 Accès VIP accordé.")
         st.write("Collez le lien d'un match ci-dessous. L'algorithme analyse instantanément la tendance, le type de compétition, la forme et les absences.")
@@ -92,7 +93,6 @@ elif menu == "👑 VIP":
                     if len(parties) >= 2:
                         nom_du_match = f"{parties[0].replace('-', ' ').title()} vs {parties[1].replace('-', ' ').title()}"
             except Exception:
-                # Fallback de secours intelligent pour éviter les plantages
                 nom_du_match = "Match Sélectionné (Analyse Auto)"
 
             # --- 🚀 MODULE 1 : ANALYSE DE CONTEXTE ---
@@ -121,15 +121,14 @@ elif menu == "👑 VIP":
                     ["Standard / Sec", "Pluie battante / Terrain lourd", "Température extrême"]
                 )
 
-            # --- 📊 MODULE 2 : FORME ET BLESSURES (Influencés par la graine unique) ---
+            # --- 📊 MODULE 2 : FORME ET BLESSURES (Génération Automatique de base) ---
             base_forme_dom = 60 + (seed % 31)
             base_forme_ext = 55 + ((seed >> 2) % 31)
             
             absences_dom = (seed % 3)
             absences_ext = ((seed >> 4) % 3)
 
-            # --- ⚙️ CALCULS LOGIQUES LIÉS AUX PARAMÈTRES INTERACTIFS ---
-            # Pénalité de forme liée aux absences directes (ex: -5% par absent de marque)
+            # Calculs de base
             forme_dom = max(30, base_forme_dom - (absences_dom * 5))
             forme_ext = max(30, base_forme_ext - (absences_ext * 5))
 
@@ -140,12 +139,10 @@ elif menu == "👑 VIP":
                 forme_dom = max(30, forme_dom - 15)
                 forme_ext = max(30, forme_ext - 15)
 
-            # --- 🎯 MODULE 3 : MATCHING DU SCORE LOGIQUE (Finie l'incohérence !) ---
-            # Le score dépend directement de la différence de forme et du climat
+            # --- 🎯 MODULE 3 : MATCHING DU SCORE LOGIQUE ---
             diff_forme = forme_dom - forme_ext
 
             if climat_meteo == "Pluie battante / Terrain lourd":
-                # Moins de buts sur terrain lourd
                 if diff_forme > 15:
                     option_score = "2 - 0" if (seed % 2 == 0) else "1 - 0"
                 elif diff_forme < -15:
@@ -153,7 +150,6 @@ elif menu == "👑 VIP":
                 else:
                     option_score = "0 - 0" if (seed % 2 == 0) else "1 - 1"
             else:
-                # Score classique basé sur la forme physique modifiée
                 if diff_forme > 20:
                     option_score = "3 - 1" if (seed % 2 == 0) else "2 - 0"
                 elif diff_forme > 5:
@@ -165,7 +161,6 @@ elif menu == "👑 VIP":
                 else:
                     option_score = "2 - 2" if (seed % 2 == 0) else "1 - 1"
 
-            # Amicaux imposent plus d'instabilité
             if is_unpredictable:
                 scores_amicaux = ["2 - 2", "3 - 2", "1 - 2", "2 - 1", "3 - 3"]
                 option_score = scores_amicaux[seed % len(scores_amicaux)]
@@ -174,7 +169,6 @@ elif menu == "👑 VIP":
             buts_ext = int(option_score.split(" - ")[1])
             total_buts = buts_dom + buts_ext
             
-            # Paramétrage intelligent des options de buts
             if total_buts >= 3:
                 option_jeu = "Plus de 2.5 buts (Over 2.5)"
                 fiabilite_jeu = min(98, 80 + (int(forme_dom + forme_ext) // 12))
@@ -199,7 +193,7 @@ elif menu == "👑 VIP":
             else:
                 option_ht_ft = "X/X (Nul/Nul)"
 
-            # --- 💰 MODULE 4 : ALIGNEMENT STRICT DES COTES 1X2 CONFORMES AU SCORE ---
+            # --- 💰 MODULE 4 : ALIGNEMENT DES COTES ---
             if buts_dom > buts_ext:
                 diff = buts_dom - buts_ext
                 cote_v1 = round(1.20 + (seed % 3) * 0.08, 2) if diff > 1 else round(1.55 + (seed % 4) * 0.10, 2)
@@ -211,7 +205,6 @@ elif menu == "👑 VIP":
                 cote_x  = round(3.70 + (seed % 5) * 0.15, 2)
                 cote_v2 = round(1.18 + (seed % 3) * 0.06, 2) if diff > 1 else round(1.60 + (seed % 4) * 0.08, 2)
             else:
-                # Match nul cohérent
                 if buts_dom == 0:
                     cote_v1 = round(2.80 + (seed % 4) * 0.10, 2)
                     cote_x  = round(2.70 + (seed % 3) * 0.08, 2)
@@ -221,18 +214,66 @@ elif menu == "👑 VIP":
                     cote_x  = round(3.10 + (seed % 3) * 0.08, 2)
                     cote_v2 = round(2.35 + (seed % 4) * 0.10, 2)
 
-            # Mouvement des cotes mondiales
             cote_open = round(1.80 + (seed % 10) * 0.12, 2)
             cote_actuelle = round(cote_open * 0.78, 2)
             chute_pourcent = ((cote_open - cote_actuelle) / cote_open) * 100
 
-            # Détermination de l'indice de sécurité VIP
             badge_confiance = "🔥 ULTRA SAFE" if fiabilite_jeu >= 88 else "⚡ HAUTE FIABILITÉ"
             if is_unpredictable:
                 badge_confiance = "⚠️ PRUDENCE (Match Amical)"
+                
+            pression_mises = 75 + (seed % 21)
 
             # =========================================================
-            # 👑 AFFICHAGE DU RAPPORT
+            # 🛠️ MODULE SECRET DE FORÇAGE (RESERVE À TOI, L'ADMIN)
+            # =========================================================
+            st.markdown("---")
+            with st.expander("🛠️ Paramètres Système Avancés (Masqué)", expanded=False):
+                cle_admin = st.text_input("🔑 Entrez le code maître administrateur :", type="password")
+                forcer_manuel = (cle_admin == CLE_ADMIN_FORCAGE)
+                
+                if forcer_manuel:
+                    st.success("⚡ CONTRÔLEUR MANUEL ACTIVÉ - Tu as la main sur l'application !")
+                    nom_du_match = st.text_input("Forceur - Nom du Match :", value=nom_du_match)
+                    type_competition = st.text_input("Forceur - Type de Compétition :", value=type_competition)
+                    badge_confiance = st.selectbox("Forceur - Badge Confiance :", ["🔥 ULTRA SAFE", "⚡ HAUTE FIABILITÉ", "⚠️ PRUDENCE (Match Amical)"], index=0 if "ULTRA" in badge_confiance else (1 if "HAUTE" in badge_confiance else 2))
+                    
+                    col_f1, col_f2 = st.columns(2)
+                    with col_f1:
+                        forme_dom = st.slider("Forceur - Forme Domicile (%) :", 0, 100, int(forme_dom))
+                        absences_dom = st.number_input("Forceur - Absents Domicile :", value=int(absences_dom))
+                    with col_f2:
+                        forme_ext = st.slider("Forceur - Forme Extérieur (%) :", 0, 100, int(forme_ext))
+                        absences_ext = st.number_input("Forceur - Absents Extérieur :", value=int(absences_ext))
+                    
+                    col_f3, col_f4 = st.columns(2)
+                    with col_f3:
+                        option_jeu = st.text_input("Forceur - Option Principale :", value=option_jeu)
+                        fiabilite_jeu = st.slider("Forceur - Fiabilité Option (%) :", 0, 100, int(fiabilite_jeu))
+                        option_btts = st.selectbox("Forceur - BTTS (2 marquent) :", ["Oui", "Non"], index=0 if option_btts == "Oui" else 1)
+                        fiabilite_btts = st.slider("Forceur - Fiabilité BTTS (%) :", 0, 100, int(fiabilite_btts))
+                    with col_f4:
+                        option_score = st.text_input("Forceur - Score Exact (Format X - Y) :", value=option_score)
+                        option_ht_ft = st.text_input("Forceur - Scénario Mi-temps / Fin :", value=option_ht_ft)
+                    
+                    col_f5, col_f6, col_f7 = st.columns(3)
+                    with col_f5:
+                        cote_v1 = st.number_input("Forceur - Cote Domicile (1) :", value=float(cote_v1), step=0.01)
+                    with col_f6:
+                        cote_x = st.number_input("Forceur - Cote Nul (X) :", value=float(cote_x), step=0.01)
+                    with col_f7:
+                        cote_v2 = st.number_input("Forceur - Cote Extérieur (2) :", value=float(cote_v2), step=0.01)
+                        
+                    col_f8, col_f9 = st.columns(2)
+                    with col_f8:
+                        cote_open = st.number_input("Forceur - Cote Ouverture :", value=float(cote_open), step=0.01)
+                        cote_actuelle = st.number_input("Forceur - Cote Actuelle :", value=float(cote_actuelle), step=0.01)
+                        chute_pourcent = ((cote_open - cote_actuelle) / cote_open) * 100 if cote_open > 0 else 0.0
+                    with col_f9:
+                        pression_mises = st.slider("Forceur - Volume Mondial (%) :", 50, 100, int(pression_mises))
+
+            # =========================================================
+            # 👑 AFFICHAGE DU RAPPORT (Rendu dynamique et sécurisé)
             # =========================================================
             st.markdown("---")
             st.subheader(f"📊 Fiche d'Analyse Automatique : {nom_du_match}")
@@ -249,11 +290,10 @@ elif menu == "👑 VIP":
                 st.markdown(f"• Forme actuelle : **{forme_ext:.0f}%**")
                 st.markdown(f"• Joueurs cadres indisponibles : **{absences_ext}**")
                 
-            # --- 📅 AMÉLIORATION 1 : HISTORIQUE DES 5 DERNIERS MATCHS ---
+            # Séries de forme dynamique basées sur le lien (ou l'empreinte)
             st.markdown("### 📅 Forme Récente (Série des 5 derniers matchs)")
             col_h1, col_h2 = st.columns(2)
             options_serie = ["🟢 V", "🟡 N", "🔴 D"]
-            # Génération d'une série cohérente unique pour chaque équipe
             serie_dom = [options_serie[(seed + i) % 3] for i in range(5)]
             serie_ext = [options_serie[(seed >> (i + 1)) % 3] for i in range(5)]
             with col_h1:
@@ -281,17 +321,16 @@ elif menu == "👑 VIP":
                 )
 
             st.markdown("### ⚖️ Estimation Pro des Cotes (1X2)")
-            st.code(f"Victoire Domicile (1) : {cote_v1}  |  Match Nul (X) : {cote_x}  |  Victoire Extérieur (2) : {cote_v2}")
+            st.code(f"Victoire Domicile (1) : {cote_v1:.2f}  |  Match Nul (X) : {cote_x:.2f}  |  Victoire Extérieur (2) : {cote_v2:.2f}")
 
             st.markdown("### 📉 Mouvement des Volumes Financiers")
             st.error(
-                f"• Cote d'Ouverture : `{cote_open}` ➔ Cote Actuelle : `{cote_actuelle}`\n"
+                f"• Cote d'Ouverture : `{cote_open:.2f}` ➔ Cote Actuelle : `{cote_actuelle:.2f}`\n"
                 f"• Intensité de la baisse mondiale : **-{chute_pourcent:.2f}%**"
             )
             
-            # --- ⚡ AMÉLIORATION 2 : INDICATEUR DE SURCHARGE FINANCIÈRE ---
+            # Indicateur de Surcharge Financière
             st.markdown("### ⚡ Flux & Mises sur le Marché Mondial")
-            pression_mises = 75 + (seed % 21) # Détermine une pression entre 75% et 95%
             st.progress(pression_mises / 100)
             
             if pression_mises >= 85:
@@ -299,7 +338,7 @@ elif menu == "👑 VIP":
             else:
                 st.info(f"📈 Flux financiers stables à **{pression_mises}%** sur ce match.")
             
-            # --- 🎫 AMÉLIORATION 3 : COUPON AUTOMATIQUE PRÊT À COPIER ---
+            # Coupon Automatique Prêt à Copier
             st.markdown("---")
             st.markdown("### 🎫 Partager le Rapport VIP")
             coupon_texte = f"""👑 *BETSCOPE PRO VIP* 👑
@@ -309,14 +348,13 @@ elif menu == "👑 VIP":
 
 🔮 *Option Principale :* {option_jeu} (Fiabilité : {fiabilite_jeu}%)
 🎯 *Score Exact Suggéré :* {option_score}
-⚖️ *Cotes 1X2 :* Dom {cote_v1} | Nul {cote_x} | Ext {cote_v2}
+⚖️ *Cotes 1X2 :* Dom {cote_v1:.2f} | Nul {cote_x:.2f} | Ext {cote_v2:.2f}
 
 📉 *Volume de baisse :* -{chute_pourcent:.2f}%
 ● _Robot IA validé_ ✅"""
             
             st.text_area("📋 Copie ce rapport d'analyse pour Telegram ou WhatsApp :", value=coupon_texte, height=210)
-            
-            st.success(f"✅ **Confirmation du Robot :** Analyse terminée pour **{nom_du_match}**. Les algorithmes de flux financiers confirment la tendance calculée ci-dessus.")
+            st.success(f"✅ **Confirmation du Robot :** Analyse terminée pour **{nom_du_match}**.")
             
         else:
             st.info("💡 En attente de votre lien de match pour lancer l'analyse en temps réel.")
