@@ -1,4 +1,4 @@
-import streamlit as st
+eimport streamlit as st
 import urllib.parse
 import hashlib
 
@@ -380,3 +380,5 @@ if menu == "👑 VIP" and (cle_acces != CLE_VIP_CORRECTE):
         </div>
     </a>
     """, unsafe_allow_html=True)
+    
+https://www.oddsportal.com/football/h2h/athletic-club-INXlw5Bp/atletico-go-8M0mP8nt/#z3uUHJZ9:1X2;2
