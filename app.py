@@ -1,6 +1,9 @@
-eimport streamlit as st
+import streamlit as st
 import urllib.parse
+import urllib.request
 import hashlib
+import re
+import html
 
 # Configuration de la page
 st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered")
@@ -9,7 +12,96 @@ st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered
 # 🔐 CONFIGURATION DES CLÉS
 # =========================================================
 CLE_VIP_CORRECTE = ""  # Clé pour tes clients VIP
-CLE_ADMIN_FORCAGE = "DADY_BOSS"  # Ta clé secrète admin
+CLE_ADMIN_FORCAGE = "DADYBOSS"  # Ta clé secrète admin
+
+# =========================================================
+# 🧠 DÉCODEUR DE MATCH ULTRA-INTELLIGENT (CORRIGÉ)
+# =========================================================
+def extraire_nom_match_intelligent(lien_sofa, lien_odds):
+    liens = [l for l in [lien_sofa, lien_odds] if l]
+    
+    # --- MÉTHODE 1 : LECTURE DU TITRE DU SITE EN DIRECT ---
+    for url in liens:
+        try:
+            req = urllib.request.Request(
+                url, 
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+            )
+            # Timeout court de 2.5 secondes pour ne pas ralentir l'appli
+            with urllib.request.urlopen(req, timeout=2.5) as response:
+                content = response.read().decode('utf-8', errors='ignore')
+                match = re.search(r'<title>(.*?)</title>', content, re.IGNORECASE | re.DOTALL)
+                if match:
+                    titre_brut = html.unescape(match.group(1).strip())
+                    
+                    # Nettoyage spécifique Sofascore
+                    # Exemple: "Qingdao Hainiu - Henan FC live score, H2H..."
+                    titre_clean = re.sub(r'(?i)\s+live score,.*', '', titre_brut)
+                    titre_clean = titre_clean.replace(" | Sofascore", "")
+                    
+                    # Nettoyage spécifique Oddsportal
+                    # Exemple: "Qingdao Hainiu - Henan FC Jinzu Dukang H2H betting odds..."
+                    titre_clean = re.sub(r'(?i)\s+(H2H|betting|odds|cotes).*', '', titre_clean)
+                    titre_clean = titre_clean.replace(" | Oddsportal", "")
+                    
+                    # Séparation propre
+                    for sep in [" - ", " vs ", " VS ", " v ", " V "]:
+                        if sep in titre_clean:
+                            parties = titre_clean.split(sep)
+                            dom = parties[0].strip()
+                            ext = parties[1].strip()
+                            return f"{dom} vs {ext}"
+                            
+                    if 5 < len(titre_clean) < 80:
+                        return titre_clean
+        except Exception:
+            pass # Si la requête échoue ou est bloquée, on passe à la suite sans planter
+
+    # --- MÉTHODE 2 : DECOUPAGE INTELLIGENT DE SLUG (PLAN B LOCAL) ---
+    for url in liens:
+        url_lower = url.lower()
+        try:
+            if "sofascore.com" in url_lower and "/match/" in url_lower:
+                slug = url.split("/match/")[1].split("/")[0]
+            elif "oddsportal.com" in url_lower and "/match/" in url_lower:
+                slug = url.split("/match/")[1].split("/")[0]
+            elif "oddsportal.com" in url_lower and "/h2h/" in url_lower:
+                parts = url.split("/h2h/")[1].split("/")
+                dom = parts[0].replace("-", " ").title()
+                ext = parts[1].replace("-", " ").title()
+                return f"{dom} vs {ext}"
+            else:
+                continue
+            
+            # Gestion des séparateurs textuels explicites
+            if "-vs-" in slug:
+                parts = slug.split("-vs-")
+                dom = parts[0].replace("-", " ").title()
+                ext = parts[1].replace("-", " ").title()
+                return f"{dom} vs {ext}"
+            else:
+                # Découpage par mots
+                parts = [p for p in slug.split("-") if p]
+                
+                # Si on trouve un indicateur comme "fc" au milieu, on l'utilise comme pivot
+                if "fc" in parts and 0 < parts.index("fc") < len(parts) - 1:
+                    idx = parts.index("fc")
+                    dom = " ".join(parts[:idx+1]).title()
+                    ext = " ".join(parts[idx+1:]).title()
+                    return f"{dom} vs {ext}"
+                elif len(parts) >= 2:
+                    # Coupe équilibrée en deux au milieu
+                    milieu = len(parts) // 2
+                    dom = " ".join(parts[:milieu]).title()
+                    ext = " ".join(parts[milieu:]).title()
+                    return f"{dom} vs {ext}"
+        except Exception:
+            pass
+
+    return "Match Sélectionné (Analyse Auto)"
+
 
 # =========================================================
 # 🧭 NAVIGATION : GRATUIT & VIP
@@ -68,32 +160,8 @@ elif menu == "👑 VIP":
             lien_combine = lien_sofa + lien_odds
             seed = int(hashlib.md5(lien_combine.encode()).hexdigest(), 16)
             
-            nom_du_match = "Match Sélectionné (Analyse Auto)"
-            
-            # 🧠 DECODEUR INTELLIGENT DE LIENS
-            # On cherche d'abord à décoder le nom via Sofascore (souvent plus propre)
-            if lien_sofa and "sofascore.com" in lien_sofa.lower():
-                try:
-                    slug = lien_sofa.split("/match/")[1].split("/")[0]
-                    parts = slug.split("-")
-                    if len(parts) >= 2:
-                        nom_du_match = f"{parts[0].title()} vs {' '.join(parts[1:]).title()}"
-                except Exception:
-                    pass
-            # Si pas de Sofascore, on décode via Oddsportal
-            elif lien_odds and "oddsportal.com" in lien_odds.lower():
-                try:
-                    if "/h2h/" in lien_odds.lower():
-                        parts = lien_odds.split("/h2h/")[1].split("/")
-                        dom = parts[0].split("-")[0].title()
-                        ext = parts[1].split("-")[0].title()
-                        nom_du_match = f"{dom} vs {ext}"
-                    elif "/match/" in lien_odds.lower():
-                        slug = lien_odds.split("/match/")[1].split("/")[0]
-                        parts = slug.split("-")
-                        nom_du_match = f"{parts[0].title()} vs {' '.join(parts[1:-1]).title()}"
-                except Exception:
-                    pass
+            # --- DÉCODAGE INTELLIGENT DU NOM ---
+            nom_du_match = extraire_nom_match_intelligent(lien_sofa, lien_odds)
 
             # --- ANALYSE DE CONTEXTE ---
             is_unpredictable = False
@@ -322,63 +390,4 @@ elif menu == "👑 VIP":
 
             st.markdown("### 📉 Analyse de la Baisse des Cotes (Dropping Odds)")
             st.error(
-                f"• Cote d'Ouverture : `{cote_open:.2f}` ➔ Cote Actuelle : `{cote_actuelle:.2f}`\n"
-                f"• Intensité de la baisse mondiale : **-{chute_pourcent:.2f}%**"
-            )
-            
-            st.markdown("### ⚡ Surcharges Financières & Mises Globales")
-            st.progress(pression_mises / 100)
-            
-            if pression_mises >= 85:
-                st.warning(f"🚨 **ALERTE FLUX ATYPIQUES ({pression_mises}%) :** Volume massif de mises asiatiaques détecté sur ce match. Option validée par le Robot IA.")
-            else:
-                st.info(f"📈 Aucun mouvement suspect. Flux financiers stables à **{pression_mises}%**.")
-            
-            # --- GENERATION DE COUPON ---
-            st.markdown("---")
-            st.markdown("### 🎫 Partager le Rapport VIP Fusionné")
-            coupon_texte = f"""👑 *BETSCOPE PRO VIP* 👑
-⚽ *Match :* {nom_du_match}
-📌 *Compétition :* {type_competition}
-🔥 *Indice :* {badge_confiance}
-
-📊 _SECTION SOFASCORE (Terrain)_ :
-➔ *Option Principale :* {option_jeu} (Fiabilité : {fiabilite_jeu}%)
-➔ *Score Exact Suggéré :* {option_score}
-➔ *Scénario Mi-temps/Fin :* {option_ht_ft}
-
-📉 _SECTION ODDSPORTAL (Finance)_ :
-➔ *Cotes 1X2 :* Dom {cote_v1:.2f} | Nul {cote_x:.2f} | Ext {cote_v2:.2f}
-➔ *Intensité Baisse :* -{chute_pourcent:.2f}%
-➔ *Pression Mises :* {pression_mises}% 
-
-● _Analyse Robot IA Validée_ ✅"""
-            
-            st.text_area("📋 Copie ce rapport d'analyse hybride pour ton canal VIP :", value=coupon_texte, height=270)
-            st.success(f"✅ **Confirmation du Robot :** Analyse hybride (Sofascore + Oddsportal) complétée avec succès.")
-            
-        else:
-            st.info("💡 En attente de vos liens de match pour lancer l'analyse croisée en temps réel.")
-            
-    elif cle_acces != "":
-        st.error("❌ Clé VIP incorrecte ou expirée.")
-    else:
-        st.info("🔒 Cette section nécessite un abonnement VIP actif. Veuillez entrer votre clé.")
-
-# =========================================================
-# 🟢 BOUTON WHATSAPP
-# =========================================================
-if menu == "👑 VIP" and (cle_acces != CLE_VIP_CORRECTE):
-    message_bienvenue = "Bonjour BetScope ! 👑\nJe souhaite acheter mon accès VIP pour débloquer le détecteur de liens."
-    message_encode = urllib.parse.quote(message_bienvenue)
-    lien_whatsapp = f"https://api.whatsapp.com/send?phone=237698902204&text={message_encode}"
-    
-    st.markdown(f"""
-    <a href="{lien_whatsapp}" target="_blank" style="text-decoration: none;">
-        <div style="background-color: #25D366; color: white; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0px 4px 6px rgba(0,0,0,0.1); margin-top: 20px;">
-            💬 Activer mon accès VIP sur WhatsApp
-        </div>
-    </a>
-    """, unsafe_allow_html=True)
-    
-https://www.oddsportal.com/football/h2h/athletic-club-INXlw5Bp/atletico-go-8M0mP8nt/#z3uUHJZ9:1X2;2
+   
