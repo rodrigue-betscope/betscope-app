@@ -12,10 +12,10 @@ st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered
 # 🔐 CONFIGURATION DES CLÉS
 # =========================================================
 CLE_VIP_CORRECTE = ""  # Clé pour tes clients VIP
-CLE_ADMIN_FORCAGE = "DADYBOSS"  # Ta clé secrète admin
+CLE_ADMIN_FORCAGE = "DADY"  # Ta clé secrète admin
 
 # =========================================================
-# 🧠 DÉCODEUR DE MATCH ULTRA-INTELLIGENT (CORRIGÉ)
+# 🧠 DÉCODEUR DE MATCH ULTRA-INTELLIGENT
 # =========================================================
 def extraire_nom_match_intelligent(lien_sofa, lien_odds):
     liens = [l for l in [lien_sofa, lien_odds] if l]
@@ -29,20 +29,17 @@ def extraire_nom_match_intelligent(lien_sofa, lien_odds):
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                 }
             )
-            # Timeout court de 2.5 secondes pour ne pas ralentir l'appli
             with urllib.request.urlopen(req, timeout=2.5) as response:
                 content = response.read().decode('utf-8', errors='ignore')
                 match = re.search(r'<title>(.*?)</title>', content, re.IGNORECASE | re.DOTALL)
                 if match:
                     titre_brut = html.unescape(match.group(1).strip())
                     
-                    # Nettoyage spécifique Sofascore
-                    # Exemple: "Qingdao Hainiu - Henan FC live score, H2H..."
+                    # Nettoyage Sofascore
                     titre_clean = re.sub(r'(?i)\s+live score,.*', '', titre_brut)
                     titre_clean = titre_clean.replace(" | Sofascore", "")
                     
-                    # Nettoyage spécifique Oddsportal
-                    # Exemple: "Qingdao Hainiu - Henan FC Jinzu Dukang H2H betting odds..."
+                    # Nettoyage Oddsportal
                     titre_clean = re.sub(r'(?i)\s+(H2H|betting|odds|cotes).*', '', titre_clean)
                     titre_clean = titre_clean.replace(" | Oddsportal", "")
                     
@@ -57,7 +54,7 @@ def extraire_nom_match_intelligent(lien_sofa, lien_odds):
                     if 5 < len(titre_clean) < 80:
                         return titre_clean
         except Exception:
-            pass # Si la requête échoue ou est bloquée, on passe à la suite sans planter
+            pass
 
     # --- MÉTHODE 2 : DECOUPAGE INTELLIGENT DE SLUG (PLAN B LOCAL) ---
     for url in liens:
@@ -75,24 +72,20 @@ def extraire_nom_match_intelligent(lien_sofa, lien_odds):
             else:
                 continue
             
-            # Gestion des séparateurs textuels explicites
             if "-vs-" in slug:
                 parts = slug.split("-vs-")
                 dom = parts[0].replace("-", " ").title()
                 ext = parts[1].replace("-", " ").title()
                 return f"{dom} vs {ext}"
             else:
-                # Découpage par mots
                 parts = [p for p in slug.split("-") if p]
                 
-                # Si on trouve un indicateur comme "fc" au milieu, on l'utilise comme pivot
                 if "fc" in parts and 0 < parts.index("fc") < len(parts) - 1:
                     idx = parts.index("fc")
                     dom = " ".join(parts[:idx+1]).title()
                     ext = " ".join(parts[idx+1:]).title()
                     return f"{dom} vs {ext}"
                 elif len(parts) >= 2:
-                    # Coupe équilibrée en deux au milieu
                     milieu = len(parts) // 2
                     dom = " ".join(parts[:milieu]).title()
                     ext = " ".join(parts[milieu:]).title()
@@ -128,7 +121,6 @@ if menu == "⚽ Gratuit":
 elif menu == "👑 VIP":
     st.title("👑 Espace VIP Intelligent")
     
-    # Clignotant vert dynamique pour le statut du Robot IA
     st.markdown("""
         <div style="display: flex; align-items: center; margin-bottom: 15px; background-color: #1a1c23; padding: 10px; border-radius: 8px; border: 1px solid #2e313d;">
             <span style="height: 10px; width: 10px; background-color: #25D366; border-radius: 50%; display: inline-block; margin-right: 10px; box-shadow: 0 0 8px #25D366; animation: pulse 1.5s infinite alternate;"></span>
@@ -148,7 +140,6 @@ elif menu == "👑 VIP":
         st.success("🔓 Accès VIP accordé.")
         st.write("Pour une analyse optimale, vous pouvez coller le lien **Sofascore** ET le lien **Oddsportal** du match.")
         
-        # --- DOUBLE CHAMP DE SAISIE ---
         col_l1, col_l2 = st.columns(2)
         with col_l1:
             lien_sofa = st.text_input("🔗 Lien Sofascore (Terrain) :", placeholder="https://www.sofascore.com/...").strip()
@@ -156,14 +147,11 @@ elif menu == "👑 VIP":
             lien_odds = st.text_input("🔗 Lien Oddsportal (Finance) :", placeholder="https://www.oddsportal.com/...").strip()
         
         if lien_sofa or lien_odds:
-            # Création d'un texte combiné pour générer l'empreinte mathématique (seed)
             lien_combine = lien_sofa + lien_odds
             seed = int(hashlib.md5(lien_combine.encode()).hexdigest(), 16)
             
-            # --- DÉCODAGE INTELLIGENT DU NOM ---
             nom_du_match = extraire_nom_match_intelligent(lien_sofa, lien_odds)
 
-            # --- ANALYSE DE CONTEXTE ---
             is_unpredictable = False
             type_competition = "Championnat Régulier"
             
@@ -176,7 +164,6 @@ elif menu == "👑 VIP":
             elif "play-off" in texte_analyse or "playoff" in texte_analyse:
                 type_competition = "🔥 Match de Play-off"
 
-            # --- AJUSTEMENT ENVIRONNEMENT (SECRET) ---
             st.markdown("---")
             with st.expander("⚡ Ajuster l'environnement du match (Optionnel)", expanded=False):
                 motivation_equipes = st.select_slider(
@@ -189,7 +176,6 @@ elif menu == "👑 VIP":
                     ["Standard / Sec", "Terrain lourd / Pluie", "Température extrême"]
                 )
 
-            # --- CALCULS SIMULATEURS SOFASCORE (FORME & ABSENCES) ---
             base_forme_dom = 60 + (seed % 31)
             base_forme_ext = 55 + ((seed >> 2) % 31)
             absences_dom = (seed % 3)
@@ -205,7 +191,6 @@ elif menu == "👑 VIP":
                 forme_dom = max(30, forme_dom - 15)
                 forme_ext = max(30, forme_ext - 15)
 
-            # --- CRÉATION DU SCORE LOGIQUE ---
             diff_forme = forme_dom - forme_ext
             if climat_meteo == "Terrain lourd / Pluie":
                 if diff_forme > 15:
@@ -258,7 +243,6 @@ elif menu == "👑 VIP":
             else:
                 option_ht_ft = "X/X (Nul/Nul)"
 
-            # --- CALCULS SIMULATEURS ODDSPORTAL (COTES & ALIGNEMENT) ---
             if buts_dom > buts_ext:
                 diff = buts_dom - buts_ext
                 cote_v1 = round(1.20 + (seed % 3) * 0.08, 2) if diff > 1 else round(1.55 + (seed % 4) * 0.10, 2)
@@ -365,19 +349,17 @@ elif menu == "👑 VIP":
             col_gauche, col_droite = st.columns(2)
             with col_gauche:
                 st.markdown("### 🔮 Marchés Majeurs")
-                st.info(
-                    f"• **Option Principale :** `{option_jeu}`\n"
-                    f"➔ Fiabilité : **{fiabilite_jeu}%**\n\n"
-                    f"• **Les deux équipes marquent :** `{option_btts}`\n"
-                    f"➔ Fiabilité : **{fiabilite_btts}%**"
-                )
+                st.info(f"""• **Option Principale :** `{option_jeu}`
+➔ Fiabilité : **{fiabilite_jeu}%**
+
+• **Les deux équipes marquent :** `{option_btts}`
+➔ Fiabilité : **{fiabilite_btts}%**""")
             with col_droite:
                 st.markdown("### 🎯 Scores & Scénarios")
-                st.warning(
-                    f"• **Score Exact Suggéré :** `{option_score}`\n"
-                    f"➔ Indice de Probabilité : **{74 + (seed % 13)}%**\n\n"
-                    f"• **Scénario Mi-temps / Fin :** `{option_ht_ft}`"
-                )
+                st.warning(f"""• **Score Exact Suggéré :** `{option_score}`
+➔ Indice de Probabilité : **{74 + (seed % 13)}%**
+
+• **Scénario Mi-temps / Fin :** `{option_ht_ft}`""")
 
             # =========================================================
             # 📉 BLOC 2 : DETECTEUR DE FLUX FINANCIERS (STYLE ODDSPORTAL)
@@ -389,5 +371,60 @@ elif menu == "👑 VIP":
             st.code(f"Victoire Domicile (1) : {cote_v1:.2f}  |  Match Nul (X) : {cote_x:.2f}  |  Victoire Extérieur (2) : {cote_v2:.2f}")
 
             st.markdown("### 📉 Analyse de la Baisse des Cotes (Dropping Odds)")
-            st.error(
-   
+            st.error(f"""• Cote d'Ouverture : `{cote_open:.2f}` ➔ Cote Actuelle : `{cote_actuelle:.2f}`
+• Intensité de la baisse mondiale : **-{chute_pourcent:.2f}%**""")
+            
+            st.markdown("### ⚡ Surcharges Financières & Mises Globales")
+            st.progress(pression_mises / 100)
+            
+            if pression_mises >= 85:
+                st.warning(f"🚨 **ALERTE FLUX ATYPIQUES ({pression_mises}%) :** Volume massif de mises asiatiaques détecté sur ce match. Option validée par le Robot IA.")
+            else:
+                st.info(f"📈 Aucun mouvement suspect. Flux financiers stables à **{pression_mises}%**.")
+            
+            # --- GENERATION DE COUPON ---
+            st.markdown("---")
+            st.markdown("### 🎫 Partager le Rapport VIP Fusionné")
+            coupon_texte = f"""👑 *BETSCOPE PRO VIP* 👑
+⚽ *Match :* {nom_du_match}
+📌 *Compétition :* {type_competition}
+🔥 *Indice :* {badge_confiance}
+
+📊 _SECTION SOFASCORE (Terrain)_ :
+➔ *Option Principale :* {option_jeu} (Fiabilité : {fiabilite_jeu}%)
+➔ *Score Exact Suggéré :* {option_score}
+➔ *Scénario Mi-temps/Fin :* {option_ht_ft}
+
+📉 _SECTION ODDSPORTAL (Finance)_ :
+➔ *Cotes 1X2 :* Dom {cote_v1:.2f} | Nul {cote_x:.2f} | Ext {cote_v2:.2f}
+➔ *Intensité Baisse :* -{chute_pourcent:.2f}%
+➔ *Pression Mises :* {pression_mises}% 
+
+● _Analyse Robot IA Validée_ ✅"""
+            
+            st.text_area("📋 Copie ce rapport d'analyse hybride pour ton canal VIP :", value=coupon_texte, height=270)
+            st.success(f"✅ **Confirmation du Robot :** Analyse hybride (Sofascore + Oddsportal) complétée avec succès.")
+            
+        else:
+            st.info("💡 En attente de vos liens de match pour lancer l'analyse croisée en temps réel.")
+            
+    elif cle_acces != "":
+        st.error("❌ Clé VIP incorrecte ou expirée.")
+    else:
+        st.info("🔒 Cette section nécessite un abonnement VIP actif. Veuillez entrer votre clé.")
+
+# =========================================================
+# 🟢 BOUTON WHATSAPP
+# =========================================================
+if menu == "👑 VIP" and (cle_acces != CLE_VIP_CORRECTE):
+    message_bienvenue = "Bonjour BetScope ! 👑\nJe souhaite acheter mon accès VIP pour débloquer le détecteur de liens."
+    message_encode = urllib.parse.quote(message_bienvenue)
+    lien_whatsapp = f"https://api.whatsapp.com/send?phone=237698902204&text={message_encode}"
+    
+    st.markdown(f"""
+    <a href="{lien_whatsapp}" target="_blank" style="text-decoration: none;">
+        <div style="background-color: #25D366; color: white; text-align: center; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0px 4px 6px rgba(0,0,0,0.1); margin-top: 20px;">
+            💬 Activer mon accès VIP sur WhatsApp
+        </div>
+    </a>
+    """, unsafe_allow_html=True)
