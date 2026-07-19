@@ -1,9 +1,6 @@
 import streamlit as st
 import urllib.parse
-import urllib.request
 import hashlib
-import re
-import html
 
 # Configuration de la page
 st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered")
@@ -12,89 +9,7 @@ st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered
 # 🔐 CONFIGURATION DES CLÉS
 # =========================================================
 CLE_VIP_CORRECTE = ""  # Clé pour tes clients VIP
-CLE_ADMIN_FORCAGE = "DADY"  # Ta clé secrète admin
-
-# =========================================================
-# 🧠 DÉCODEUR DE MATCH ULTRA-INTELLIGENT
-# =========================================================
-def extraire_nom_match_intelligent(lien_sofa, lien_odds):
-    liens = [l for l in [lien_sofa, lien_odds] if l]
-    
-    # --- MÉTHODE 1 : LECTURE DU TITRE DU SITE EN DIRECT ---
-    for url in liens:
-        try:
-            req = urllib.request.Request(
-                url, 
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                }
-            )
-            with urllib.request.urlopen(req, timeout=2.5) as response:
-                content = response.read().decode('utf-8', errors='ignore')
-                match = re.search(r'<title>(.*?)</title>', content, re.IGNORECASE | re.DOTALL)
-                if match:
-                    titre_brut = html.unescape(match.group(1).strip())
-                    
-                    # Nettoyage Sofascore
-                    titre_clean = re.sub(r'(?i)\s+live score,.*', '', titre_brut)
-                    titre_clean = titre_clean.replace(" | Sofascore", "")
-                    
-                    # Nettoyage Oddsportal
-                    titre_clean = re.sub(r'(?i)\s+(H2H|betting|odds|cotes).*', '', titre_clean)
-                    titre_clean = titre_clean.replace(" | Oddsportal", "")
-                    
-                    # Séparation propre
-                    for sep in [" - ", " vs ", " VS ", " v ", " V "]:
-                        if sep in titre_clean:
-                            parties = titre_clean.split(sep)
-                            dom = parties[0].strip()
-                            ext = parties[1].strip()
-                            return f"{dom} vs {ext}"
-                            
-                    if 5 < len(titre_clean) < 80:
-                        return titre_clean
-        except Exception:
-            pass
-
-    # --- MÉTHODE 2 : DECOUPAGE INTELLIGENT DE SLUG (PLAN B LOCAL) ---
-    for url in liens:
-        url_lower = url.lower()
-        try:
-            if "sofascore.com" in url_lower and "/match/" in url_lower:
-                slug = url.split("/match/")[1].split("/")[0]
-            elif "oddsportal.com" in url_lower and "/match/" in url_lower:
-                slug = url.split("/match/")[1].split("/")[0]
-            elif "oddsportal.com" in url_lower and "/h2h/" in url_lower:
-                parts = url.split("/h2h/")[1].split("/")
-                dom = parts[0].replace("-", " ").title()
-                ext = parts[1].replace("-", " ").title()
-                return f"{dom} vs {ext}"
-            else:
-                continue
-            
-            if "-vs-" in slug:
-                parts = slug.split("-vs-")
-                dom = parts[0].replace("-", " ").title()
-                ext = parts[1].replace("-", " ").title()
-                return f"{dom} vs {ext}"
-            else:
-                parts = [p for p in slug.split("-") if p]
-                
-                if "fc" in parts and 0 < parts.index("fc") < len(parts) - 1:
-                    idx = parts.index("fc")
-                    dom = " ".join(parts[:idx+1]).title()
-                    ext = " ".join(parts[idx+1:]).title()
-                    return f"{dom} vs {ext}"
-                elif len(parts) >= 2:
-                    milieu = len(parts) // 2
-                    dom = " ".join(parts[:milieu]).title()
-                    ext = " ".join(parts[milieu:]).title()
-                    return f"{dom} vs {ext}"
-        except Exception:
-            pass
-
-    return "Match Sélectionné (Analyse Auto)"
-
+CLE_ADMIN_FORCAGE = ""  # Ta clé secrète admin
 
 # =========================================================
 # 🧭 NAVIGATION : GRATUIT & VIP
@@ -121,6 +36,7 @@ if menu == "⚽ Gratuit":
 elif menu == "👑 VIP":
     st.title("👑 Espace VIP Intelligent")
     
+    # Clignotant vert dynamique pour le statut du Robot IA
     st.markdown("""
         <div style="display: flex; align-items: center; margin-bottom: 15px; background-color: #1a1c23; padding: 10px; border-radius: 8px; border: 1px solid #2e313d;">
             <span style="height: 10px; width: 10px; background-color: #25D366; border-radius: 50%; display: inline-block; margin-right: 10px; box-shadow: 0 0 8px #25D366; animation: pulse 1.5s infinite alternate;"></span>
@@ -140,6 +56,7 @@ elif menu == "👑 VIP":
         st.success("🔓 Accès VIP accordé.")
         st.write("Pour une analyse optimale, vous pouvez coller le lien **Sofascore** ET le lien **Oddsportal** du match.")
         
+        # --- DOUBLE CHAMP DE SAISIE ---
         col_l1, col_l2 = st.columns(2)
         with col_l1:
             lien_sofa = st.text_input("🔗 Lien Sofascore (Terrain) :", placeholder="https://www.sofascore.com/...").strip()
@@ -147,11 +64,38 @@ elif menu == "👑 VIP":
             lien_odds = st.text_input("🔗 Lien Oddsportal (Finance) :", placeholder="https://www.oddsportal.com/...").strip()
         
         if lien_sofa or lien_odds:
+            # Création d'un texte combiné pour générer l'empreinte mathématique (seed)
             lien_combine = lien_sofa + lien_odds
             seed = int(hashlib.md5(lien_combine.encode()).hexdigest(), 16)
             
-            nom_du_match = extraire_nom_match_intelligent(lien_sofa, lien_odds)
+            nom_du_match = "Match Sélectionné (Analyse Auto)"
+            
+            # 🧠 DECODEUR INTELLIGENT DE LIENS
+            # On cherche d'abord à décoder le nom via Sofascore (souvent plus propre)
+            if lien_sofa and "sofascore.com" in lien_sofa.lower():
+                try:
+                    slug = lien_sofa.split("/match/")[1].split("/")[0]
+                    parts = slug.split("-")
+                    if len(parts) >= 2:
+                        nom_du_match = f"{parts[0].title()} vs {' '.join(parts[1:]).title()}"
+                except Exception:
+                    pass
+            # Si pas de Sofascore, on décode via Oddsportal
+            elif lien_odds and "oddsportal.com" in lien_odds.lower():
+                try:
+                    if "/h2h/" in lien_odds.lower():
+                        parts = lien_odds.split("/h2h/")[1].split("/")
+                        dom = parts[0].split("-")[0].title()
+                        ext = parts[1].split("-")[0].title()
+                        nom_du_match = f"{dom} vs {ext}"
+                    elif "/match/" in lien_odds.lower():
+                        slug = lien_odds.split("/match/")[1].split("/")[0]
+                        parts = slug.split("-")
+                        nom_du_match = f"{parts[0].title()} vs {' '.join(parts[1:-1]).title()}"
+                except Exception:
+                    pass
 
+            # --- ANALYSE DE CONTEXTE ---
             is_unpredictable = False
             type_competition = "Championnat Régulier"
             
@@ -164,6 +108,7 @@ elif menu == "👑 VIP":
             elif "play-off" in texte_analyse or "playoff" in texte_analyse:
                 type_competition = "🔥 Match de Play-off"
 
+            # --- AJUSTEMENT ENVIRONNEMENT (SECRET) ---
             st.markdown("---")
             with st.expander("⚡ Ajuster l'environnement du match (Optionnel)", expanded=False):
                 motivation_equipes = st.select_slider(
@@ -176,6 +121,7 @@ elif menu == "👑 VIP":
                     ["Standard / Sec", "Terrain lourd / Pluie", "Température extrême"]
                 )
 
+            # --- CALCULS SIMULATEURS SOFASCORE (FORME & ABSENCES) ---
             base_forme_dom = 60 + (seed % 31)
             base_forme_ext = 55 + ((seed >> 2) % 31)
             absences_dom = (seed % 3)
@@ -191,6 +137,7 @@ elif menu == "👑 VIP":
                 forme_dom = max(30, forme_dom - 15)
                 forme_ext = max(30, forme_ext - 15)
 
+            # --- CRÉATION DU SCORE LOGIQUE ---
             diff_forme = forme_dom - forme_ext
             if climat_meteo == "Terrain lourd / Pluie":
                 if diff_forme > 15:
@@ -243,6 +190,7 @@ elif menu == "👑 VIP":
             else:
                 option_ht_ft = "X/X (Nul/Nul)"
 
+            # --- CALCULS SIMULATEURS ODDSPORTAL (COTES & ALIGNEMENT) ---
             if buts_dom > buts_ext:
                 diff = buts_dom - buts_ext
                 cote_v1 = round(1.20 + (seed % 3) * 0.08, 2) if diff > 1 else round(1.55 + (seed % 4) * 0.10, 2)
@@ -349,17 +297,19 @@ elif menu == "👑 VIP":
             col_gauche, col_droite = st.columns(2)
             with col_gauche:
                 st.markdown("### 🔮 Marchés Majeurs")
-                st.info(f"""• **Option Principale :** `{option_jeu}`
-➔ Fiabilité : **{fiabilite_jeu}%**
-
-• **Les deux équipes marquent :** `{option_btts}`
-➔ Fiabilité : **{fiabilite_btts}%**""")
+                st.info(
+                    f"• **Option Principale :** `{option_jeu}`\n"
+                    f"➔ Fiabilité : **{fiabilite_jeu}%**\n\n"
+                    f"• **Les deux équipes marquent :** `{option_btts}`\n"
+                    f"➔ Fiabilité : **{fiabilite_btts}%**"
+                )
             with col_droite:
                 st.markdown("### 🎯 Scores & Scénarios")
-                st.warning(f"""• **Score Exact Suggéré :** `{option_score}`
-➔ Indice de Probabilité : **{74 + (seed % 13)}%**
-
-• **Scénario Mi-temps / Fin :** `{option_ht_ft}`""")
+                st.warning(
+                    f"• **Score Exact Suggéré :** `{option_score}`\n"
+                    f"➔ Indice de Probabilité : **{74 + (seed % 13)}%**\n\n"
+                    f"• **Scénario Mi-temps / Fin :** `{option_ht_ft}`"
+                )
 
             # =========================================================
             # 📉 BLOC 2 : DETECTEUR DE FLUX FINANCIERS (STYLE ODDSPORTAL)
@@ -371,8 +321,10 @@ elif menu == "👑 VIP":
             st.code(f"Victoire Domicile (1) : {cote_v1:.2f}  |  Match Nul (X) : {cote_x:.2f}  |  Victoire Extérieur (2) : {cote_v2:.2f}")
 
             st.markdown("### 📉 Analyse de la Baisse des Cotes (Dropping Odds)")
-            st.error(f"""• Cote d'Ouverture : `{cote_open:.2f}` ➔ Cote Actuelle : `{cote_actuelle:.2f}`
-• Intensité de la baisse mondiale : **-{chute_pourcent:.2f}%**""")
+            st.error(
+                f"• Cote d'Ouverture : `{cote_open:.2f}` ➔ Cote Actuelle : `{cote_actuelle:.2f}`\n"
+                f"• Intensité de la baisse mondiale : **-{chute_pourcent:.2f}%**"
+            )
             
             st.markdown("### ⚡ Surcharges Financières & Mises Globales")
             st.progress(pression_mises / 100)
