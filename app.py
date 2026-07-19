@@ -1,9 +1,6 @@
 import streamlit as st
 import urllib.parse
-import urllib.request
 import hashlib
-import re
-import html
 
 # Configuration de la page
 st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered")
@@ -13,95 +10,6 @@ st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered
 # =========================================================
 CLE_VIP_CORRECTE = ""  # Clé pour tes clients VIP
 CLE_ADMIN_FORCAGE = ""  # Ta clé secrète admin
-
-# =========================================================
-# 🧠 DÉCODEUR DE MATCH ULTRA-INTELLIGENT (CORRIGÉ)
-# =========================================================
-def extraire_nom_match_intelligent(lien_sofa, lien_odds):
-    liens = [l for l in [lien_sofa, lien_odds] if l]
-    
-    # --- MÉTHODE 1 : LECTURE DU TITRE DU SITE EN DIRECT ---
-    for url in liens:
-        try:
-            req = urllib.request.Request(
-                url, 
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                }
-            )
-            # Timeout court de 2.5 secondes pour ne pas ralentir l'appli
-            with urllib.request.urlopen(req, timeout=2.5) as response:
-                content = response.read().decode('utf-8', errors='ignore')
-                match = re.search(r'<title>(.*?)</title>', content, re.IGNORECASE | re.DOTALL)
-                if match:
-                    titre_brut = html.unescape(match.group(1).strip())
-                    
-                    # Nettoyage spécifique Sofascore
-                    # Exemple: "Qingdao Hainiu - Henan FC live score, H2H..."
-                    titre_clean = re.sub(r'(?i)\s+live score,.*', '', titre_brut)
-                    titre_clean = titre_clean.replace(" | Sofascore", "")
-                    
-                    # Nettoyage spécifique Oddsportal
-                    # Exemple: "Qingdao Hainiu - Henan FC Jinzu Dukang H2H betting odds..."
-                    titre_clean = re.sub(r'(?i)\s+(H2H|betting|odds|cotes).*', '', titre_clean)
-                    titre_clean = titre_clean.replace(" | Oddsportal", "")
-                    
-                    # Séparation propre
-                    for sep in [" - ", " vs ", " VS ", " v ", " V "]:
-                        if sep in titre_clean:
-                            parties = titre_clean.split(sep)
-                            dom = parties[0].strip()
-                            ext = parties[1].strip()
-                            return f"{dom} vs {ext}"
-                            
-                    if 5 < len(titre_clean) < 80:
-                        return titre_clean
-        except Exception:
-            pass # Si la requête échoue ou est bloquée, on passe à la suite sans planter
-
-    # --- MÉTHODE 2 : DECOUPAGE INTELLIGENT DE SLUG (PLAN B LOCAL) ---
-    for url in liens:
-        url_lower = url.lower()
-        try:
-            if "sofascore.com" in url_lower and "/match/" in url_lower:
-                slug = url.split("/match/")[1].split("/")[0]
-            elif "oddsportal.com" in url_lower and "/match/" in url_lower:
-                slug = url.split("/match/")[1].split("/")[0]
-            elif "oddsportal.com" in url_lower and "/h2h/" in url_lower:
-                parts = url.split("/h2h/")[1].split("/")
-                dom = parts[0].replace("-", " ").title()
-                ext = parts[1].replace("-", " ").title()
-                return f"{dom} vs {ext}"
-            else:
-                continue
-            
-            # Gestion des séparateurs textuels explicites
-            if "-vs-" in slug:
-                parts = slug.split("-vs-")
-                dom = parts[0].replace("-", " ").title()
-                ext = parts[1].replace("-", " ").title()
-                return f"{dom} vs {ext}"
-            else:
-                # Découpage par mots
-                parts = [p for p in slug.split("-") if p]
-                
-                # Si on trouve un indicateur comme "fc" au milieu, on l'utilise comme pivot
-                if "fc" in parts and 0 < parts.index("fc") < len(parts) - 1:
-                    idx = parts.index("fc")
-                    dom = " ".join(parts[:idx+1]).title()
-                    ext = " ".join(parts[idx+1:]).title()
-                    return f"{dom} vs {ext}"
-                elif len(parts) >= 2:
-                    # Coupe équilibrée en deux au milieu
-                    milieu = len(parts) // 2
-                    dom = " ".join(parts[:milieu]).title()
-                    ext = " ".join(parts[milieu:]).title()
-                    return f"{dom} vs {ext}"
-        except Exception:
-            pass
-
-    return "Match Sélectionné (Analyse Auto)"
-
 
 # =========================================================
 # 🧭 NAVIGATION : GRATUIT & VIP
@@ -160,8 +68,32 @@ elif menu == "👑 VIP":
             lien_combine = lien_sofa + lien_odds
             seed = int(hashlib.md5(lien_combine.encode()).hexdigest(), 16)
             
-            # --- DÉCODAGE INTELLIGENT DU NOM ---
-            nom_du_match = extraire_nom_match_intelligent(lien_sofa, lien_odds)
+            nom_du_match = "Match Sélectionné (Analyse Auto)"
+            
+            # 🧠 DECODEUR INTELLIGENT DE LIENS
+            # On cherche d'abord à décoder le nom via Sofascore (souvent plus propre)
+            if lien_sofa and "sofascore.com" in lien_sofa.lower():
+                try:
+                    slug = lien_sofa.split("/match/")[1].split("/")[0]
+                    parts = slug.split("-")
+                    if len(parts) >= 2:
+                        nom_du_match = f"{parts[0].title()} vs {' '.join(parts[1:]).title()}"
+                except Exception:
+                    pass
+            # Si pas de Sofascore, on décode via Oddsportal
+            elif lien_odds and "oddsportal.com" in lien_odds.lower():
+                try:
+                    if "/h2h/" in lien_odds.lower():
+                        parts = lien_odds.split("/h2h/")[1].split("/")
+                        dom = parts[0].split("-")[0].title()
+                        ext = parts[1].split("-")[0].title()
+                        nom_du_match = f"{dom} vs {ext}"
+                    elif "/match/" in lien_odds.lower():
+                        slug = lien_odds.split("/match/")[1].split("/")[0]
+                        parts = slug.split("-")
+                        nom_du_match = f"{parts[0].title()} vs {' '.join(parts[1:-1]).title()}"
+                except Exception:
+                    pass
 
             # --- ANALYSE DE CONTEXTE ---
             is_unpredictable = False
