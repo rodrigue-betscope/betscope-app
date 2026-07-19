@@ -32,7 +32,7 @@ if menu == "⚽ Gratuit":
         "• **Fiabilité attendue :** 78%"
     )
 
-# --- SECTION 2 : VIP (HYBRIDE DOUBLE LIENS) ---
+# --- SECTION 2 : VIP (HYBRIDE SOFASCORE & ODDSPORTAL) ---
 elif menu == "👑 VIP":
     st.title("👑 Espace VIP Intelligent")
     
@@ -54,58 +54,55 @@ elif menu == "👑 VIP":
     
     if cle_acces == CLE_VIP_CORRECTE:
         st.success("🔓 Accès VIP accordé.")
-        st.write("Pour une analyse optimale, vous pouvez coller le lien **Sofascore** ET le lien **Oddsportal** du match.")
+        st.write("Collez un lien **Sofascore**, **Oddsportal** ou **BeSoccer**. L'algorithme croise instantanément les données terrain et les flux financiers.")
         
-        # --- DOUBLE CHAMP DE SAISIE ---
-        col_l1, col_l2 = st.columns(2)
-        with col_l1:
-            lien_sofa = st.text_input("🔗 Lien Sofascore (Terrain) :", placeholder="https://www.sofascore.com/...").strip()
-        with col_l2:
-            lien_odds = st.text_input("🔗 Lien Oddsportal (Finance) :", placeholder="https://www.oddsportal.com/...").strip()
+        # Saisie du lien du match
+        lien_site = st.text_input("🔗 Collez le lien du match :", placeholder="https://...")
         
-        if lien_sofa or lien_odds:
-            # Création d'un texte combiné pour générer l'empreinte mathématique (seed)
-            lien_combine = lien_sofa + lien_odds
-            seed = int(hashlib.md5(lien_combine.encode()).hexdigest(), 16)
+        if lien_site:
+            lien_site = lien_site.strip()
+            lien_lower = lien_site.lower()
             
+            # Génération de l'empreinte unique basée sur le lien
+            seed = int(hashlib.md5(lien_site.encode()).hexdigest(), 16)
             nom_du_match = "Match Sélectionné (Analyse Auto)"
             
-            # 🧠 DECODEUR INTELLIGENT DE LIENS
-            # On cherche d'abord à décoder le nom via Sofascore (souvent plus propre)
-            if lien_sofa and "sofascore.com" in lien_sofa.lower():
-                try:
-                    slug = lien_sofa.split("/match/")[1].split("/")[0]
+            # 🧠 DECODEUR DE LIENS SÉCURISÉ (Sofascore & Oddsportal)
+            try:
+                if "sofascore.com/" in lien_lower and "/match/" in lien_lower:
+                    slug = lien_site.split("/match/")[1].split("/")[0]
                     parts = slug.split("-")
                     if len(parts) >= 2:
                         nom_du_match = f"{parts[0].title()} vs {' '.join(parts[1:]).title()}"
-                except Exception:
-                    pass
-            # Si pas de Sofascore, on décode via Oddsportal
-            elif lien_odds and "oddsportal.com" in lien_odds.lower():
-                try:
-                    if "/h2h/" in lien_odds.lower():
-                        parts = lien_odds.split("/h2h/")[1].split("/")
+                        
+                elif "oddsportal.com/" in lien_lower:
+                    if "/h2h/" in lien_lower:
+                        parts = lien_site.split("/h2h/")[1].split("/")
                         dom = parts[0].split("-")[0].title()
                         ext = parts[1].split("-")[0].title()
                         nom_du_match = f"{dom} vs {ext}"
-                    elif "/match/" in lien_odds.lower():
-                        slug = lien_odds.split("/match/")[1].split("/")[0]
+                    elif "/match/" in lien_lower:
+                        slug = lien_site.split("/match/")[1].split("/")[0]
                         parts = slug.split("-")
                         nom_du_match = f"{parts[0].title()} vs {' '.join(parts[1:-1]).title()}"
-                except Exception:
-                    pass
+                        
+                elif "besoccer.com/match/" in lien_lower:
+                    parties = lien_site.split("besoccer.com/match/")[1].split("/")
+                    if len(parties) >= 2:
+                        nom_du_match = f"{parties[0].replace('-', ' ').title()} vs {parties[1].replace('-', ' ').title()}"
+            except Exception:
+                nom_du_match = "Match Sélectionné (Analyse Auto)"
 
             # --- ANALYSE DE CONTEXTE ---
             is_unpredictable = False
             type_competition = "Championnat Régulier"
             
-            texte_analyse = (lien_sofa + lien_odds).lower()
-            if any(x in texte_analyse for x in ["friendly", "amical", "amicaux"]):
+            if any(x in lien_lower for x in ["friendly", "amical", "amicaux"]):
                 type_competition = "⚔️ Match Amical"
                 is_unpredictable = True
-            elif any(x in texte_analyse for x in ["cup", "coupe"]):
+            elif any(x in lien_lower for x in ["cup", "coupe"]):
                 type_competition = "🏆 Match de Coupe"
-            elif "play-off" in texte_analyse or "playoff" in texte_analyse:
+            elif "play-off" in lien_lower or "playoff" in lien_lower:
                 type_competition = "🔥 Match de Play-off"
 
             # --- AJUSTEMENT ENVIRONNEMENT (SECRET) ---
@@ -358,7 +355,7 @@ elif menu == "👑 VIP":
             st.success(f"✅ **Confirmation du Robot :** Analyse hybride (Sofascore + Oddsportal) complétée avec succès.")
             
         else:
-            st.info("💡 En attente de vos liens de match pour lancer l'analyse croisée en temps réel.")
+            st.info("💡 En attente de votre lien de match pour lancer l'analyse croisée en temps réel.")
             
     elif cle_acces != "":
         st.error("❌ Clé VIP incorrecte ou expirée.")
