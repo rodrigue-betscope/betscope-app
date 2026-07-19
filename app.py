@@ -11,8 +11,8 @@ st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered
 # =========================================================
 # 🔐 CONFIGURATION DES CLÉS
 # =========================================================
-CLE_VIP_CORRECTE = "DADY2026"  # Clé pour tes clients VIP
-CLE_ADMIN_FORCAGE = "DADY_BOSS"  # Ta clé secrète admin
+CLE_VIP_CORRECTE = ""  # Clé pour tes clients VIP
+CLE_ADMIN_FORCAGE = ""  # Ta clé secrète admin
 
 # =========================================================
 # 🧠 DÉCODEUR DE MATCH ULTRA-INTELLIGENT (CORRIGÉ)
@@ -142,7 +142,7 @@ elif menu == "👑 VIP":
         </style>
     """, unsafe_allow_html=True)
     
-    cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="")
+    cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
     if cle_acces == CLE_VIP_CORRECTE:
         st.success("🔓 Accès VIP accordé.")
