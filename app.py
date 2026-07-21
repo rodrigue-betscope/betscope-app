@@ -3,8 +3,8 @@ import google.generativeai as genai
 from gtts import gTTS
 import streamlit as st
 
-# 1. Configuration de la clé API Gemini
-GEMINI_API_KEY = "AQ.Ab8RN6JZh1YxGKBWekH6Gpqu8ubAohpm3Pg1Um8eThpr5QnidQ"
+# 1. Configuration de la clé API Gemini (Doit commencer par AIzaSy...)
+GEMINI_API_KEY = "VOTRE_VRAI_CLE_AIZASY"
 genai.configure(api_key=GEMINI_API_KEY)
 
 
