@@ -1,29 +1,13 @@
-import base64
-import google.generativeai as genai
-from gtts import gTTS
-import streamlit as st
-
-# 1. Configuration de la clé API Gemini
-GEMINI_API_KEY = "AQ.Ab8RN6IgcLi8XfeArS1PQVCN2cjUBplqOuKxE6plcxIL_8YlYA"
-genai.configure(api_key=GEMINI_API_KEY)
-
-
 def generer_analyse_vip_complete(cible_match):
-  """Fouille le web en profondeur, génère un rapport complet (historique + pronos)
+  """Génère un rapport complet et prépare le texte pour la voix IA."""
+  model = genai.GenerativeModel(model_name="gemini-1.5-pro")
 
-  et prépare le texte pour la voix IA.
-  """
-  model = genai.GenerativeModel(
-      model_name="gemini-1.5-pro", tools=["google_search"]
-  )
-
-  # Prompt enrichi avec le Journal Historique des confrontations et buts passés
   prompt = f"""
     Tu es l'algorithme d'analyse prédictive principal de l'application VIP "Rodrigue Pro Puissant Prédiction".
     Ton but est de fournir une analyse d'expert mathématique, historique et contextuelle pour le match ou le lien suivant : {cible_match}
     
-    Utilise ton outil de recherche Google pour scanner en temps réel le web (SofaScore, BigSoccer, OddsPortal) afin de compiler les éléments suivants :
-    1. JOURNAL HISTORIQUE (H2H) : Comment les précédents matchs entre ces deux équipes se sont déroulés ? Qui a gagné ? Combien de buts ont été marqués en moyenne lors de leurs confrontations passées ?
+    Compile les éléments suivants :
+    1. JOURNAL HISTORIQUE (H2H) : Comment les précédents matchs entre ces équipes se sont déroulés ? Qui a gagné ? Combien de buts ont été marqués en moyenne ?
     2. CONTEXTE ACTUEL : Les blessures récentes, les joueurs clés absents ou suspendus, la météo et son impact.
     3. FLUX FINANCIERS : Les mouvements de cotes importants sur le marché 1X2.
 
@@ -31,7 +15,7 @@ def generer_analyse_vip_complete(cible_match):
 
     📖 [1] LE JOURNAL DES CONFRONTATIONS (H2H)
     - Historique des derniers face-à-face entre les deux équipes.
-    - Analyse des buts : combien de buts ils ont l'habitude de marquer lorsqu'ils se rencontrent.
+    - Analyse des buts marqués lors de leurs confrontations.
     - Dynamique récente et état de forme général.
 
     📋 [2] INFOS TERRAIN & MÉTÉO
@@ -61,73 +45,3 @@ def generer_analyse_vip_complete(cible_match):
     return response.text
   except Exception as e:
     return f"❌ Erreur lors de l'analyse : {str(e)}"
-
-
-def creer_bouton_audio_html(texte_analyse, nom_fichier="analyse_vip.mp3"):
-  """Prend le texte de l'IA, le convertit en voix parlée en français,
-
-  et génère un lecteur audio HTML pour ton site web.
-  """
-  try:
-    texte_propre = (
-        texte_analyse.replace("*", "")
-        .replace("[", "")
-        .replace("]", "")
-        .replace("📊", "")
-        .replace("⚽", "")
-    )
-
-    tts = gTTS(text=texte_propre, lang="fr", slow=False)
-    tts.save(nom_fichier)
-
-    with open(nom_fichier, "rb") as audio_file:
-      audio_bytes = audio_file.read()
-    audio_base64 = base64.b64encode(audio_bytes).decode()
-
-    html_audio_player = f"""
-        <div style="margin: 20px 0; padding: 15px; background-color: #1e1e2e; border-radius: 10px; text-align: center;">
-            <p style="color: #ffb000; font-weight: bold; font-size: 16px; margin-bottom: 10px;">🔊 ÉCOUTER L'ANALYSE IA EN HAUTE VOIX</p>
-            <audio controls src="data:audio/mp3;base64,{audio_base64}" style="width: 100%; max-width: 400px;"></audio>
-        </div>
-        """
-    return html_audio_player
-  except Exception as e:
-    return (
-        f"<p style='color:red;'>Impossible de générer la voix : {str(e)}</p>"
-    )
-
-
-# ==========================================
-# INTERFACE GRAPHIQUE STREAMLIT
-# ==========================================
-st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered")
-
-st.markdown(
-    "<h1 style='text-align: center; color: #ffb000;'>👑 BetScope Pro</h1>",
-    unsafe_allow_html=True,
-)
-st.markdown(
-    "<h3 style='text-align: center; color: #ffffff;'>Module d'Analyse"
-    " Prédictive VIP</h3>",
-    unsafe_allow_html=True,
-)
-
-match_cible = st.text_input(
-    "Entrez le match ou les équipes à analyser :",
-    "Agrobiznes Volochysk vs FC Epicentr Dunaivtsi",
-)
-
-if st.button("🚀 Lancer l'analyse VIP"):
-  with st.spinner(
-      "🔄 L'IA analyse le journal historique et les données en direct..."
-  ):
-    rapport_texte = generer_analyse_vip_complete(match_cible)
-
-    st.markdown("---")
-    st.markdown("### 📝 Rapport Textuel du Match")
-    st.markdown(rapport_texte)
-
-    st.markdown("---")
-    st.markdown("### 🔊 Version Audio")
-    html_lecteur_audio = creer_bouton_audio_html(rapport_texte)
-    st.components.v1.html(html_lecteur_audio, height=150)
