@@ -1,4 +1,4 @@
 import streamlit as st
 
-SPORT_API_KEY = st.secrets["SPORT_API_KEY"]
-GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+SPORT_API_KEY = ["118e42213a9421c97067fe8a2c992a92"]
+GEMINI_API_KEY = ["AQ.Ab8RN6LWncxHdnsOGYf6OhF5NGKYvZ2zJqkQnK9VnI7bKLJ83g"]
