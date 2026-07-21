@@ -4,7 +4,7 @@ from gtts import gTTS
 import streamlit as st
 
 # 1. Configuration de la clé API Gemini
-GEMINI_API_KEY = "AQ.Ab8RN6IgcLi8XfeArS1PQVCN2cjUBplqOuKxE6plcxIL_8YlYA"
+GEMINI_API_KEY = "AQ.Ab8RN6JZh1YxGKBWekH6Gpqu8ubAohpm3Pg1Um8eThpr5QnidQ"
 genai.configure(api_key=GEMINI_API_KEY)
 
 
