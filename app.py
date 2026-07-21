@@ -1,6 +1,7 @@
 import base64
 import google.generativeai as genai
 from gtts import gTTS
+import streamlit as st
 
 # 1. Configuration de la clé API Gemini
 GEMINI_API_KEY = "AQ.Ab8RN6IgcLi8XfeArS1PQVCN2cjUBplqOuKxE6plcxIL_8YlYA"
@@ -8,16 +9,16 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 
 def generer_analyse_vip_complete(cible_match):
-    """Fouille le web en profondeur, génère un rapport complet (historique + pronos)
+  """Fouille le web en profondeur, génère un rapport complet (historique + pronos)
 
-    et prépare le texte pour la voix IA.
-    """
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro", tools=[{"google_search": {}}]
-    )
+  et prépare le texte pour la voix IA.
+  """
+  model = genai.GenerativeModel(
+      model_name="gemini-1.5-pro", tools=["google_search"]
+  )
 
-    # Prompt enrichi avec le Journal Historique des confrontations et buts passés
-    prompt = f"""
+  # Prompt enrichi avec le Journal Historique des confrontations et buts passés
+  prompt = f"""
     Tu es l'algorithme d'analyse prédictive principal de l'application VIP "Rodrigue Pro Puissant Prédiction".
     Ton but est de fournir une analyse d'expert mathématique, historique et contextuelle pour le match ou le lien suivant : {cible_match}
     
@@ -55,73 +56,78 @@ def generer_analyse_vip_complete(cible_match):
     - Combo Premium Rentable : (Ex: Victoire Domicile + Plus de 2.5 buts).
     """
 
-    try:
-        print("🔄 L'IA analyse le journal historique et les données en direct... Patientez...")
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"❌ Erreur lors de l'analyse : {str(e)}"
+  try:
+    response = model.generate_content(prompt)
+    return response.text
+  except Exception as e:
+    return f"❌ Erreur lors de l'analyse : {str(e)}"
 
 
 def creer_bouton_audio_html(texte_analyse, nom_fichier="analyse_vip.mp3"):
-    """Prend le texte de l'IA, le convertit en voix parlée en français,
+  """Prend le texte de l'IA, le convertit en voix parlée en français,
 
-    et génère un lecteur audio HTML pour ton site web sur Base44.
-    """
-    try:
-        # Nettoyage rapide du texte pour que la voix IA ne lise pas les émojis ou les astérisques
-        texte_propre = (
-            texte_analyse.replace("*", "")
-            .replace("[", "")
-            .replace("]", "")
-            .replace("📊", "")
-            .replace("⚽", "")
-        )
+  et génère un lecteur audio HTML pour ton site web.
+  """
+  try:
+    texte_propre = (
+        texte_analyse.replace("*", "")
+        .replace("[", "")
+        .replace("]", "")
+        .replace("📊", "")
+        .replace("⚽", "")
+    )
 
-        # Génération de la voix IA en français
-        tts = gTTS(text=texte_propre, lang="fr", slow=False)
-        tts.save(nom_fichier)
+    tts = gTTS(text=texte_propre, lang="fr", slow=False)
+    tts.save(nom_fichier)
 
-        # Encodage du fichier audio pour l'intégrer proprement dans la page web
-        with open(nom_fichier, "rb") as audio_file:
-            audio_bytes = audio_file.read()
-        audio_base64 = base64.b64encode(audio_bytes).decode()
+    with open(nom_fichier, "rb") as audio_file:
+      audio_bytes = audio_file.read()
+    audio_base64 = base64.b64encode(audio_bytes).decode()
 
-        # Code HTML pour afficher un bouton de lecture personnalisé sur ton site
-        html_audio_player = f"""
+    html_audio_player = f"""
         <div style="margin: 20px 0; padding: 15px; background-color: #1e1e2e; border-radius: 10px; text-align: center;">
             <p style="color: #ffb000; font-weight: bold; font-size: 16px; margin-bottom: 10px;">🔊 ÉCOUTER L'ANALYSE IA EN HAUTE VOIX</p>
             <audio controls src="data:audio/mp3;base64,{audio_base64}" style="width: 100%; max-width: 400px;"></audio>
         </div>
         """
-        return html_audio_player
-    except Exception as e:
-        return f"<p style='color:red;'>Impossible de générer la voix : {str(e)}</p>"
+    return html_audio_player
+  except Exception as e:
+    return (
+        f"<p style='color:red;'>Impossible de générer la voix : {str(e)}</p>"
+    )
 
 
 # ==========================================
-# TEST ET EXÉCUTION DU SYSTÈME COMPLETE
+# INTERFACE GRAPHIQUE STREAMLIT
 # ==========================================
-if __name__ == "__main__":
-    # Exemple de match à analyser
-    match_cible = "Agrobiznes Volochysk vs FC Epicentr Dunaivtsi"
+st.set_page_config(page_title="BetScope Pro", page_icon="👑", layout="centered")
 
-    # 1. Lancement de la super-analyse IA
+st.markdown(
+    "<h1 style='text-align: center; color: #ffb000;'>👑 BetScope Pro</h1>",
+    unsafe_allow_html=True,
+)
+st.markdown(
+    "<h3 style='text-align: center; color: #ffffff;'>Module d'Analyse"
+    " Prédictive VIP</h3>",
+    unsafe_allow_html=True,
+)
+
+match_cible = st.text_input(
+    "Entrez le match ou les équipes à analyser :",
+    "Agrobiznes Volochysk vs FC Epicentr Dunaivtsi",
+)
+
+if st.button("🚀 Lancer l'analyse VIP"):
+  with st.spinner(
+      "🔄 L'IA analyse le journal historique et les données en direct..."
+  ):
     rapport_texte = generer_analyse_vip_complete(match_cible)
 
-    # Affichage du rapport textuel dans la console
-    print("\n" + "=" * 50)
-    print("📝 RAPPORT TEXTUEL DU MATCH")
-    print("=" * 50)
-    print(rapport_texte)
+    st.markdown("---")
+    st.markdown("### 📝 Rapport Textuel du Match")
+    st.markdown(rapport_texte)
 
-    # 2. Génération de la voix et du lecteur audio pour le site
+    st.markdown("---")
+    st.markdown("### 🔊 Version Audio")
     html_lecteur_audio = creer_bouton_audio_html(rapport_texte)
-
-    print("\n" + "=" * 50)
-    print("🌐 CODE DU BOUTON AUDIO GÉNÉRÉ POUR TON SITE :")
-    print("=" * 50)
-    # Ce code HTML contient l'audio intégré. Si ton site utilise Streamlit,
-    # il te suffit de faire : st.components.v1.html(html_lecteur_audio)
-    print(html_lecteur_audio)
-    print("\n✅ Fichier 'analyse_vip.mp3' créé avec succès dans le dossier !")
+    st.components.v1.html(html_lecteur_audio, height=150)
