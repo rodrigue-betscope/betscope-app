@@ -1,16 +1,16 @@
 import base64
-import json
-import urllib.request
+import google.generativeai as genai
 from gtts import gTTS
 import streamlit as st
 
-# 1. Ton nouveau jeton AQ. du compte tout neuf
-AQ_TOKEN = "AQ.Ab8RN6IobMEjgetUv8y1Rm0RmnV0tWrgjIrmJ9GAeyrv07VKdg"
+# Mets ta vraie clé qui commence par AIzaSy ici 👇
+GEMINI_API_KEY = "AIzaSy_MET_TA_ VRAIE_CLE_ICI"
+genai.configure(api_key=GEMINI_API_KEY)
 
 
 def generer_analyse_vip_complete(cible_match):
-  """Génère un rapport complet via l'API officielle avec le jeton OAuth."""
-  url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent"
+  """Génère un rapport complet et prépare le texte pour la voix IA."""
+  model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
   prompt = f"""
     Tu es l'algorithme d'analyse prédictive principal de l'application VIP "Rodrigue Pro Puissant Prédiction".
@@ -50,29 +50,9 @@ def generer_analyse_vip_complete(cible_match):
     - Combo Premium Rentable : (Ex: Victoire Domicile + Plus de 2.5 buts).
     """
 
-  payload = {"contents": [{"parts": [{"text": prompt}]}]}
-
-  headers = {
-      "Authorization": f"Bearer {AQ_TOKEN}",
-      "Content-Type": "application/json",
-  }
-
   try:
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
-    with urllib.request.urlopen(req) as response:
-      result = json.loads(response.read().decode("utf-8"))
-      texte_genere = (
-          result.get("candidates", [{}])[0]
-          .get("content", {})
-          .get("parts", [{}])[0]
-          .get("text", "Aucune réponse générée.")
-      )
-      return texte_genere
+    response = model.generate_content(prompt)
+    return response.text
   except Exception as e:
     return f"❌ Erreur lors de l'analyse : {str(e)}"
 
