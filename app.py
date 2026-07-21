@@ -14,8 +14,8 @@ import base64
 # CLÉS API
 # ============================
 
-SPORT_API_KEY =getenv118e42213a9421c97067fe8a2c992a92")
-GEMINI_API_KEY =AQAb8RN6Lf-C7eoe0oqQNSvH6ht1yvF9HAedhHrpTIm8mFsRFvZA")
+SPORT_API_KEY =("getenv118e42213a9421c97067fe8a2c992a92")
+GEMINI_API_KEY =("AQAb8RN6Lf-C7eoe0oqQNSvH6ht1yvF9HAedhHrpTIm8mFsRFvZA")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
