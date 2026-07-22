@@ -16,7 +16,7 @@ CONFIGURATION REQUISE :
 Crée un fichier .streamlit/secrets.toml (jamais partagé, jamais commité)
 contenant :
 
-    API_FOOTBALL_KEY = "14e0597ad77ade14b2e627c6cfc3242b"
+    API_FOOTBALL_KEY = "ta_vraie_cle_ici"
 
 La clé s'obtient sur https://www.api-football.com (ou via RapidAPI).
 """
@@ -32,7 +32,7 @@ API_BASE_URL = "https://v3.football.api-sports.io"
 def get_api_key():
     """Récupère la clé API depuis st.secrets, jamais codée en dur."""
     try:
-        return st.secrets["API_FOOTBALL_KEY"]
+        return st.secrets["14e0597ad77ade14b2e627c6cfc3242b"]
     except (KeyError, FileNotFoundError):
         return None
 
