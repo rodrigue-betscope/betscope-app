@@ -16,7 +16,7 @@ CONFIGURATION REQUISE :
 Crée un fichier .streamlit/secrets.toml (jamais partagé, jamais commité)
 contenant :
 
-    API_FOOTBALL_KEY = "ta_vraie_cle_ici"
+    API_FOOTBALL_KEY = "AQ.Ab8RN6IuudjjjLo8f1Tp9SInt263UWg2OWEZc0OQbSMIizrIYw"
 
 La clé s'obtient sur https://www.api-football.com (ou via RapidAPI).
 """
