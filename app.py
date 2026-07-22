@@ -31,7 +31,7 @@ API_BASE_URL = "https://v3.football.api-sports.io"
 def get_api_key():
     """Récupère la clé API depuis st.secrets, jamais codée en dur."""
     try:
-        return st.secrets["14e0597ad77ade14b2e627c6cfc3242b"]
+        return st.secrets["API_FOOTBALL_KEY"]
     except (KeyError, FileNotFoundError):
         return None
 
