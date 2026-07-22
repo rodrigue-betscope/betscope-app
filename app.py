@@ -1,3 +1,25 @@
+BetScope Stats — Analyse statistique réelle de matchs de football
+
+Affiche des statistiques RÉELLES issues d'API-Football :
+- Historique des confrontations (H2H)
+- Forme récente des deux équipes
+- Moyennes de buts marqués / encaissés
+- Blessures / absences si disponibles
+- Cotes actuelles du marché (rapportées telles quelles)
+
+⚠️ Cet outil n'invente AUCUN pourcentage de victoire, score exact,
+ou "conseil ferme". Il montre des faits pour que l'utilisateur se
+fasse sa propre opinion.
+
+CONFIGURATION REQUISE :
+Crée un fichier .streamlit/secrets.toml (jamais partagé, jamais commité)
+contenant :
+
+    API_FOOTBALL_KEY = "ta_vraie_cle_ici"
+
+La clé s'obtient sur https://www.api-football.com (ou via RapidAPI).
+"""
+
 import base64
 import requests
 import streamlit as st
@@ -5,28 +27,21 @@ from gtts import gTTS
 
 API_BASE_URL = "https://v3.football.api-sports.io"
 
+
 def get_api_key():
-    """Récupère la clé API depuis st.secrets ou depuis le champ de secours dans la sidebar."""
+    """Récupère la clé API depuis st.secrets, jamais codée en dur."""
     try:
-        if "API_FOOTBALL_KEY" in st.secrets and st.secrets["API_FOOTBALL_KEY"]:
-            return st.secrets["API_FOOTBALL_KEY"]
-    except (KeyError, FileNotFoundError, Exception):
-        pass
-    
-    # Champ de saisie direct dans la sidebar pré-rempli avec ta clé pour un usage mobile fluide
-    return st.sidebar.text_input(
-        "Clé API-Football",
-        value="14e0597ad77ade14b2e627c6cfc3242b",
-        type="password",
-        key="input_api_football_key",
-        help="Entrée automatique de ta clé pour contourner l'absence de secrets.toml."
-    )
+        return st.secrets["14e0597ad77ade14b2e627c6cfc3242b"]
+    except (KeyError, FileNotFoundError):
+        return None
+
 
 def api_football_request(endpoint, params=None):
     """Appelle l'API-Football et retourne le JSON, ou None en cas d'erreur."""
     api_key = get_api_key()
     if not api_key:
         return None
+
     headers = {"x-apisports-key": api_key}
     try:
         response = requests.get(
@@ -41,6 +56,7 @@ def api_football_request(endpoint, params=None):
         st.error(f"Erreur de connexion à l'API : {e}")
         return None
 
+
 def chercher_equipe(nom_equipe):
     """Cherche une équipe par nom et retourne son ID + infos de base."""
     data = api_football_request("teams", {"search": nom_equipe})
@@ -48,6 +64,7 @@ def chercher_equipe(nom_equipe):
         return None
     equipe = data["response"][0]["team"]
     return {"id": equipe["id"], "nom": equipe["name"], "logo": equipe["logo"]}
+
 
 def recuperer_h2h(id_equipe_1, id_equipe_2, nb_matchs=5):
     """Récupère les derniers face-à-face réels entre deux équipes."""
@@ -57,6 +74,7 @@ def recuperer_h2h(id_equipe_1, id_equipe_2, nb_matchs=5):
     )
     if not data or not data.get("response"):
         return []
+
     matchs = []
     for fixture in data["response"]:
         matchs.append({
@@ -68,6 +86,7 @@ def recuperer_h2h(id_equipe_1, id_equipe_2, nb_matchs=5):
         })
     return matchs
 
+
 def recuperer_forme_recente(id_equipe, nb_matchs=5):
     """Récupère les derniers résultats réels d'une équipe."""
     data = api_football_request(
@@ -75,6 +94,7 @@ def recuperer_forme_recente(id_equipe, nb_matchs=5):
     )
     if not data or not data.get("response"):
         return []
+
     matchs = []
     for fixture in data["response"]:
         est_domicile = fixture["teams"]["home"]["id"] == id_equipe
@@ -95,7 +115,9 @@ def recuperer_forme_recente(id_equipe, nb_matchs=5):
         matchs.append({
             "date": fixture["fixture"]["date"][:10],
             "adversaire": (
-                fixture["teams"]["away"]["name"] if est_domicile else fixture["teams"]["home"]["name"]
+                fixture["teams"]["away"]["name"]
+                if est_domicile
+                else fixture["teams"]["home"]["name"]
             ),
             "domicile": est_domicile,
             "buts_pour": buts_pour,
@@ -103,6 +125,7 @@ def recuperer_forme_recente(id_equipe, nb_matchs=5):
             "resultat": resultat,
         })
     return matchs
+
 
 def calculer_moyennes_buts(matchs):
     """Calcule les moyennes réelles de buts marqués/encaissés sur une liste de matchs."""
@@ -119,6 +142,7 @@ def calculer_moyennes_buts(matchs):
         "defaites": sum(1 for m in matchs if m["resultat"] == "D"),
     }
 
+
 def recuperer_cotes_marche(id_equipe_1, id_equipe_2):
     """Récupère les cotes actuelles du marché si un match à venir existe entre ces équipes."""
     data = api_football_request(
@@ -126,17 +150,21 @@ def recuperer_cotes_marche(id_equipe_1, id_equipe_2):
     )
     if not data or not data.get("response"):
         return None
+
     fixture_id = None
     for fixture in data["response"]:
         equipes = {fixture["teams"]["home"]["id"], fixture["teams"]["away"]["id"]}
         if id_equipe_2 in equipes:
             fixture_id = fixture["fixture"]["id"]
             break
+
     if not fixture_id:
         return None
+
     cotes_data = api_football_request("odds", {"fixture": fixture_id})
     if not cotes_data or not cotes_data.get("response"):
         return None
+
     try:
         bookmaker = cotes_data["response"][0]["bookmakers"][0]
         marche_1x2 = next(
@@ -151,9 +179,11 @@ def recuperer_cotes_marche(id_equipe_1, id_equipe_2):
     except (KeyError, IndexError):
         return None
 
+
 def generer_resume_texte(nom_a, nom_b, h2h, forme_a, forme_b, moy_a, moy_b, cotes):
     """Construit un résumé en français basé UNIQUEMENT sur des données réelles récupérées."""
     lignes = [f"Rapport statistique réel : {nom_a} contre {nom_b}.", ""]
+
     lignes.append("Confrontations directes récentes :")
     if h2h:
         for m in h2h:
@@ -164,6 +194,7 @@ def generer_resume_texte(nom_a, nom_b, h2h, forme_a, forme_b, moy_a, moy_b, cote
     else:
         lignes.append("Aucune confrontation directe récente trouvée dans la base de données.")
     lignes.append("")
+
     lignes.append(f"Forme récente de {nom_a} :")
     if moy_a:
         lignes.append(
@@ -175,6 +206,7 @@ def generer_resume_texte(nom_a, nom_b, h2h, forme_a, forme_b, moy_a, moy_b, cote
     else:
         lignes.append("Données insuffisantes.")
     lignes.append("")
+
     lignes.append(f"Forme récente de {nom_b} :")
     if moy_b:
         lignes.append(
@@ -186,19 +218,23 @@ def generer_resume_texte(nom_a, nom_b, h2h, forme_a, forme_b, moy_a, moy_b, cote
     else:
         lignes.append("Données insuffisantes.")
     lignes.append("")
+
     if cotes:
         lignes.append(f"Cotes actuelles du marché, selon {cotes['bookmaker']} :")
         for issue, valeur in cotes["valeurs"].items():
             lignes.append(f"{issue} : cote de {valeur}.")
     else:
         lignes.append("Aucune cote de marché disponible pour ce match actuellement.")
+
     lignes.append("")
     lignes.append(
         "Rappel : ces chiffres sont des statistiques historiques réelles, "
         "pas une prédiction du résultat du prochain match. Le football reste "
         "imprévisible. Cette analyse ne constitue pas un conseil de pari."
     )
+
     return "\n".join(lignes)
+
 
 def creer_lecteur_audio(texte, nom_fichier="/tmp/analyse_stats.mp3"):
     """Convertit le résumé en audio français et retourne un lecteur HTML intégré."""
@@ -206,8 +242,10 @@ def creer_lecteur_audio(texte, nom_fichier="/tmp/analyse_stats.mp3"):
         texte_propre = texte.replace("*", "").replace("#", "")
         tts = gTTS(text=texte_propre, lang="fr", slow=False)
         tts.save(nom_fichier)
+
         with open(nom_fichier, "rb") as f:
             audio_base64 = base64.b64encode(f.read()).decode()
+
         return f"""
         <div style="margin: 20px 0; padding: 15px; background-color: #1e1e2e; border-radius: 10px; text-align: center;">
             <p style="color: #ffb000; font-weight: bold; font-size: 16px; margin-bottom: 10px;">🔊 ÉCOUTER LE RAPPORT</p>
@@ -216,6 +254,7 @@ def creer_lecteur_audio(texte, nom_fichier="/tmp/analyse_stats.mp3"):
         """
     except Exception as e:
         return f"<p style='color:red;'>Impossible de générer l'audio : {e}</p>"
+
 
 # ==========================================
 # INTERFACE STREAMLIT
@@ -231,12 +270,10 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Appel de la fonction pour valider/charger la clé (avec fallback sidebar)
-current_api_key = get_api_key()
-
-if not current_api_key:
+if not get_api_key():
     st.warning(
-        "⚠️ Aucune clé API valide détectée. Entre ta clé dans la barre latérale pour lancer l'application."
+        "⚠️ Aucune clé API trouvée. Ajoute `API_FOOTBALL_KEY` dans "
+        "`.streamlit/secrets.toml` pour utiliser l'application."
     )
 
 col1, col2 = st.columns(2)
@@ -246,7 +283,7 @@ with col2:
     nom_equipe_b = st.text_input("Équipe B", "Marseille")
 
 if st.button("🔍 Récupérer les statistiques réelles"):
-    if not current_api_key:
+    if not get_api_key():
         st.error("Impossible de continuer sans clé API valide.")
     else:
         with st.spinner("Recherche des équipes..."):
@@ -286,7 +323,6 @@ if st.button("🔍 Récupérer les statistiques réelles"):
                     st.metric("Buts marqués/match", moy_a["moyenne_marques"])
                     st.metric("Buts encaissés/match", moy_a["moyenne_encaisses"])
                     st.write(f"V {moy_a['victoires']} - N {moy_a['nuls']} - D {moy_a['defaites']}")
-
             with col_b:
                 st.markdown(f"### {equipe_b['nom']}")
                 if moy_b:
@@ -310,15 +346,9 @@ if st.button("🔍 Récupérer les statistiques réelles"):
             )
 
             resume = generer_resume_texte(
-                equipe_a["nom"],
-                equipe_b["nom"],
-                h2h,
-                forme_a,
-                forme_b,
-                moy_a,
-                moy_b,
-                cotes,
+                equipe_a["nom"], equipe_b["nom"], h2h, forme_a, forme_b, moy_a, moy_b, cotes
             )
+
             st.markdown("---")
             st.markdown("### 🔊 Version audio du rapport")
             lecteur = creer_lecteur_audio(resume)
