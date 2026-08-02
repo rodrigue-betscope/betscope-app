@@ -74,7 +74,7 @@ def calculer_probabilites_poisson(lambda_domicile, lambda_exterieur):
     return meilleur_score, max_prob * 100, prob_les_deux_marquent * 100, prob_plus_2_5 * 100
 
 # =====================================================================
-# 3. ANALYSE IA (UTILISATION DE GEMINI 1.5 FLASH)
+# 3. ANALYSE IA (UTILISATION DE GEMINI 2.0 FLASH)
 # =====================================================================
 def analyser_match_avec_gemini(donnees_web):
     consigne_systeme = (
@@ -111,7 +111,7 @@ def analyser_match_avec_gemini(donnees_web):
 
     try:
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.0-flash',
             contents=prompt_utilisateur,
             config=types.GenerateContentConfig(
                 system_instruction=consigne_systeme,
