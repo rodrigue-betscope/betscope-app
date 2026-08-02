@@ -1,4 +1,8 @@
-google-genai
-gtts
 streamlit
+google-genai
 beautifulsoup4
+gtts
+requests
+pandas
+numpy
+scipy
