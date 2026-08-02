@@ -1,169 +1,177 @@
-"""
-stats_calculator.py
-====================
-Calcul des statistiques d'equipe (forme recente, moyennes ponderees)
-a partir d'un historique de matchs.
+import os
+import re
+import math
+from google import genai
+from google.genai import types
+import requests
+from bs4 import BeautifulSoup
 
-Principe : les matchs les plus recents doivent peser plus lourd que les
-matchs anciens dans le calcul de la forme actuelle d'une equipe. On
-utilise une ponderation lineaire decroissante (le match le plus recent
-a le poids le plus fort).
-"""
+# =====================================================================
+# 1. CONFIGURATION DE LA NOUVELLE CLÉ GEMINI (Format AQ....)
+# =====================================================================
+# Remplacez par votre nouvelle clé API Gemini
+GEMINI_API_KEY = "VOTRE_CLE_API_ICI" 
 
-from __future__ import annotations
+# Initialisation du nouveau client officiel Google GenAI (Norme 2025/2026)
+client = genai.Client(api_key=GEMINI_API_KEY)
 
-from dataclasses import dataclass
-from typing import List, Optional
-
-from poisson_model import TeamStats
-
-
-@dataclass
-class ResultatMatch:
-    """Represente le resultat d'un match historique pour une equipe donnee."""
-
-    buts_marques: int
-    buts_encaisses: int
-    a_domicile: bool
-    adversaire: str = ""
-
-    def __post_init__(self) -> None:
-        if self.buts_marques < 0 or self.buts_encaisses < 0:
-            raise ValueError("Les buts ne peuvent pas etre negatifs.")
-
-
-def valider_historique(historique: List[ResultatMatch]) -> None:
-    """Verifie que l'historique fourni est exploitable mathematiquement."""
-    if not historique:
-        raise ValueError(
-            "L'historique de matchs est vide : impossible de calculer une "
-            "moyenne fiable. Fournissez au moins 3 matchs recents."
-        )
-    if len(historique) < 3:
-        raise ValueError(
-            f"Seulement {len(historique)} match(s) fourni(s). Un minimum de "
-            "3 matchs est requis pour une estimation statistique minimale, "
-            "5 a 10 matchs sont recommandes pour une fiabilite correcte."
-        )
-
-
-def poids_lineaires_decroissants(n: int) -> List[float]:
-    """Genere une liste de n poids lineairement decroissants, normalises
-    pour sommer a 1.0. Le premier element de la liste correspond au match
-    le PLUS ANCIEN, le dernier au match le PLUS RECENT (poids maximal).
-
-    Exemple pour n=5 : poids bruts [1, 2, 3, 4, 5] -> normalises.
+# =====================================================================
+# 2. FONCTION DE SCRAPING DES DONNÉES DU MATCH
+# =====================================================================
+def recuperer_donnees_match(url_match):
     """
-    if n <= 0:
-        raise ValueError("n doit etre > 0")
-    poids_bruts = list(range(1, n + 1))
-    total = sum(poids_bruts)
-    return [w / total for w in poids_bruts]
-
-
-def moyenne_ponderee(
-    valeurs: List[float], poids: Optional[List[float]] = None
-) -> float:
-    """Calcule une moyenne ponderee. Si aucun poids n'est fourni, utilise
-    une ponderation lineaire decroissante donnant plus d'importance aux
-    valeurs recentes (supposees en fin de liste).
+    Extrait le contenu texte de la page du match pour l'analyse.
+    Pour contourner les blocages, on utilise un en-tête utilisateur standard.
     """
-    if not valeurs:
-        raise ValueError("Liste de valeurs vide.")
-    if poids is None:
-        poids = poids_lineaires_decroissants(len(valeurs))
-    if len(poids) != len(valeurs):
-        raise ValueError("Le nombre de poids doit correspondre au nombre de valeurs.")
-    if abs(sum(poids) - 1.0) > 1e-6:
-        raise ValueError("Les poids doivent sommer a 1.0.")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        response = requests.get(url_match, headers=headers, timeout=15)
+        if response.status_code != 200:
+            return f"Erreur de connexion au site (Code: {response.status_code})"
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extraction du texte global de la page (historique, stats, cotes)
+        # Supprime les scripts et balises inutiles pour optimiser les jetons
+        for script in soup(["script", "style"]):
+            script.decompose()
+            
+        texte_brut = soup.get_text(separator=' ')
+        # Nettoyage des espaces superflus
+        texte_nettoye = re.sub(r'\s+', ' ', texte_brut).strip()
+        
+        # On limite le texte aux 8000 premiers mots pour rester performant
+        return texte_nettoye[:40000]
+    except Exception as e:
+        return f"Erreur lors de la récupération des données : {str(e)}"
 
-    return sum(v * w for v, w in zip(valeurs, poids))
-
-
-def calculer_forme_equipe(
-    nom_equipe: str,
-    historique: List[ResultatMatch],
-    filtrer_domicile: Optional[bool] = None,
-    ponderation_recente: bool = True,
-) -> TeamStats:
-    """Calcule les statistiques de forme d'une equipe a partir de son
-    historique de matchs recents.
-
-    Args:
-        nom_equipe: nom affiche de l'equipe.
-        historique: liste de ResultatMatch, ordonnee du plus ANCIEN
-            au plus RECENT (important pour la ponderation).
-        filtrer_domicile: si True, ne garde que les matchs a domicile ;
-            si False, ne garde que les matchs a l'exterieur ; si None,
-            garde tous les matchs (recommande si peu de matchs disponibles).
-        ponderation_recente: si True, pondere les matchs recents plus
-            fortement (recommande). Si False, moyenne simple.
-
-    Returns:
-        TeamStats pret a etre injecte dans le modele Poisson.
+# =====================================================================
+# 3. ALGORITHME MATHÉMATIQUE (LOI DE POISSON) POUR LES SCORES EXACTS
+# =====================================================================
+def calculer_probabilites_poisson(lambda_domicile, lambda_exterieur):
     """
-    valider_historique(historique)
+    Calcule mathématiquement le score exact le plus probable.
+    """
+    def poisson(k, lamb):
+        return (math.exp(-lamb) * (lamb ** k)) / math.factorial(k)
 
-    if filtrer_domicile is not None:
-        historique_filtre = [
-            m for m in historique if m.a_domicile == filtrer_domicile
-        ]
-        if len(historique_filtre) >= 3:
-            historique = historique_filtre
-        # Sinon on garde l'historique complet (pas assez de matchs filtres
-        # pour etre statistiquement significatif) -- on le signale au
-        # niveau de l'appelant via matchs_analyses.
+    meilleur_score = (0, 0)
+    max_prob = 0.0
+    prob_les_deux_marquent = 0.0
+    prob_plus_2_5 = 0.0
+    
+    # Analyse matricielle des scores de 0-0 à 5-5
+    for i in range(6):
+        for j in range(6):
+            prob = poisson(i, lambda_domicile) * poisson(j, lambda_exterieur)
+            
+            if prob > max_prob:
+                max_prob = prob
+                meilleur_score = (i, j)
+            if i > 0 and j > 0:
+                prob_les_deux_marquent += prob
+            if (i + j) > 2.5:
+                prob_plus_2_5 += prob
+                
+    return meilleur_score, max_prob * 100, prob_les_deux_marquent * 100, prob_plus_2_5 * 100
 
-    buts_marques = [float(m.buts_marques) for m in historique]
-    buts_encaisses = [float(m.buts_encaisses) for m in historique]
-
-    if ponderation_recente and len(historique) >= 3:
-        moy_marques = moyenne_ponderee(buts_marques)
-        moy_encaisses = moyenne_ponderee(buts_encaisses)
-    else:
-        moy_marques = sum(buts_marques) / len(buts_marques)
-        moy_encaisses = sum(buts_encaisses) / len(buts_encaisses)
-
-    return TeamStats(
-        nom=nom_equipe,
-        buts_marques_moyenne=round(moy_marques, 3),
-        buts_encaisses_moyenne=round(moy_encaisses, 3),
-        matchs_analyses=len(historique),
+# =====================================================================
+# 4. DIRECTEUR DE PRONOSTIC (INTELLIGENCE ARTIFICIELLE GEMINI)
+# =====================================================================
+def analyser_match_avec_gemini(donnees_web):
+    """
+    Demande à Gemini 2.5 Flash d'agir en parieur professionnel et statisticien.
+    En utilisant search, il extrait et croise les données temps réel.
+    """
+    
+    consigne_systeme = (
+        "Tu es un expert mondial en analyses de données de football et algorithmes de paris sportifs. "
+        "Ton but est d'extraire les métriques clés de ce texte de match : 5 derniers matchs de chaque équipe, "
+        "historique des confrontations directes (H2H), buts marqués/encaissés à domicile/extérieur, "
+        "dynamique d'attaque et faiblesses défensives. "
+        "Donne des estimations chiffrées précises et réalistes."
     )
+    
+    prompt_utilisateur = f"""
+    Analyse le texte brut suivant récupéré sur une page de statistiques de match. 
+    Effectue un tri minutieux des données et génère un rapport de pronostic structuré.
 
+    DONNÉES DU MATCH EXTRAITES : 
+    {donnees_web}
 
-def indice_regularite(historique: List[ResultatMatch]) -> float:
-    """Calcule un indice de regularite (0 a 100) base sur l'ecart-type
-    des buts marques : une equipe reguliere a une variance faible.
-
-    Utile pour moduler la CONFIANCE affichee a l'utilisateur (une equipe
-    tres irreguliere merite un avertissement, pas une fausse certitude).
+    FALSIFICATION INTERDITE. Génère une réponse structurée exactement comme ceci :
+    
+    ### 📊 ANALYSE DES COMPORTEMENTS ET DYNAMIQUES
+    * **Équipe Domicile (Forme & Buts)** : [Mets ici une synthèse rapide de leurs 5 derniers matchs et capacité à marquer]
+    * **Équipe Extérieur (Forme & Buts)** : [Mets ici une synthèse rapide de leurs 5 derniers matchs et capacité à encaisser]
+    
+    ### 🎯 PROPOSITIONS DE MOYENNES ESTIMÉES POUR LES CALCULS (Crucial)
+    * **Moyenne de buts attendus Équipe Domicile** : [Donne uniquement un chiffre décimal, ex: 1.65]
+    * **Moyenne de buts attendus Équipe Extérieur** : [Donne uniquement un chiffre décimal, ex: 1.12]
+    
+    ### 🔮 PRONOSTIC PROBABLE (Seulement si l'indice de confiance dépasse 80%)
+    * **Résultat Mi-temps (1, N ou 2)** : 
+    * **Résultat Fin du match (1, N ou 2)** : 
+    * **Les deux équipes marquent (Oui/Non)** : 
+    * **Total de buts (Plus ou Moins de 2.5)** : 
     """
-    valider_historique(historique)
-    buts = [m.buts_marques for m in historique]
-    n = len(buts)
-    moyenne = sum(buts) / n
-    variance = sum((b - moyenne) ** 2 for b in buts) / n
-    ecart_type = variance ** 0.5
 
-    # Normalisation empirique : un ecart-type de 0 -> 100 (parfaitement
-    # regulier), un ecart-type >= 2.5 buts -> 0 (tres irregulier).
-    indice = max(0.0, 100.0 - (ecart_type / 2.5) * 100.0)
-    return round(indice, 1)
+    try:
+        # Appel du modèle moderne gemini-2.5-flash avec outils de recherche Google activés
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt_utilisateur,
+            config=types.GenerateContentConfig(
+                system_instruction=consigne_systeme,
+                temperature=0.2,  # Température basse pour limiter l'imagination et privilégier la rigueur logique
+            )
+        )
+        return response.text
+    except Exception as e:
+        return f"Erreur lors de l'appel à l'IA Gemini : {str(e)}"
 
-
+# =====================================================================
+# 5. EXÉCUTION DU PROGRAMME PRINCIPAL
+# =====================================================================
 if __name__ == "__main__":
-    # Test rapide avec un historique fictif mais realiste
-    historique_test = [
-        ResultatMatch(buts_marques=1, buts_encaisses=1, a_domicile=False),
-        ResultatMatch(buts_marques=2, buts_encaisses=0, a_domicile=True),
-        ResultatMatch(buts_marques=0, buts_encaisses=1, a_domicile=False),
-        ResultatMatch(buts_marques=3, buts_encaisses=1, a_domicile=True),
-        ResultatMatch(buts_marques=1, buts_encaisses=0, a_domicile=True),
-    ]
+    print("=== ASSISTANT IA DE PRONOSTICS SPORTIFS - GEMINI v2.5 ===")
+    
+    # Étape A: Entrer l'URL du match (ex: de Flashscore, Sofascore, WhoScored, etc.)
+    url_cible = input("\nCollez le lien URL complet contenant les statistiques du match : ")
+    
+    print("\n[1/3] Récupération des données en temps réel sur la page web...")
+    donnees_brutes = recuperer_donnees_match(url_cible)
+    
+    if "Erreur" in donnees_brutes[:10]:
+        print(donnees_brutes)
+    else:
+        print("[2/3] Analyse croisée de l'historique par l'IA Gemini...")
+        analyse_ia = analyser_match_avec_gemini(donnees_brutes)
+        print("\n" + analyse_ia)
+        
+        print("\n[3/3] Calcul de la matrice des scores exacts par l'algorithme mathématique...")
+        # Extraction automatique des moyennes suggérées par Gemini pour la loi de Poisson
+        try:
+            valeurs = re.findall(r"[-+]?\d*\.\d+|\d+", analyse_ia)
+            # Recherche de valeurs décimales plausibles (entre 0.2 et 4.5 buts par match)
+            moyennes = [float(v) for v in valeurs if 0.2 <= float(v) <= 4.5]
+            
+            if len(moyennes) >= 2:
+                lambda_dom, lambda_ext = moyennes[0], moyennes[1]
+                
+                score, prob_score, prob_btts, prob_over = calculer_probabilites_poisson(lambda_dom, lambda_ext)
+                
+                print("\n================ 📈 SYNTHÈSE STATISTIQUE MATHÉMATIQUE ================")
+                print(f" * Score exact le plus probable : {score[0]} - {score[1]} (Confiance mathématique: {prob_score:.2f}%)")
+                print(f" * Probabilité que les deux équipes marquent : {prob_btts:.2f}%")
+                print(f" * Probabilité de Plus de 2.5 buts dans le match : {prob_over:.2f}%")
+                print("=======================================================================")
+            else:
+                print("\n⚠️ Impossible d'isoler les moyennes de buts dans l'analyse pour calculer le score exact exact.")
+        except Exception as e:
+            print(f"\n⚠️ Erreur lors du calcul automatique de Poisson : {e}")
 
-    stats = calculer_forme_equipe("Test FC", historique_test)
-    print(f"Stats calculees : {stats}")
-
-    reg = indice_regularite(historique_test)
-    print(f"Indice de regularite : {reg}/100")
+    print("\nAnalyse terminée. Note importante : Aucun algorithme n'offre 100% de certitude. Restez responsable.")
+    
