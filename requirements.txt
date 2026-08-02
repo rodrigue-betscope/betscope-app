@@ -1,3 +1,4 @@
 google-genai
 gtts
 streamlit
+beautifulsoup4
