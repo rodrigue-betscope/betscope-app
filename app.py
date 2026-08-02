@@ -15,13 +15,13 @@ st.set_page_config(page_title="Assistant IA Pronostics Sportifs", page_icon="⚽
 st.title("⚽ ASSISTANT IA DE PRONOSTICS SPORTIFS")
 st.markdown("---")
 
-# Récupération sécurisée de la clé API
-api_key = st.secrets.get("GEMINI_API_KEY", "")
+# Gestion prioritaire de la clé API via la barre latérale
+api_key = st.sidebar.text_input("Entrez votre clé API Gemini", type="password")
 if not api_key:
-    api_key = st.sidebar.text_input("Entrez votre clé API Gemini", type="password")
+    api_key = st.secrets.get("GEMINI_API_KEY", "")
 
 if not api_key:
-    st.warning("⚠️ Veuillez configurer votre clé API Gemini pour lancer l'analyse.")
+    st.warning("⚠️ Veuillez configurer votre clé API Gemini dans la barre latérale pour lancer l'analyse.")
     st.stop()
 
 client = genai.Client(api_key=api_key)
@@ -125,11 +125,11 @@ def analyser_match_avec_gemini(donnees_web):
 # =====================================================================
 # INTERFACE UTILISATEUR STREAMLIT
 # =====================================================================
-url_cible = st.text_input("Collez le lien URL complet contenant les statistiques du match :")
+url_cible = st.text_input("Collez le lien URL complet contenant les statistiques du match (ex: page d'un match précis sur Flashscore) :")
 
 if st.button("Lancer l'analyse du match", type="primary"):
-    if not url_cible:
-        st.error("Veuillez entrer une URL valide.")
+    if not url_cible or "flashscore.com/match/" not in url_cible:
+        st.error("Veuillez entrer un lien URL valide d'un match spécifique (contenant /match/).")
     else:
         with st.spinner("Récupération et analyse des données en cours..."):
             donnees_brutes = recuperer_donnees_match(url_cible)
