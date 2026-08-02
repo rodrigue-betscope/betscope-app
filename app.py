@@ -15,7 +15,7 @@ st.set_page_config(page_title="Assistant IA Pronostics Sportifs", page_icon="⚽
 st.title("⚽ ASSISTANT IA DE PRONOSTICS SPORTIFS")
 st.markdown("---")
 
-# Récupération de la clé API depuis les secrets Streamlit ou saisie manuelle sécurisée
+# Récupération sécurisée de la clé API
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 if not api_key:
     api_key = st.sidebar.text_input("Entrez votre clé API Gemini", type="password")
@@ -24,7 +24,6 @@ if not api_key:
     st.warning("⚠️ Veuillez configurer votre clé API Gemini pour lancer l'analyse.")
     st.stop()
 
-# Initialisation du client officiel Google GenAI
 client = genai.Client(api_key=api_key)
 
 # =====================================================================
@@ -75,7 +74,7 @@ def calculer_probabilites_poisson(lambda_domicile, lambda_exterieur):
     return meilleur_score, max_prob * 100, prob_les_deux_marquent * 100, prob_plus_2_5 * 100
 
 # =====================================================================
-# 3. ANALYSE IA (GEMINI 2.5 FLASH)
+# 3. ANALYSE IA (UTILISATION DE GEMINI 1.5 FLASH)
 # =====================================================================
 def analyser_match_avec_gemini(donnees_web):
     consigne_systeme = (
@@ -112,7 +111,7 @@ def analyser_match_avec_gemini(donnees_web):
 
     try:
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-flash',
             contents=prompt_utilisateur,
             config=types.GenerateContentConfig(
                 system_instruction=consigne_systeme,
