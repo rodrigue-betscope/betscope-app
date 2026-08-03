@@ -1,161 +1,133 @@
-import os
-import re
-import math
-import streamlit as st
-from google import genai
-from google.genai import types
+import numpy as np
 import requests
 from bs4 import BeautifulSoup
+from scipy.stats import poisson
 
-# =====================================================================
-# CONFIGURATION DE L'APPLICATION STREAMLIT
-# =====================================================================
-st.set_page_config(page_title="Assistant IA Pronostics Sportifs", page_icon="⚽", layout="centered")
 
-st.title("⚽ ASSISTANT IA DE PRONOSTICS SPORTIFS")
-st.markdown("---")
+def extraire_donnees_url(url):
+    """Scrape les données de l'URL fournie (Exemple générique adaptable).
 
-# Gestion prioritaire de la clé API via la barre latérale
-api_key = st.sidebar.text_input("Entrez votre clé API Gemini", type="password")
-if not api_key:
-    api_key = st.secrets.get("GEMINI_API_KEY", "")
-
-if not api_key:
-    st.warning("⚠️ Veuillez configurer votre clé API Gemini dans la barre latérale pour lancer l'analyse.")
-    st.stop()
-
-client = genai.Client(api_key=api_key)
-
-# =====================================================================
-# 1. FONCTION DE SCRAPING DES DONNÉES DU MATCH
-# =====================================================================
-def recuperer_donnees_match(url_match):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    try:
-        response = requests.get(url_match, headers=headers, timeout=15)
-        if response.status_code != 200:
-            return f"Erreur de connexion au site (Code: {response.status_code})"
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        for script in soup(["script", "style"]):
-            script.decompose()
-            
-        texte_brut = soup.get_text(separator=' ')
-        texte_nettoye = re.sub(r'\s+', ' ', texte_brut).strip()
-        return texte_nettoye[:40000]
-    except Exception as e:
-        return f"Erreur lors de la récupération des données : {str(e)}"
-
-# =====================================================================
-# 2. ALGORITHME MATHÉMATIQUE (LOI DE POISSON)
-# =====================================================================
-def calculer_probabilites_poisson(lambda_domicile, lambda_exterieur):
-    def poisson(k, lamb):
-        return (math.exp(-lamb) * (lamb ** k)) / math.factorial(k)
-
-    meilleur_score = (0, 0)
-    max_prob = 0.0
-    prob_les_deux_marquent = 0.0
-    prob_plus_2_5 = 0.0
-    
-    for i in range(6):
-        for j in range(6):
-            prob = poisson(i, lambda_domicile) * poisson(j, lambda_exterieur)
-            if prob > max_prob:
-                max_prob = prob
-                meilleur_score = (i, j)
-            if i > 0 and j > 0:
-                prob_les_deux_marquent += prob
-            if (i + j) > 2.5:
-                prob_plus_2_5 += prob
-                
-    return meilleur_score, max_prob * 100, prob_les_deux_marquent * 100, prob_plus_2_5 * 100
-
-# =====================================================================
-# 3. ANALYSE IA (UTILISATION DE GEMINI 2.0 FLASH)
-# =====================================================================
-def analyser_match_avec_gemini(donnees_web):
-    consigne_systeme = (
-        "Tu es un expert mondial en analyses de données de football et algorithmes de paris sportifs. "
-        "Ton but est d'extraire les métriques clés de ce texte de match : 5 derniers matchs de chaque équipe, "
-        "historique des confrontations directes (H2H), buts marqués/encaissés à domicile/extérieur, "
-        "dynamique d'attaque et faiblesses défensives. "
-        "Donne des estimations chiffrées précises et réalistes."
-    )
-    
-    prompt_utilisateur = f"""
-    Analyse le texte brut suivant récupéré sur une page de statistiques de match. 
-    Effectue un tri minutieux des données et génère un rapport de pronostic structuré.
-
-    DONNÉES DU MATCH EXTRAITES : 
-    {donnees_web}
-
-    Génère une réponse structurée exactement comme ceci :
-    
-    ### 📊 ANALYSE DES COMPORTEMENTS ET DYNAMIQUES
-    * **Équipe Domicile (Forme & Buts)** : [Synthèse rapide]
-    * **Équipe Extérieur (Forme & Buts)** : [Synthèse rapide]
-    
-    ### 🎯 PROPOSITIONS DE MOYENNES ESTIMÉES POUR LES CALCULS (Crucial)
-    * **Moyenne de buts attendus Équipe Domicile** : [Donne uniquement un chiffre décimal, ex: 1.65]
-    * **Moyenne de buts attendus Équipe Extérieur** : [Donne uniquement un chiffre décimal, ex: 1.12]
-    
-    ### 🔮 PRONOSTIC PROBABLE
-    * **Résultat Mi-temps (1, N ou 2)** : 
-    * **Résultat Fin du match (1, N ou 2)** : 
-    * **Les deux équipes marquent (Oui/Non)** : 
-    * **Total de buts (Plus ou Moins de 2.5)** : 
+    Remplacez les sélecteurs CSS selon le site cible (Flashscore, Footystats,
+    etc.)
     """
+    print(f"[1] Analyse de la page : {url}...")
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt_utilisateur,
-            config=types.GenerateContentConfig(
-                system_instruction=consigne_systeme,
-                temperature=0.2,
-            )
-        )
-        return response.text
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # --- EXEMPLE DE SIMULATION DE DONNÉES EXTRAITES ---
+        # En pratique, l'IA ou le script doit cibler les balises contenant les stats
+        # Ici on simule les moyennes historiques des 5-10 derniers matchs
+        stats = {
+            "buts_marques_dom": 1.85,  # Moyenne buts marqués à domicile
+            "buts_encaisses_dom": 0.90,  # Moyenne buts encaissés à domicile
+            "buts_marques_ext": 1.40,  # Moyenne buts marqués à l'extérieur
+            "buts_encaisses_ext": 1.20,  # Moyenne buts encaissés à l'extérieur
+            "moyenne_ligue_dom": 1.50,  # Constante de la ligue (domicile)
+            "moyenne_ligue_ext": 1.20,  # Constante de la ligue (extérieur)
+        }
+        return stats
     except Exception as e:
-        return f"Erreur lors de l'appel à l'IA Gemini : {str(e)}"
+        print(f"❌ Erreur lors de l'analyse du lien : {e}")
+        return None
 
-# =====================================================================
-# INTERFACE UTILISATEUR STREAMLIT
-# =====================================================================
-url_cible = st.text_input("Collez le lien URL complet contenant les statistiques du match (ex: page d'un match précis sur Flashscore) :")
 
-if st.button("Lancer l'analyse du match", type="primary"):
-    if not url_cible or "flashscore.com/match/" not in url_cible:
-        st.error("Veuillez entrer un lien URL valide d'un match spécifique (contenant /match/).")
-    else:
-        with st.spinner("Récupération et analyse des données en cours..."):
-            donnees_brutes = recuperer_donnees_match(url_cible)
-            
-            if "Erreur" in donnees_brutes[:10]:
-                st.error(donnees_brutes)
-            else:
-                st.info("Analyse croisée de l'historique par l'IA Gemini...")
-                analyse_ia = analyser_match_avec_gemini(donnees_brutes)
-                st.markdown(analyse_ia)
-                
-                st.info("Calcul de la matrice des scores exacts par la loi de Poisson...")
-                try:
-                    valeurs = re.findall(r"[-+]?\d*\.\d+|\d+", analyse_ia)
-                    moyennes = [float(v) for v in valeurs if 0.2 <= float(v) <= 4.5]
-                    
-                    if len(moyennes) >= 2:
-                        lambda_dom, lambda_ext = moyennes[0], moyennes[1]
-                        score, prob_score, prob_btts, prob_over = calculer_probabilites_poisson(lambda_dom, lambda_ext)
-                        
-                        st.success("Analyse statistique terminée avec succès !")
-                        st.markdown("### 📈 SYNTHÈSE STATISTIQUE MATHÉMATIQUE")
-                        st.write(f"- **Score exact le plus probable** : {score[0]} - {score[1]} (Confiance : {prob_score:.2f}%)")
-                        st.write(f"- **Probabilité que les deux équipes marquent** : {prob_btts:.2f}%")
-                        st.write(f"- **Probabilité de Plus de 2.5 buts** : {prob_over:.2f}%")
-                    else:
-                        st.warning("Impossible d'isoler automatiquement les moyennes de buts pour le calcul de Poisson.")
-                except Exception as e:
-                    st.error(f"Erreur lors du calcul de Poisson : {e}")
+def calculer_lambdas(stats):
+    """Calcule la force d'attaque/défense mathématique pour obtenir les espérances
+
+    de buts (Lambda).
+    """
+    # Force Domicile
+    force_att_dom = stats["buts_marques_dom"] / stats["moyenne_ligue_dom"]
+    force_def_dom = stats["buts_encaisses_dom"] / stats["moyenne_ligue_ext"]
+
+    # Force Extérieur
+    force_att_ext = stats["buts_marques_ext"] / stats["moyenne_ligue_ext"]
+    force_def_ext = stats["buts_encaisses_ext"] / stats["moyenne_ligue_dom"]
+
+    # Espérance de buts finale (Full Time)
+    lambda_dom_ft = force_att_dom * force_def_ext * stats["moyenne_ligue_dom"]
+    lambda_ext_ft = force_att_ext * force_def_dom * stats["moyenne_ligue_ext"]
+
+    # Espérance de buts à la Mi-temps (Généralement 40% des buts du match)
+    lambda_dom_ht = lambda_dom_ft * 0.42
+    lambda_ext_ht = lambda_ext_ft * 0.42
+
+    return lambda_dom_ht, lambda_ext_ht, lambda_dom_ft, lambda_ext_ft
+
+
+def simuler_loi_poisson(lambda_dom, lambda_ext, max_buts=5):
+    """Génère la matrice des probabilités pour chaque score exact."""
+    matrice = np.zeros((max_buts + 1, max_buts + 1))
+    for i in range(max_buts + 1):
+        for j in range(max_buts + 1):
+            prob_dom = poisson.pmf(i, lambda_dom)
+            prob_ext = poisson.pmf(j, lambda_ext)
+            matrice[i, j] = prob_dom * prob_ext
+    return matrice
+
+
+def analyser_match(url):
+    """Fonction principale d'analyse de probabilités."""
+    stats = extraire_donnees_url(url)
+    if not stats:
+        return
+
+    lam_dom_ht, lam_ext_ht, lam_dom_ft, lam_ext_ft = calculer_lambdas(stats)
+
+    # 1. Analyse Mi-temps (HT)
+    matrice_ht = simuler_loi_poisson(lam_dom_ht, lam_ext_ht)
+    prob_nul_ht = np.sum(np.diag(matrice_ht))  # Somme des scores 0-0, 1-1, 2-2
+
+    # Score exact Mi-temps le plus probable
+    i_ht, j_ht = np.unravel_index(np.argmax(matrice_ht), matrice_ht.shape)
+
+    # 2. Analyse Fin du Match (FT)
+    matrice_ft = simuler_loi_poisson(lam_dom_ft, lam_ext_ft)
+
+    prob_dom_ft = np.sum(np.triu(matrice_ft, 1))  # Extérieur gagne
+    prob_ext_ft = np.sum(np.tril(matrice_ft, -1))  # Domicile gagne
+    prob_nul_ft = np.sum(np.diag(matrice_ft))
+
+    i_ft, j_ft = np.unravel_index(np.argmax(matrice_ft), matrice_ft.shape)
+
+    # 3. Calcul du scénario : Nul Mi-temps / Victoire n'importe qui Fin de match
+    # Mathématiquement corrélé : P(Nul HT) * P(Pas Nul FT)
+    prob_scenario_specifique = prob_nul_ht * (1 - prob_nul_ft)
+
+    # --- AFFICHAGE DU RAPPORT MATHÉMATIQUE ---
+    print("\n" + "=" * 50)
+    print("📊 RAPPORT DE PRÉDICTION MATHÉMATIQUE (LOI DE POISSON)")
+    print("=" * 50)
+    print(
+        f"⚽ Espérance buts Match : Domicile {lam_dom_ft:.2f} - {lam_ext_ft:.2f} Extérieur"
+    )
+    print(
+        f"⏱️ Espérance buts Mi-temps : Domicile {lam_dom_ht:.2f} - {lam_ext_ht:.2f} Extérieur"
+    )
+    print("-" * 50)
+
+    print(f"🎯 SCORE EXACT MI-TEMPS MAXIMUM : {i_ht} - {j_ht}")
+    print(f"⏳ Probabilité Nul à la Mi-temps : {prob_nul_ht * 100:.2f}%")
+    print(f"   -> Probabilité exacte du 0-0 HT : {matrice_ht[0, 0] * 100:.2f}%")
+    print("-" * 50)
+
+    print(f"🏆 SCORE EXACT FIN DE MATCH MAXIMUM : {i_ft} - {j_ft}")
+    print(f"📈 Tendance 1X2 Fin de Match :")
+    print(f"   -> Victoire Domicile : {prob_ext_ft * 100:.2f}%")
+    print(f"   -> Match Nul : {prob_nul_ft * 100:.2f}%")
+    print(f"   -> Victoire Extérieur : {prob_dom_ft * 100:.2f}%")
+    print("-" * 50)
+
+    print(f"🔥 SCÉNARIO REQUIS (Nul HT / Gain Équipe 1 ou 2 FT) :")
+    print(f"   -> Fiabilité calculée : {prob_scenario_specifique * 100:.2f}%")
+    print("=" * 50)
+
+
+# --- ZONE D'EXÉCUTION ---
+if __name__ == "__main__":
+    # Collez le lien de votre choix ici pour exécuter l'analyse
+    lien_match = "https://exemple-football-stats.com"
+    analyser_match(lien_match)
