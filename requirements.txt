@@ -1,8 +1,6 @@
-streamlit
-google-genai
+python-telegram-bot
 beautifulsoup4
-gtts
 requests
-pandas
 numpy
 scipy
+streamlit
