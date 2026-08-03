@@ -27,7 +27,7 @@ def probabilite_poisson(k, lambda_param):
     return (math.exp(-lambda_param) * (lambda_param ** k)) / math.factorial(k)
 
 # =========================================================
-# 🔐 CONFIGURATION ACCÈS SEURÉ
+# 🔐 CONFIGURATION ACCÈS SÉCURISÉ
 # =========================================================
 CLE_VIP_CORRECTE = "POISSON95"
 CLE_ADMIN_FORCAGE = "ADMIN99"
@@ -78,7 +78,7 @@ elif menu == "👑 Moteur de Poisson VIP":
         index_ligue = divisions_liste.index(ligue_choisie)
         page_id = (index_pays * 20) + index_ligue + 1
         
-        st.caption(f"📍 Configuration mathématique actuelle chargee : **Page {page_id} / 1000** ({pays_choisi} - {ligue_choisie})")
+        st.caption(f"📍 Configuration mathématique actuelle chargée : **Page {page_id} / 1000** ({pays_choisi} - {ligue_choisie})")
 
         # =========================================================
         # 📈 ENTRÉE DES DONNÉES DU MATCH (SOFASCORE / ODDSPORTAL)
@@ -178,4 +178,59 @@ elif menu == "👑 Moteur de Poisson VIP":
         
         c_res1, c_res2, c_res3 = st.columns(3)
         with c_res1:
+            st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+            st.metric(label=f"Espérance {nom_dom} (Lambda)", value=f"{lambda_dom:.2f} buts")
+            st.markdown('</div>', unsafe_allow_html=True)
             
+        with c_res2:
+            st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+            st.metric(label=f"Espérance {nom_ext} (Lambda)", value=f"{lambda_ext:.2f} buts")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        with c_res3:
+            st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+            st.metric(label="Score Exact le plus probable", value=score_exact_plus_probable, delta=f"{prob_score_exact*100:.1f}%")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # =========================================================
+        # 👑 AFFICHAGE DU PRONOSTIC VIP RECOMMANDÉ
+        # =========================================================
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #161A22 0%, #222733 100%); padding: 25px; border-radius: 12px; border: 2px solid #FF9900; text-align: center; margin-top: 20px;">
+                <h3 style="color: #FF9900; margin-bottom: 10px;">👑 PRONOSTIC VIP RECOMMANDÉ</h3>
+                <p style="font-size: 24px; font-weight: bold; color: #FFFFFF; margin: 10px 0;">{meilleur_choix}</p>
+                <span style="background-color: #00FFcc; color: #0E1117; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 14px;">Indice de Fiabilité : {fiabilite_affichage:.1f}%</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # =========================================================
+        # 📈 TABLEAU RÉCAPITULATIF DES PROBABILITÉS
+        # =========================================================
+        st.markdown('<div class="section-title">📈 Résumé des Probabilités du Match</div>', unsafe_allow_html=True)
+        col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+        with col_p1:
+            st.metric("Victoire " + nom_dom, f"{prob_dom_gagne*100:.1f}%")
+        with col_p2:
+            st.metric("Match Nul", f"{prob_nul*100:.1f}%")
+        with col_p3:
+            st.metric("Victoire " + nom_ext, f"{prob_ext_gagne*100:.1f}%")
+        with col_p4:
+            st.metric("Plus de 2.5 Buts", f"{prob_over_2_5*100:.1f}%")
+
+        col_q1, col_q2, col_q3, col_q4 = st.columns(4)
+        with col_q1:
+            st.metric("Les 2 équipes marquent", f"{prob_btts_oui*100:.1f}%")
+        with col_q2:
+            st.metric("Moins de 2.5 Buts", f"{prob_under_2_5*100:.1f}%")
+        with col_q3:
+            st.metric("Double Chance 1X", f"{(prob_dom_gagne + prob_nul)*100:.1f}%")
+        with col_q4:
+            st.metric("Double Chance X2", f"{(prob_ext_gagne + prob_nul)*100:.1f}%")
+
+    else:
+        if cle_acces != "":
+            st.error("❌ Clé d'accès VIP incorrecte. Veuillez vérifier votre code.")
+        else:
+            st.warning("🔒 Veuillez entrer une clé VIP valide pour débloquer le moteur mathématique complet.")
