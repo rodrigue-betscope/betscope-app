@@ -77,24 +77,35 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
         st.success("🔓 Algorithme déverrouillé. Modèle de simulation mathématique pure initialisé.")
 
         # =========================================================
-        # 📂 EXTENSION STRICTE À 1500 PAGES CONFIGURÉES
+        # 📂 MATRICE DES PAYS ET CHAMPIONNATS RÉELS
         # =========================================================
-        st.markdown('<div class="section-title">🌍 Matrice Territoriale Extensible (1500 Configurations)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">🌍 Sélection du Championnat Réel</div>', unsafe_allow_html=True)
         
-        pays_liste = [f"Zone Géographique / Pays ID-{i:02d}" for i in range(1, 76)]
-        divisions_liste = [f"Division / Ligue Professionnelle {j:02d}" for j in range(1, 21)]
+        competitions_dict = {
+            "Angleterre": ["Premier League", "Championship", "League One"],
+            "Espagne": ["La Liga", "Segunda División"],
+            "Italie": ["Serie A", "Serie B"],
+            "France": ["Ligue 1", "Ligue 2", "National"],
+            "Allemagne": ["Bundesliga", "2. Bundesliga"],
+            "Cameroun": ["MTN Elite One", "MTN Elite Two"],
+            "Brésil": ["Série A", "Série B"],
+            "Portugal": ["Primeira Liga"],
+            "Pays-Bas": ["Eredivisie"],
+            "Belgique": ["Jupiler Pro League"]
+        }
+        
+        pays_liste = list(competitions_dict.keys())
         
         col_nav1, col_nav2 = st.columns(2)
         with col_nav1:
             pays_choisi = st.selectbox("Sélectionnez le territoire :", pays_liste)
         with col_nav2:
+            divisions_liste = competitions_dict[pays_choisi]
             ligue_choisie = st.selectbox("Sélectionnez le niveau de la ligue :", divisions_liste)
             
-        index_pays = pays_liste.index(pays_choisi)
-        index_ligue = divisions_liste.index(ligue_choisie)
-        page_id = (index_pays * 20) + index_ligue + 1
+        page_id = f"{pays_choisi} - {ligue_choisie}"
         
-        st.caption(f"📍 Configuration de calcul chargée de manière unique : **Page {page_id} / 1500**")
+        st.caption(f"📍 Configuration de calcul active : **{page_id}**")
 
         # =========================================================
         # 📊 PARAMÈTRES ENTRÉES DU MATCH
@@ -251,4 +262,5 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
             </div>
         """, unsafe_allow_html=True)
         
-        st.success(f"✅ Analyse complète générée pour la **Page {page_id} / 1500** ({pays_choisi} - {ligue_choisie}).")
+        st.success(f"✅ Analyse complète générée pour **{page_id}**.")
+        
