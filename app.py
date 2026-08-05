@@ -32,7 +32,6 @@ def modèle_quantum_dixon_coles(x, y, lambda_x, lambda_y, rho):
     """
     Algorithme de Dixon-Coles appliqué au football professionnel.
     Ajuste la corrélation mathématique des scores faibles (0-0, 1-0, 0-1, 1-1).
-    Il supprime l'effet d'estimation mathématique pour coller à la réalité du terrain.
     """
     if rho == 0:
         return 1.0
@@ -67,34 +66,120 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
     st.markdown("""
         <div style="display: flex; align-items: center; margin-bottom: 25px; background-color: #111520; padding: 15px; border-radius: 10px; border: 1px solid #FF9900;">
             <span style="height: 14px; width: 14px; background-color: #00FFcc; border-radius: 50%; display: inline-block; margin-right: 12px; box-shadow: 0 0 12px #00FFcc;"></span>
-            <span style="color: #00FFcc; font-weight: 800; font-size: 16px;">ANALYSEUR HAUTE RÉSOLUTION ACTIF — Modèle Mathématique Sans Estimation</span>
+            <span style="color: #00FFcc; font-weight: 800; font-size: 16px;">ANALYSEUR HAUTE RÉSOLUTION ACTIF — Compétitions Officielles & Internationales</span>
         </div>
     """, unsafe_allow_html=True)
 
     cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
     if cle_acces in [CLE_VIP_CORRECTE, CLE_ADMIN_FORCAGE] and cle_acces != "":
-        st.success("🔓 Algorithme déverrouillé. Modèle de simulation mathématique pure initialisé.")
+        st.success("🔓 Algorithme déverrouillé. Base de données complète chargée.")
 
         # =========================================================
-        # 📂 EXTENSION STRICTE À 1500 PAGES CONFIGURÉES (75 PAYS x 20 LIGUES)
+        # 🌍 DICTIONNAIRE COMPLET DES PAYS ET COMPÉTITIONS RÉELLES
         # =========================================================
-        st.markdown('<div class="section-title">🌍 Matrice Territoriale Extensible (1500 Configurations)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">🌍 Sélection des Pays et Compétitions Officielles</div>', unsafe_allow_html=True)
         
-        pays_liste = [f"Zone Géographique / Pays ID-{i:02d}" for i in range(1, 76)]
-        divisions_liste = [f"Division / Ligue Professionnelle {j:02d}" for j in range(1, 21)]
+        base_competitions = {
+            "🌍 International / Europe": [
+                "UEFA Champions League", 
+                "UEFA Europa League", 
+                "UEFA Conference League", 
+                "UEFA Super Cup", 
+                "Copa Libertadores", 
+                "Copa Sudamericana",
+                "CAF Champions League",
+                "CAF Coupe de la Confédération",
+                "Coupe du Monde de la FIFA",
+                "Matchs Amicaux Internationaux"
+            ],
+            "Angleterre": ["Premier League", "Championship", "League One", "League Two", "FA Cup", "EFL Cup"],
+            "Espagne": ["La Liga", "Segunda División", "Copa del Rey", "Supercopa de España"],
+            "Italie": ["Serie A", "Serie B", "Serie C", "Coppa Italia", "Supercoppa Italiana"],
+            "France": ["Ligue 1", "Ligue 2", "National 1", "Coupe de France", "Trophée des Champions"],
+            "Allemagne": ["Bundesliga", "2. Bundesliga", "3. Liga", "DFB-Pokal"],
+            "Portugal": ["Primeira Liga", "Segunda Liga", "Taça de Portugal"],
+            "Pays-Bas": ["Eredivisie", "Eerste Divisie", "KNVB Beker"],
+            "Belgique": ["Jupiler Pro League", "Challenger Pro League", "Coupe de Belgique"],
+            "Brésil": ["Série A", "Série B", "Campeonato Paulista", "Copa do Brasil"],
+            "Argentine": ["Liga Profesional", "Primera Nacional", "Copa Argentina"],
+            "Cameroun": ["MTN Elite One", "MTN Elite Two", "Coupe du Cameroun"],
+            "Sénégal": ["Ligue 1 sénégalaise", "Ligue 2 sénégalaise"],
+            "Maroc": ["Botola Pro 1", "Botola Pro 2"],
+            "Égypte": ["Egyptian Premier League", "Egypt Cup"],
+            "Algérie": ["Ligue 1 Professionnelle", "Ligue 2 Algérie"],
+            "Tunisie": ["Ligue Professionnelle 1", "Ligue Professionnelle 2"],
+            "Turquie": ["Süper Lig", "1. Lig", "Türkiye Kupası"],
+            "Grèce": ["Super League Ellada", "Greek Football Cup"],
+            "Russie": ["Premier League Russe", "FNL", "Coupe de Russie"],
+            "Ukraine": ["Premyer-liha", "Coupe d'Ukraine"],
+            "Arabie Saoudite": ["Saudi Pro League", "King Cup"],
+            "Émirats Arabes Unis": ["UAE Pro League"],
+            "Qatar": ["Qatar Stars League"],
+            "Japon": ["J1 League", "J2 League", "Emperor's Cup"],
+            "Corée du Sud": ["K League 1", "K League 2"],
+            "Chine": ["Chinese Super League"],
+            "États-Unis": ["MLS", "USL Championship"],
+            "Mexique": ["Liga MX", "Liga de Expansión MX"],
+            "Colombie": ["Categoría Primera A", "Copa Colombia"],
+            "Chili": ["Primera División de Chile"],
+            "Uruguay": ["Primera División de Uruguay"],
+            "Équateur": ["Liga Pro Serie A"],
+            "Pérou": ["Liga 1 de Fútbol Profesional"],
+            "Suisse": ["Super League", "Challenge League", "Coupe de Suisse"],
+            "Autriche": ["Austrian Bundesliga", "2. Liga"],
+            "Danemark": ["Superligaen", "1. Division"],
+            "Suède": ["Allsvenskan", "Superettan"],
+            "Norvège": ["Eliteserien", "1. Divisjon"],
+            "Pologne": ["Ekstraklasa", "I Liga"],
+            "République Tchèque": ["Czech First League"],
+            "Roumanie": ["SuperLiga României"],
+            "Hongrie": ["Nemzeti Bajnokság I"],
+            "Croatie": ["HNL", "Prva NL"],
+            "Serbie": ["Superliga Srbije"],
+            "Écosse": ["Scottish Premiership", "Scottish Championship", "Scottish Cup"],
+            "Irlande": ["League of Ireland Premier Division"],
+            "Pays de Galles": ["Cymru Premier"],
+            "Finlande": ["Veikkausliiga"],
+            "Islande": ["Úrvalsdeild karla"],
+            "Bulgarie": ["efbet Liga"],
+            "Slovaquie": ["Niké Liga"],
+            "Slovénie": ["PrvaLiga"],
+            "Chyprerie": ["Cyta Championship"],
+            "Israël": ["Israeli Premier League"],
+            "Australie": ["A-League Men"],
+            "Nouvelle-Zélande": ["National League"],
+            "Afrique du Sud": ["DSTV Premiership", "National First Division"],
+            "Ghana": ["Ghana Premier League"],
+            "Côte d'Ivoire": ["Ligue 1 Lonaci"],
+            "Nigeria": ["Nigeria Premier Football League"],
+            "Mali": ["Ligue 1 Malienne"],
+            "Guinée": ["Ligue 1 Pro Guinée"],
+            "RD Congo": ["Linafoot Ligue 1"],
+            "Angola": ["Girabola"],
+            "Zambie": ["Zambian Super League"],
+            "Tanzanie": ["Tanzanian Premier League"],
+            "Kenya": ["Kenyan Premier League"],
+            "Inde": ["Indian Super League"],
+            "Thaïlande": ["Thai League 1"],
+            "Viêt Nam": ["V.League 1"],
+            "Indonésie": ["Liga 1 Indonésie"],
+            "Malaisie": ["Malaysia Super League"],
+            "Singapour": ["Singapore Premier League"]
+        }
+        
+        pays_liste = list(base_competitions.keys())
         
         col_nav1, col_nav2 = st.columns(2)
         with col_nav1:
-            pays_choisi = st.selectbox("Sélectionnez le territoire :", pays_liste)
+            pays_choisi = st.selectbox("Sélectionnez le territoire ou la zone :", pays_liste)
         with col_nav2:
-            ligue_choisie = st.selectbox("Sélectionnez le niveau de la ligue :", divisions_liste)
+            divisions_disponibles = base_competitions[pays_choisi]
+            ligue_choisie = st.selectbox("Sélectionnez la compétition / ligue :", divisions_disponibles)
             
-        index_pays = pays_liste.index(pays_choisi)
-        index_ligue = divisions_liste.index(ligue_choisie)
-        page_id = (index_pays * 20) + index_ligue + 1
+        page_id = f"{pays_choisi} -> {ligue_choisie}"
         
-        st.caption(f"📍 Configuration de calcul chargée de manière unique : **Page {page_id} / 1500**")
+        st.caption(f"📍 Configuration de calcul active : **{page_id}**")
 
         # =========================================================
         # 📊 PARAMÈTRES ENTRÉES DU MATCH
@@ -104,16 +189,16 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
         col_input1, col_input2 = st.columns(2)
         with col_input1:
             st.subheader("🏠 Bloc Équipe Domicile")
-            nom_dom = st.text_input("Nom du club local :", "Teramo")
+            nom_dom = st.text_input("Nom du club local :", "Real Madrid")
             buts_marques_dom = st.number_input("Total Buts marqués à la maison :", min_value=0.0, value=34.0, step=0.1)
             buts_encaisses_dom = st.number_input("Total Buts encaissés à la maison :", min_value=0.0, value=12.0, step=0.1)
             matchs_joues_dom = st.number_input("Volume total matchs joués à domicile :", min_value=1, value=5)
 
         with col_input2:
             st.subheader("🚀 Bloc Équipe Extérieur")
-            nom_ext = st.text_input("Nom du club visiteur :", "Scafatese")
-            buts_marques_ext = st.number_input("Total Buts marqués dehors :", min_value=0.0, value=12.0, step=0.1)
-            buts_encaisses_ext = st.number_input("Total Buts encaissés dehors :", min_value=0.0, value=17.0, step=0.1)
+            nom_ext = st.text_input("Nom du club visiteur :", "Manchester City")
+            buts_marques_ext = st.number_input("Total Buts marqués dehors :", min_value=0.0, value=28.0, step=0.1)
+            buts_encaisses_ext = st.number_input("Total Buts encaissés dehors :", min_value=0.0, value=15.0, step=0.1)
             matchs_joues_ext = st.number_input("Volume total matchs joués à l'extérieur :", min_value=1, value=5)
 
         st.markdown("---")
@@ -135,7 +220,7 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
         force_defense_ext = (buts_encaisses_ext / matchs_joues_ext) / moyenne_dom_ext if matchs_joues_ext > 0 else 1.0
 
         lambda_dom = max(0.02, force_attaque_dom * force_defense_ext * moyenne_dom_ext)
-        lambda_ext = max(0.02, force_attaque_ext * force_defense_ext * moyenne_dom_ext)
+        lambda_ext = max(0.02, force_attaque_ext * force_defense_dom * moyenne_dom_ext)
 
         # =========================================================
         # 📐 GÉNÉRATION DE LA MATRICE COMPLÈTE (RÉSOLUTION 10x10)
@@ -251,5 +336,5 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
             </div>
         """, unsafe_allow_html=True)
         
-        st.success(f"✅ Analyse complète générée pour la **Page {page_id} / 1500** ({pays_choisi} - {ligue_choisie}).")
-                        
+        st.success(f"✅ Analyse complète générée pour **{page_id}**.")
+        
