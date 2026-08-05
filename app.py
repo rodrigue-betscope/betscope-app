@@ -20,7 +20,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 🧠 ALGORITHMES MATHÉMATIQUES AVANCÉS
+# 🧠 ALGORITHMES MATHÉMATIQUES AVANCÉS (NIVEAU PROFESSIONNEL)
 # =========================================================
 def loi_poisson_pure(k, lambda_param):
     """Calcule la probabilité de Poisson brute pour k buts."""
@@ -29,7 +29,11 @@ def loi_poisson_pure(k, lambda_param):
     return (math.exp(-lambda_param) * (lambda_param ** k)) / math.factorial(k)
 
 def modèle_quantum_dixon_coles(x, y, lambda_x, lambda_y, rho):
-    """Modèle de Dixon-Coles appliqué au football professionnel."""
+    """
+    Algorithme de Dixon-Coles appliqué au football professionnel.
+    Ajuste la corrélation mathématique des scores faibles (0-0, 1-0, 0-1, 1-1).
+    Il supprime l'effet d'estimation mathématique pour coller à la réalité du terrain.
+    """
     if rho == 0:
         return 1.0
     if x == 0 and y == 0:
@@ -55,7 +59,7 @@ menu = st.sidebar.radio("SÉLECTEUR DE MOTEUR", ["⚽ Espace Public", "⚡ Moteu
 
 if menu == "⚽ Espace Public":
     st.markdown('<div class="main-title">⚽ Espace Standard</div>', unsafe_allow_html=True)
-    st.info("Système en attente. Le processeur bivarié nécessite l'accès VIP.")
+    st.info("Système en attente. Le processeur bivarié à haute fidélité mathématique nécessite l'accès VIP.")
 
 elif menu == "⚡ Moteur Quantique VIP v3.0":
     st.markdown('<div class="main-title">⚡ Moteur Quantique : Poisson Bivarié Pro</div>', unsafe_allow_html=True)
@@ -70,12 +74,12 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
     cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
     if cle_acces in [CLE_VIP_CORRECTE, CLE_ADMIN_FORCAGE] and cle_acces != "":
-        st.success("🔓 Algorithme déverrouillé. Modèle initialisé.")
+        st.success("🔓 Algorithme déverrouillé. Modèle de simulation mathématique pure initialisé.")
 
         # =========================================================
         # 📂 EXTENSION STRICTE À 1500 PAGES CONFIGURÉES
         # =========================================================
-        st.markdown('<div class="section-title">🌍 Matrice Territoriale (1500 Configurations)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">🌍 Matrice Territoriale Extensible (1500 Configurations)</div>', unsafe_allow_html=True)
         
         pays_liste = [f"Zone Géographique / Pays ID-{i:02d}" for i in range(1, 76)]
         divisions_liste = [f"Division / Ligue Professionnelle {j:02d}" for j in range(1, 21)]
@@ -100,22 +104,22 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
         col_input1, col_input2 = st.columns(2)
         with col_input1:
             st.subheader("🏠 Bloc Équipe Domicile")
-            nom_dom = st.text_input("Nom du club local :", "Slavia Mozyr")
-            buts_marques_dom = st.number_input("Total Buts marqués à la maison :", min_value=0.0, value=15.0, step=0.1)
-            buts_encaisses_dom = st.number_input("Total Buts encaissés à la maison :", min_value=0.0, value=8.0, step=0.1)
+            nom_dom = st.text_input("Nom du club local :", "Teramo")
+            buts_marques_dom = st.number_input("Total Buts marqués à la maison :", min_value=0.0, value=34.0, step=0.1)
+            buts_encaisses_dom = st.number_input("Total Buts encaissés à la maison :", min_value=0.0, value=12.0, step=0.1)
             matchs_joues_dom = st.number_input("Volume total matchs joués à domicile :", min_value=1, value=5)
 
         with col_input2:
             st.subheader("🚀 Bloc Équipe Extérieur")
-            nom_ext = st.text_input("Nom du club visiteur :", "Slutsk")
-            buts_marques_ext = st.number_input("Total Buts marqués dehors :", min_value=0.0, value=9.0, step=0.1)
-            buts_encaisses_ext = st.number_input("Total Buts encaissés dehors :", min_value=0.0, value=5.0, step=0.1)
+            nom_ext = st.text_input("Nom du club visiteur :", "Scafatese")
+            buts_marques_ext = st.number_input("Total Buts marqués dehors :", min_value=0.0, value=12.0, step=0.1)
+            buts_encaisses_ext = st.number_input("Total Buts encaissés dehors :", min_value=0.0, value=17.0, step=0.1)
             matchs_joues_ext = st.number_input("Volume total matchs joués à l'extérieur :", min_value=1, value=5)
 
         st.markdown("---")
         col_p1, col_p2 = st.columns(2)
         with col_p1:
-            moyenne_buts_championnat = st.slider("⚽ Constante de buts par match du championnat général :", min_value=1.0, max_value=8.0, value=2.40, step=0.05)
+            moyenne_buts_championnat = st.slider("⚽ Constante de buts par match du championnat général :", min_value=1.0, max_value=8.0, value=2.7, step=0.05)
         with col_p2:
             rho_param = st.slider("📉 Facteur d'interdépendance tactique (Dixon-Coles Rho) :", min_value=-0.25, max_value=0.25, value=-0.08, step=0.01)
 
@@ -151,7 +155,7 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
             matrice_probabilités /= somme_matrice
 
         # =========================================================
-        # 📐 EXTRACTION DES PROBABILITÉS CRITIQUES
+        # 📐 EXTRACTION DES PROBABILITÉS CRITIQUES 1N2 & MARCHÉS
         # =========================================================
         prob_1 = float(np.sum(np.tril(matrice_probabilités, -1)))
         prob_N = float(np.sum(np.diag(matrice_probabilités)))
@@ -164,19 +168,87 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
                     prob_under_25 += matrice_probabilités[i, j]
         prob_over_25 = max(0.0, 1.0 - prob_under_25)
 
-        prob_btts_non = np.sum(matrice_probabilités[0, :]) + np.sum(matrice_probabilités[:, 0]) - matrice_probabilités
-        prob_btts_oui = max(0.0, 1.0 - prob_btts_non)
-
-        index_max = np.unravel_index(np.argmax(matrice_probabilités), matrice_probabilités.shape)
-        score_dom_mode, score_ext_mode = index_max
-        prob_score_exact_mode = matrice_probabilités[index_max]
+        prob_btts_oui = 0.0
+        for i in range(1, taille_matrice):
+            for j in range(1, taille_matrice):
+                prob_btts_oui += matrice_probabilités[i, j]
+        prob_btts_non = max(0.0, 1.0 - prob_btts_oui)
 
         # =========================================================
-        # 🖥️ PANNEAU DE CONTRÔLE ET RÉSULTATS PROFESSIONNELS
+        # 🏆 AFFICHAGE DES RÉSULTATS HAUTE PERFORMANCE
         # =========================================================
-        st.markdown('<div class="section-title">🔮 Probabilités Réelles & Sans Estimation</div>', unsafe_allow_html=True)
-        
-        col_res1, col_res2, col_res3 = st.columns(3)
+        st.markdown('<div class="section-title">🏆 Résultats de la Simulation Quantique</div>', unsafe_allow_html=True)
+
+        col_res1, col_res2 = st.columns(2)
+
         with col_res1:
-            st.markdown(f'<div class="metric-box">🏆 Victoire Locale <b>{nom_dom} (1)</b><span class="highlight-value text-glow">{prob_1*100:.2f}%</span></div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="metric-box">
+                <span>⚽ Espérance de Buts ({nom_dom})</span>
+                <span class="highlight-value text-glow">{lambda_dom:.2f} buts</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown(f"""
+            <div class="metric-box" style="margin-top: 15px;">
+                <span>📈 Probabilité Victoire Domicile (1)</span>
+                <span class="highlight-value">{prob_1 * 100:.2f}%</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown(f"""
+            <div class="metric-box" style="margin-top: 15px;">
+                <span>⚽ Marché Over 2.5 Buts</span>
+                <span class="highlight-value">{prob_over_25 * 100:.2f}%</span>
+            </div>
+            """, unsafe_allow_html=True)
+
         with col_res2:
+            st.markdown(f"""
+            <div class="metric-box">
+                <span>🚀 Espérance de Buts ({nom_ext})</span>
+                <span class="highlight-value text-glow">{lambda_ext:.2f} buts</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown(f"""
+            <div class="metric-box" style="margin-top: 15px;">
+                <span>📉 Probabilité Victoire Extérieur (2)</span>
+                <span class="highlight-value">{prob_2 * 100:.2f}%</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown(f"""
+            <div class="metric-box" style="margin-top: 15px;">
+                <span>🤝 Probabilité Match Nul (N)</span>
+                <span class="highlight-value">{prob_N * 100:.2f}%</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+        col_btts1, col_btts2 = st.columns(2)
+        with col_btts1:
+            st.markdown(f"""
+            <div class="metric-box" style="margin-top: 15px;">
+                <span>🔥 Les Deux Équipes Marquent (BTTS - Oui)</span>
+                <span class="highlight-value">{prob_btts_oui * 100:.2f}%</span>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_btts2:
+            st.markdown(f"""
+            <div class="metric-box" style="margin-top: 15px;">
+                <span>🛡️ Moins de 2.5 Buts (Under 2.5)</span>
+                <span class="highlight-value">{prob_under_25 * 100:.2f}%</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+        max_idx = np.unravel_index(np.argmax(matrice_probabilités), matrice_probabilités.shape)
+        score_exact_prob = matrice_probabilités[max_idx] * 100
+        st.markdown(f"""
+            <div class="metric-box" style="margin-top: 25px; border: 2px solid #FF9900;">
+                <span style="font-size: 18px; font-weight: bold; color: #FF9900;">🎯 Score Exact le Plus Probable</span>
+                <span class="highlight-value" style="font-size: 36px; color: #FFFFFF;">{max_idx[0]} - {max_idx[1]}</span>
+                <span style="color: #00FFcc; font-size: 16px; font-weight: bold;">Confiance du Modèle : {score_exact_prob:.2f}%</span>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.success(f"✅ Analyse complète générée pour la **Page {page_id} / 1500** ({pays_choisi} - {ligue_choisie}).")
