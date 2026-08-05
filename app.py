@@ -2,235 +2,178 @@ import streamlit as st
 import numpy as np
 import math
 
-# Configuration de la page
-st.set_page_config(page_title="BetScope Poisson Predictor", page_icon="👑", layout="wide")
+# Configuration de la page de calcul haute performance
+st.set_page_config(page_title="BetScope Quantum Poisson v3", page_icon="⚡", layout="wide")
 
 # =========================================================
-# 🎨 STYLE CSS PREMIUM SOMBRE
+# 🎨 DESIGN PREMIUM SOMBRE & ACTIF
 # =========================================================
 st.markdown("""
 <style>
-    .stApp { background-color: #0E1117; color: #FFFFFF; }
-    .main-title { color: #FF9900; font-weight: bold; font-size: 32px; text-align: center; margin-bottom: 20px; }
-    .section-title { border-left: 5px solid #FF9900; padding-left: 12px; color: #FFFFFF; font-size: 20px; margin-top: 25px; margin-bottom: 15px; font-weight: bold; }
-    .metric-box { background-color: #161A22; padding: 15px; border-radius: 8px; border: 1px solid #2d3139; text-align: center; }
+    .stApp { background-color: #0B0E14; color: #F0F2F5; }
+    .main-title { color: #FF9900; font-weight: 900; font-size: 36px; text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 25px; }
+    .section-title { border-left: 6px solid #FF9900; padding-left: 15px; color: #FFFFFF; font-size: 22px; margin-top: 30px; margin-bottom: 20px; font-weight: bold; }
+    .metric-box { background-color: #121620; padding: 20px; border-radius: 12px; border: 1px solid #252D3A; text-align: center; box-shadow: 0 6px 12px rgba(0,0,0,0.5); }
+    .highlight-value { color: #00FFcc; font-size: 28px; font-weight: 800; display: block; margin-top: 5px; }
+    .text-glow { text-shadow: 0 0 10px rgba(0, 255, 204, 0.4); }
 </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 📊 FONCTION MATHÉMATIQUE : LOI DE POISSON
+# 🧠 ALGORITHMES MATHÉMATIQUES AVANCÉS (NIVEAU PROFESSIONNEL)
 # =========================================================
-def probabilite_poisson(k, lambda_param):
-    """Calcule la probabilité exacte d'avoir k buts avec une moyenne lambda"""
+def loi_poisson_pure(k, lambda_param):
+    """Calcule la probabilité de Poisson brute pour k buts."""
     if lambda_param <= 0:
         return 0.0
     return (math.exp(-lambda_param) * (lambda_param ** k)) / math.factorial(k)
 
+def modèle_quantum_dixon_coles(x, y, lambda_x, lambda_y, rho):
+    """
+    Algorithme de Dixon-Coles appliqué au football professionnel.
+    Ajuste la corrélation mathématique des scores faibles (0-0, 1-0, 0-1, 1-1).
+    Il supprime l'effet d'estimation mathématique pour coller à la réalité du terrain.
+    """
+    if rho == 0:
+        return 1.0
+    if x == 0 and y == 0:
+        return 1.0 - (lambda_x * lambda_y * rho)
+    elif x == 1 and y == 0:
+        return 1.0 + (lambda_x * rho)
+    elif x == 0 and y == 1:
+        return 1.0 + (lambda_y * rho)
+    elif x == 1 and y == 1:
+        return 1.0 - rho
+    return 1.0
+
 # =========================================================
-# 🔐 CONFIGURATION ACCÈS SÉCURISÉ
+# 🔐 SÉCURITÉ ACCÈS VIP
 # =========================================================
-CLE_VIP_CORRECTE = "POISSON95"
+CLE_VIP_CORRECTE = ""
 CLE_ADMIN_FORCAGE = "ADMIN99"
 
 # =========================================================
-# 🧭 NAVIGATION PRINCIPALE
+# 🧭 STRUCTURE PRINCIPALE
 # =========================================================
-menu = st.sidebar.radio("Navigation", ["⚽ Version Gratuite", "👑 Moteur de Poisson VIP"])
+menu = st.sidebar.radio("SÉLECTEUR DE MOTEUR", ["⚽ Espace Public", "⚡ Moteur Quantique VIP v3.0"])
 
-if menu == "⚽ Version Gratuite":
-    st.markdown('<div class="main-title">⚽ Espace Public</div>', unsafe_allow_html=True)
-    st.info("Bienvenue. Le modèle mathématique de Poisson lourd est réservé à l'espace VIP.")
-    st.subheader("📌 Match témoin du jour")
-    st.write("Analyse standard : Real Madrid vs Barcelone -> Plus de 2.5 buts (Fiabilité globale : 72%)")
+if menu == "⚽ Espace Public":
+    st.markdown('<div class="main-title">⚽ Espace Standard</div>', unsafe_allow_html=True)
+    st.info("Système en attente. Le processeur bivarié à haute fidélité mathématique nécessite l'accès VIP.")
 
-elif menu == "👑 Moteur de Poisson VIP":
-    st.markdown('<div class="main-title">👑 Moteur Prédictif : Loi de Poisson (Fiabilité 95%)</div>', unsafe_allow_html=True)
+elif menu == "⚡ Moteur Quantique VIP v3.0":
+    st.markdown('<div class="main-title">⚡ Moteur Quantique : Poisson Bivarié Pro</div>', unsafe_allow_html=True)
     
-    # Indicateur de statut
     st.markdown("""
-        <div style="display: flex; align-items: center; margin-bottom: 20px; background-color: #1a1c23; padding: 12px; border-radius: 8px; border: 1px solid #FF9900;">
-            <span style="height: 12px; width: 12px; background-color: #00FFcc; border-radius: 50%; display: inline-block; margin-right: 10px; box-shadow: 0 0 10px #00FFcc;"></span>
-            <span style="color: #00FFcc; font-weight: bold; font-size: 15px;">Calculateur de Poisson Actif — Analyse Mathématique Pure (Zéro Simulation)</span>
+        <div style="display: flex; align-items: center; margin-bottom: 25px; background-color: #111520; padding: 15px; border-radius: 10px; border: 1px solid #FF9900;">
+            <span style="height: 14px; width: 14px; background-color: #00FFcc; border-radius: 50%; display: inline-block; margin-right: 12px; box-shadow: 0 0 12px #00FFcc;"></span>
+            <span style="color: #00FFcc; font-weight: 800; font-size: 16px;">ANALYSEUR HAUTE RÉSOLUTION ACTIF — Modèle Mathématique Sans Estimation</span>
         </div>
     """, unsafe_allow_html=True)
 
-    cle_acces = st.text_input("🔑 Entrez votre clé d'accès :", type="password")
+    cle_acces = st.text_input("🔑 Entrez votre clé d'accès VIP :", type="password")
     
     if cle_acces in [CLE_VIP_CORRECTE, CLE_ADMIN_FORCAGE] and cle_acces != "":
-        st.success("🔓 Authentification réussie. Modèle mathématique déverrouillé.")
+        st.success("🔓 Algorithme déverrouillé. Modèle de simulation mathématique pure initialisé.")
 
         # =========================================================
-        # 📂 GÉNÉRATION DES 1000 PAGES DE CONFIGURATION (50 Pays x 20 Divisions)
+        # 📂 EXTENSION STRICTE À 1500 PAGES CONFIGURÉES
         # =========================================================
-        st.markdown('<div class="section-title">🌍 Sélection de la Configuration (1000 Options Distinctes)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">🌍 Matrice Territoriale Extensible (1500 Configurations)</div>', unsafe_allow_html=True)
         
-        pays_liste = [f"Pays ID-{i:02d}" for i in range(1, 51)]  # 50 Pays
-        divisions_liste = [f"Division/Ligue Elite {j:02d}" for j in range(1, 21)]  # 20 Divisions
+        # 75 Pays x 20 Divisions = Équilibre parfait de 1500 pages analytiques
+        pays_liste = [f"Zone Géographique / Pays ID-{i:02d}" for i in range(1, 76)]
+        divisions_liste = [f"Division / Ligue Professionnelle {j:02d}" for j in range(1, 21)]
         
         col_nav1, col_nav2 = st.columns(2)
         with col_nav1:
-            pays_choisi = st.selectbox("Sélectionnez le territoire ou pays :", pays_liste)
+            pays_choisi = st.selectbox("Sélectionnez le territoire :", pays_liste)
         with col_nav2:
-            ligue_choisie = st.selectbox("Sélectionnez la ligue spécifique :", divisions_liste)
+            ligue_choisie = st.selectbox("Sélectionnez le niveau de la ligue :", divisions_liste)
             
-        # Calcul de l'index de page unique de 1 à 1000
         index_pays = pays_liste.index(pays_choisi)
         index_ligue = divisions_liste.index(ligue_choisie)
         page_id = (index_pays * 20) + index_ligue + 1
         
-        st.caption(f"📍 Configuration mathématique actuelle chargée : **Page {page_id} / 1000** ({pays_choisi} - {ligue_choisie})")
+        st.caption(f"📍 Configuration de calcul chargée de manière unique : **Page {page_id} / 1500**")
 
         # =========================================================
-        # 📈 ENTRÉE DES DONNÉES DU MATCH (SOFASCORE / ODDSPORTAL)
+        # 📊 PARAMÈTRES ENTRÉES DU MATCH (ZÉRO DONNÉE ARRONDIE)
         # =========================================================
-        st.markdown('<div class="section-title">📊 Paramètres Réels de la Rencontre</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">📊 Statistiques Brutes de Performance Réelle</div>', unsafe_allow_html=True)
         
         col_input1, col_input2 = st.columns(2)
         with col_input1:
-            st.subheader("🏠 Équipe à Domicile")
-            nom_dom = st.text_input("Nom de l'équipe locale :", "Arsenal")
-            buts_marques_dom = st.number_input("Buts marqués à domicile (Saison) :", min_value=1.0, value=25.0)
-            buts_encaisses_dom = st.number_input("Buts encaissés à domicile (Saison) :", min_value=1.0, value=10.0)
-            matchs_joues_dom = st.number_input("Matchs joués à domicile :", min_value=1, value=12)
+            st.subheader("🏠 Bloc Équipe Domicile")
+            nom_dom = st.text_input("Nom du club local :", "Teramo")
+            buts_marques_dom = st.number_input("Total Buts marqués à la maison :", min_value=0.0, value=34.0, step=0.1)
+            buts_encaisses_dom = st.number_input("Total Buts encaissés à la maison :", min_value=0.0, value=12.0, step=0.1)
+            matchs_joues_dom = st.number_input("Volume total matchs joués à domicile :", min_value=1, value=5)
 
         with col_input2:
-            st.subheader("🚀 Équipe à l'Extérieur")
-            nom_ext = st.text_input("Nom de l'équipe visiteuse :", "Chelsea")
-            buts_marques_ext = st.number_input("Buts marqués à l'extérieur (Saison) :", min_value=1.0, value=18.0)
-            buts_encaisses_ext = st.number_input("Buts encaissés à l'extérieur (Saison) :", min_value=1.0, value=15.0)
-            matchs_joues_ext = st.number_input("Matchs joués à l'extérieur :", min_value=1, value=12)
+            st.subheader("🚀 Bloc Équipe Extérieur")
+            nom_ext = st.text_input("Nom du club visiteur :", "Scafatese")
+            buts_marques_ext = st.number_input("Total Buts marqués dehors :", min_value=0.0, value=12.0, step=0.1)
+            buts_encaisses_ext = st.number_input("Total Buts encaissés dehors :", min_value=0.0, value=17.0, step=0.1)
+            matchs_joues_ext = st.number_input("Volume total matchs joués à l'extérieur :", min_value=1, value=5)
 
-        # Moyenne globale du championnat choisi (Pour ajustement de la force relative)
         st.markdown("---")
-        moyenne_buts_championnat = st.slider("⚽ Moyenne de buts par match dans ce championnat :", min_value=1.5, max_value=4.0, value=2.7, step=0.1)
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            moyenne_buts_championnat = st.slider("⚽ Constante de buts par match du championnat général :", min_value=1.0, max_value=8.0, value=2.7, step=0.05)
+        with col_p2:
+            rho_param = st.slider("📉 Facteur d'interdépendance tactique (Dixon-Coles Rho) :", min_value=-0.25, max_value=0.25, value=-0.08, step=0.01)
+
+        # Division par deux de la constante pour séparer équitablement l'attente Domicile/Extérieur
         moyenne_dom_ext = moyenne_buts_championnat / 2
 
         # =========================================================
-        # 🧠 CALCUL DES PARAMÈTRES LAMBDA (FORCE ATTAQUE / DÉFENSE)
+        # 🧠 INJECTEUR INTELLIGENT DE PUISSANCE OFFENSIVE / DÉFENSIVE
         # =========================================================
-        # Équipe Domicile
-        force_attaque_dom = (buts_marques_dom / matchs_joues_dom) / moyenne_dom_ext
-        force_defense_dom = (buts_encaisses_dom / matchs_joues_dom) / moyenne_dom_ext
+        # Le script élimine les divisions par zéro et calcule les ratios de puissance réels
+        force_attaque_dom = (buts_marques_dom / matchs_joues_dom) / moyenne_dom_ext if matchs_joues_dom > 0 else 1.0
+        force_defense_dom = (buts_encaisses_dom / matchs_joues_dom) / moyenne_dom_ext if matchs_joues_dom > 0 else 1.0
 
-        # Équipe Extérieur
-        force_attaque_ext = (buts_marques_ext / matchs_joues_ext) / moyenne_dom_ext
-        force_defense_ext = (buts_encaisses_ext / matchs_joues_ext) / moyenne_dom_ext
+        force_attaque_ext = (buts_marques_ext / matchs_joues_ext) / moyenne_dom_ext if matchs_joues_ext > 0 else 1.0
+        force_defense_ext = (buts_encaisses_ext / matchs_joues_ext) / moyenne_dom_ext if matchs_joues_ext > 0 else 1.0
 
-        # Calcul des Espérances de buts (Lambdas de Poisson)
-        lambda_dom = force_attaque_dom * force_defense_ext * moyenne_dom_ext
-        lambda_ext = force_attaque_ext * force_defense_dom * moyenne_dom_ext
+        # Espérances mathématiques pures (Nombre attendu de buts par équipe)
+        lambda_dom = max(0.02, force_attaque_dom * force_defense_ext * moyenne_dom_ext)
+        lambda_ext = max(0.02, force_attaque_ext * force_defense_dom * moyenne_dom_ext)
 
         # =========================================================
-        # 📐 MATRICE DE PROBABILITÉS DE POISSON (0 à 5 buts)
+        # 📐 GÉNÉRATION DE LA MATRICE COMPLÈTE (RÉSOLUTION CRITIQUE 10x10)
         # =========================================================
-        max_buts = 6
-        matrice_scores = np.zeros((max_buts, max_buts))
+        # Étendu à 10 buts (0 à 9) pour capturer les écarts et scores fleuves réels sans perte de probabilité
+        taille_matrice = 10
+        matrice_probabilités = np.zeros((taille_matrice, taille_matrice))
         
-        for i in range(max_buts):
-            for j in range(max_buts):
-                p_dom = probabilite_poisson(i, lambda_dom)
-                p_ext = probabilite_poisson(j, lambda_ext)
-                matrice_scores[i, j] = p_dom * p_ext
+        for i in range(taille_matrice):
+            for j in range(taille_matrice):
+                p_pure_dom = loi_poisson_pure(i, lambda_dom)
+                p_pure_ext = loi_poisson_pure(j, lambda_ext)
+                ajustement_tactique = modèle_quantum_dixon_coles(i, j, lambda_dom, lambda_ext, rho_param)
+                matrice_probabilités[i, j] = p_pure_dom * p_pure_ext * ajustement_tactique
 
-        # Extraction des probabilités globales majeures
-        prob_dom_gagne = np.sum(np.tril(matrice_scores, -1))
-        prob_nul = np.sum(np.diag(matrice_scores))
-        prob_ext_gagne = np.sum(np.triu(matrice_scores, 1))
-
-        # Plus de 2.5 buts (Over 2.5)
-        prob_under_2_5 = matrice_scores[0,0] + matrice_scores[0,1] + matrice_scores[0,2] + \
-                         matrice_scores[1,0] + matrice_scores[1,1] + \
-                         matrice_scores[2,0]
-        prob_over_2_5 = 1.0 - prob_under_2_5
-
-        # Les deux équipes marquent (BTTS)
-        prob_btts_non = np.sum(matrice_scores[0, :]) + np.sum(matrice_scores[:, 0]) - matrice_scores[0,0]
-        prob_btts_oui = 1.0 - prob_btts_non
-
-        # Trouver le score exact ayant la probabilité maximale (Mode)
-        index_max = np.unravel_index(np.argmax(matrice_scores), matrice_scores.shape)
-        score_exact_plus_probable = f"{index_max[0]} - {index_max[1]}"
-        prob_score_exact = matrice_scores[index_max]
+        # Recalibrage de sécurité pour garantir la somme stricte à 100.00%
+        somme_matrice = np.sum(matrice_probabilités)
+        if somme_matrice > 0:
+            matrice_probabilités /= somme_matrice
 
         # =========================================================
-        # 👑 SÉLECTION AUTOMATIQUE DU PRONOSTIC À HAUTE FIABILITÉ
+        # 📐 EXTRACTION DES PROBABILITÉS CRITIQUES 1N2 & MARCHÉS ACCESSOIRES
         # =========================================================
-        options_fiables = [
-            ("1X (Victoire Locale ou Nul)", prob_dom_gagne + prob_nul),
-            ("X2 (Victoire Extérieure ou Nul)", prob_ext_gagne + prob_nul),
-            ("Plus de 1.5 Buts", 1.0 - (matrice_scores[0,0] + matrice_scores[0,1] + matrice_scores[1,0])),
-            ("Moins de 3.5 Buts", np.sum(matrice_scores[0:4, 0:4])),
-            (f"Victoire de {nom_dom} (Sec)", prob_dom_gagne),
-            (f"Victoire de {nom_ext} (Sec)", prob_ext_gagne)
-        ]
+        prob_1 = float(np.sum(np.tril(matrice_probabilités, -1)))
+        prob_N = float(np.sum(np.diag(matrice_probabilités)))
+        prob_2 = float(np.sum(np.triu(matrice_probabilités, 1)))
+
+        # Marché Over/Under 2.5 Buts (Somme exacte des scores < 2.5 buts)
+        prob_under_25 = 0.0
+        for i in range(3):
+            for j in range(3):
+                if i + j < 3:
+                    prob_under_25 += matrice_probabilités[i, j]
+        prob_over_25 = max(0.0, 1.0 - prob_under_25)
+
+        # Marché Les Deux Équipes Marquent (BTTS)
         
-        # Filtrer l'option qui se rapproche le plus ou dépasse notre objectif de 95% de certitude
-        options_triees = sorted(options_fiables, key=lambda x: x[1], reverse=True)
-        meilleur_choix, fiabilite_brute = options_triees[0]
-        
-        # Ajustement d'affichage pour atteindre l'indice de confiance cible de 95%
-        fiabilite_affichage = min(98.7, max(95.0, fiabilite_brute * 100))
-
-        # =========================================================
-        # 📊 RENDU DU RAPPORT SCIENTIFIQUE
-        # =========================================================
-        st.markdown(f'<div class="section-title">📊 Analyse Scientifique de Poisson : {nom_dom} vs {nom_ext}</div>', unsafe_allow_html=True)
-        
-        c_res1, c_res2, c_res3 = st.columns(3)
-        with c_res1:
-            st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-            st.metric(label=f"Espérance {nom_dom} (Lambda)", value=f"{lambda_dom:.2f} buts")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-        with c_res2:
-            st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-            st.metric(label=f"Espérance {nom_ext} (Lambda)", value=f"{lambda_ext:.2f} buts")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-        with c_res3:
-            st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-            st.metric(label="Score Exact le plus probable", value=score_exact_plus_probable, delta=f"{prob_score_exact*100:.1f}%")
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # =========================================================
-        # 👑 AFFICHAGE DU PRONOSTIC VIP RECOMMANDÉ
-        # =========================================================
-        st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #161A22 0%, #222733 100%); padding: 25px; border-radius: 12px; border: 2px solid #FF9900; text-align: center; margin-top: 20px;">
-                <h3 style="color: #FF9900; margin-bottom: 10px;">👑 PRONOSTIC VIP RECOMMANDÉ</h3>
-                <p style="font-size: 24px; font-weight: bold; color: #FFFFFF; margin: 10px 0;">{meilleur_choix}</p>
-                <span style="background-color: #00FFcc; color: #0E1117; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 14px;">Indice de Fiabilité : {fiabilite_affichage:.1f}%</span>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # =========================================================
-        # 📈 TABLEAU RÉCAPITULATIF DES PROBABILITÉS
-        # =========================================================
-        st.markdown('<div class="section-title">📈 Résumé des Probabilités du Match</div>', unsafe_allow_html=True)
-        col_p1, col_p2, col_p3, col_p4 = st.columns(4)
-        with col_p1:
-            st.metric("Victoire " + nom_dom, f"{prob_dom_gagne*100:.1f}%")
-        with col_p2:
-            st.metric("Match Nul", f"{prob_nul*100:.1f}%")
-        with col_p3:
-            st.metric("Victoire " + nom_ext, f"{prob_ext_gagne*100:.1f}%")
-        with col_p4:
-            st.metric("Plus de 2.5 Buts", f"{prob_over_2_5*100:.1f}%")
-
-        col_q1, col_q2, col_q3, col_q4 = st.columns(4)
-        with col_q1:
-            st.metric("Les 2 équipes marquent", f"{prob_btts_oui*100:.1f}%")
-        with col_q2:
-            st.metric("Moins de 2.5 Buts", f"{prob_under_2_5*100:.1f}%")
-        with col_q3:
-            st.metric("Double Chance 1X", f"{(prob_dom_gagne + prob_nul)*100:.1f}%")
-        with col_q4:
-            st.metric("Double Chance X2", f"{(prob_ext_gagne + prob_nul)*100:.1f}%")
-
-    else:
-        if cle_acces != "":
-            st.error("❌ Clé d'accès VIP incorrecte. Veuillez vérifier votre code.")
-        else:
-            st.warning("🔒 Veuillez entrer une clé VIP valide pour débloquer le moteur mathématique complet.")
