@@ -77,35 +77,24 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
         st.success("🔓 Algorithme déverrouillé. Modèle de simulation mathématique pure initialisé.")
 
         # =========================================================
-        # 📂 MATRICE DES PAYS ET CHAMPIONNATS RÉELS
+        # 📂 EXTENSION STRICTE À 1500 PAGES CONFIGURÉES (75 PAYS x 20 LIGUES)
         # =========================================================
-        st.markdown('<div class="section-title">🌍 Sélection du Championnat Réel</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">🌍 Matrice Territoriale Extensible (1500 Configurations)</div>', unsafe_allow_html=True)
         
-        competitions_dict = {
-            "Angleterre": ["Premier League", "Championship", "League One"],
-            "Espagne": ["La Liga", "Segunda División"],
-            "Italie": ["Serie A", "Serie B"],
-            "France": ["Ligue 1", "Ligue 2", "National"],
-            "Allemagne": ["Bundesliga", "2. Bundesliga"],
-            "Cameroun": ["MTN Elite One", "MTN Elite Two"],
-            "Brésil": ["Série A", "Série B"],
-            "Portugal": ["Primeira Liga"],
-            "Pays-Bas": ["Eredivisie"],
-            "Belgique": ["Jupiler Pro League"]
-        }
-        
-        pays_liste = list(competitions_dict.keys())
+        pays_liste = [f"Zone Géographique / Pays ID-{i:02d}" for i in range(1, 76)]
+        divisions_liste = [f"Division / Ligue Professionnelle {j:02d}" for j in range(1, 21)]
         
         col_nav1, col_nav2 = st.columns(2)
         with col_nav1:
             pays_choisi = st.selectbox("Sélectionnez le territoire :", pays_liste)
         with col_nav2:
-            divisions_liste = competitions_dict[pays_choisi]
             ligue_choisie = st.selectbox("Sélectionnez le niveau de la ligue :", divisions_liste)
             
-        page_id = f"{pays_choisi} - {ligue_choisie}"
+        index_pays = pays_liste.index(pays_choisi)
+        index_ligue = divisions_liste.index(ligue_choisie)
+        page_id = (index_pays * 20) + index_ligue + 1
         
-        st.caption(f"📍 Configuration de calcul active : **{page_id}**")
+        st.caption(f"📍 Configuration de calcul chargée de manière unique : **Page {page_id} / 1500**")
 
         # =========================================================
         # 📊 PARAMÈTRES ENTRÉES DU MATCH
@@ -146,7 +135,7 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
         force_defense_ext = (buts_encaisses_ext / matchs_joues_ext) / moyenne_dom_ext if matchs_joues_ext > 0 else 1.0
 
         lambda_dom = max(0.02, force_attaque_dom * force_defense_ext * moyenne_dom_ext)
-        lambda_ext = max(0.02, force_attaque_ext * force_defense_dom * moyenne_dom_ext)
+        lambda_ext = max(0.02, force_attaque_ext * force_defense_ext * moyenne_dom_ext)
 
         # =========================================================
         # 📐 GÉNÉRATION DE LA MATRICE COMPLÈTE (RÉSOLUTION 10x10)
@@ -262,5 +251,5 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
             </div>
         """, unsafe_allow_html=True)
         
-        st.success(f"✅ Analyse complète générée pour **{page_id}**.")
-        
+        st.success(f"✅ Analyse complète générée pour la **Page {page_id} / 1500** ({pays_choisi} - {ligue_choisie}).")
+                        
