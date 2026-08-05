@@ -164,7 +164,7 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
                     prob_under_25 += matrice_probabilités[i, j]
         prob_over_25 = max(0.0, 1.0 - prob_under_25)
 
-        prob_btts_non = np.sum(matrice_probabilités[0, :]) + np.sum(matrice_probabilités[:, 0]) - matrice_probabilités[0, 0]
+        prob_btts_non = np.sum(matrice_probabilités[0, :]) + np.sum(matrice_probabilités[:, 0]) - matrice_probabilités
         prob_btts_oui = max(0.0, 1.0 - prob_btts_non)
 
         index_max = np.unravel_index(np.argmax(matrice_probabilités), matrice_probabilités.shape)
