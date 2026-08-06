@@ -3,7 +3,7 @@ import numpy as np
 import math
 
 # Configuration de la page de calcul haute performance
-st.set_page_config(page_title="BetScope Quantum Poisson v3", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="BetScope Quantum Poisson v3.1", page_icon="⚡", layout="wide")
 
 # =========================================================
 # 🎨 DESIGN PREMIUM SOMBRE & ACTIF
@@ -20,7 +20,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 🧠 ALGORITHMES MATHÉMATIQUES AVANCÉS (NIVEAU PROFESSIONNEL)
+# 🧠 ALGORITHMES MATHÉMATIQUES AVANCÉS & RÉGULARISATION BAYÉSIENNE
 # =========================================================
 def loi_poisson_pure(k, lambda_param):
     """Calcule la probabilité de Poisson brute pour k buts."""
@@ -28,7 +28,7 @@ def loi_poisson_pure(k, lambda_param):
         return 0.0
     return (math.exp(-lambda_param) * (lambda_param ** k)) / math.factorial(k)
 
-def modèle_quantum_dixon_coles(x, y, lambda_x, lambda_y, rho):
+def modele_quantum_dixon_coles(x, y, lambda_x, lambda_y, rho):
     """
     Algorithme de Dixon-Coles appliqué au football professionnel.
     Ajuste la corrélation mathématique des scores faibles (0-0, 1-0, 0-1, 1-1).
@@ -36,13 +36,13 @@ def modèle_quantum_dixon_coles(x, y, lambda_x, lambda_y, rho):
     if rho == 0:
         return 1.0
     if x == 0 and y == 0:
-        return 1.0 - (lambda_x * lambda_y * rho)
+        return max(0.0, 1.0 - (lambda_x * lambda_y * rho))
     elif x == 1 and y == 0:
-        return 1.0 + (lambda_x * rho)
+        return max(0.0, 1.0 + (lambda_x * rho))
     elif x == 0 and y == 1:
-        return 1.0 + (lambda_y * rho)
+        return max(0.0, 1.0 + (lambda_y * rho))
     elif x == 1 and y == 1:
-        return 1.0 - rho
+        return max(0.0, 1.0 - rho)
     return 1.0
 
 # =========================================================
@@ -66,7 +66,7 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
     st.markdown("""
         <div style="display: flex; align-items: center; margin-bottom: 25px; background-color: #111520; padding: 15px; border-radius: 10px; border: 1px solid #FF9900;">
             <span style="height: 14px; width: 14px; background-color: #00FFcc; border-radius: 50%; display: inline-block; margin-right: 12px; box-shadow: 0 0 12px #00FFcc;"></span>
-            <span style="color: #00FFcc; font-weight: 800; font-size: 16px;">ANALYSEUR HAUTE RÉSOLUTION ACTIF — Compétitions Officielles & Internationales</span>
+            <span style="color: #00FFcc; font-weight: 800; font-size: 16px;">ANALYSEUR HAUTE RÉSOLUTION ACTIF — Avec Lissage Bayésien Anti-Biais</span>
         </div>
     """, unsafe_allow_html=True)
 
@@ -82,16 +82,10 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
         
         base_competitions = {
             "🌍 International / Europe": [
-                "UEFA Champions League", 
-                "UEFA Europa League", 
-                "UEFA Conference League", 
-                "UEFA Super Cup", 
-                "Copa Libertadores", 
-                "Copa Sudamericana",
-                "CAF Champions League",
-                "CAF Coupe de la Confédération",
-                "Coupe du Monde de la FIFA",
-                "Matchs Amicaux Internationaux"
+                "UEFA Champions League", "UEFA Europa League", "UEFA Conference League", 
+                "UEFA Super Cup", "Copa Libertadores", "Copa Sudamericana",
+                "CAF Champions League", "CAF Coupe de la Confédération",
+                "Coupe du Monde de la FIFA", "Matchs Amicaux Internationaux"
             ],
             "Angleterre": ["Premier League", "Championship", "League One", "League Two", "FA Cup", "EFL Cup"],
             "Espagne": ["La Liga", "Segunda División", "Copa del Rey", "Supercopa de España"],
@@ -211,16 +205,32 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
         moyenne_dom_ext = moyenne_buts_championnat / 2
 
         # =========================================================
-        # 🧠 INJECTEUR INTELLIGENT DE PUISSANCE OFFENSIVE / DÉFENSIVE
+        # 🧠 INTELLIGENCE ARTIFICIELLE : LISSAGE BAYÉSIEN & ANTI-BIAIS
         # =========================================================
-        force_attaque_dom = (buts_marques_dom / matchs_joues_dom) / moyenne_dom_ext if matchs_joues_dom > 0 else 1.0
-        force_defense_dom = (buts_encaisses_dom / matchs_joues_dom) / moyenne_dom_ext if matchs_joues_dom > 0 else 1.0
+        # Empêche l'explosion mathématique sur les petits échantillons (ex: N=1 ou N=2)
+        poids_confiance_dom = min(1.0, matchs_joues_dom / 6.0)
+        poids_confiance_ext = min(1.0, matchs_joues_ext / 6.0)
 
-        force_attaque_ext = (buts_marques_ext / matchs_joues_ext) / moyenne_dom_ext if matchs_joues_ext > 0 else 1.0
-        force_defense_ext = (buts_encaisses_ext / matchs_joues_ext) / moyenne_dom_ext if matchs_joues_ext > 0 else 1.0
+        raw_attaque_dom = (buts_marques_dom / matchs_joues_dom) / moyenne_dom_ext if matchs_joues_dom > 0 else 1.0
+        raw_defense_dom = (buts_encaisses_dom / matchs_joues_dom) / moyenne_dom_ext if matchs_joues_dom > 0 else 1.0
 
-        lambda_dom = max(0.02, force_attaque_dom * force_defense_ext * moyenne_dom_ext)
-        lambda_ext = max(0.02, force_attaque_ext * force_defense_dom * moyenne_dom_ext)
+        raw_attaque_ext = (buts_marques_ext / matchs_joues_ext) / moyenne_dom_ext if matchs_joues_ext > 0 else 1.0
+        raw_defense_ext = (buts_encaisses_ext / matchs_joues_ext) / moyenne_dom_ext if matchs_joues_ext > 0 else 1.0
+
+        # Lissage bayésien vers la valeur neutre (1.0)
+        force_attaque_dom = poids_confiance_dom * raw_attaque_dom + (1.0 - poids_confiance_dom) * 1.0
+        force_defense_dom = poids_confiance_dom * raw_defense_dom + (1.0 - poids_confiance_dom) * 1.0
+
+        force_attaque_ext = poids_confiance_ext * raw_attaque_ext + (1.0 - poids_confiance_ext) * 1.0
+        force_defense_ext = poids_confiance_ext * raw_defense_ext + (1.0 - poids_confiance_ext) * 1.0
+
+        # Calcul des lambdas bruts
+        lambda_dom_calc = force_attaque_dom * force_defense_ext * moyenne_dom_ext
+        lambda_ext_calc = force_attaque_ext * force_defense_dom * moyenne_dom_ext
+
+        # Plafonnement de sécurité (Capping) pour éviter des scores irréalistes comme 7-1
+        lambda_dom = float(np.clip(lambda_dom_calc, 0.2, 3.8))
+        lambda_ext = float(np.clip(lambda_ext_calc, 0.2, 3.8))
 
         # =========================================================
         # 📐 GÉNÉRATION DE LA MATRICE COMPLÈTE (RÉSOLUTION 10x10)
@@ -232,7 +242,7 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
             for j in range(taille_matrice):
                 p_pure_dom = loi_poisson_pure(i, lambda_dom)
                 p_pure_ext = loi_poisson_pure(j, lambda_ext)
-                ajustement_tactique = modèle_quantum_dixon_coles(i, j, lambda_dom, lambda_ext, rho_param)
+                ajustement_tactique = modele_quantum_dixon_coles(i, j, lambda_dom, lambda_ext, rho_param)
                 matrice_probabilités[i, j] = p_pure_dom * p_pure_ext * ajustement_tactique
 
         somme_matrice = np.sum(matrice_probabilités)
@@ -336,5 +346,4 @@ elif menu == "⚡ Moteur Quantique VIP v3.0":
             </div>
         """, unsafe_allow_html=True)
         
-        st.success(f"✅ Analyse complète générée pour **{page_id}**.")
-        
+        st.success(f"✅ Analyse intelligente et sécurisée générée pour **{page_id}**.")
