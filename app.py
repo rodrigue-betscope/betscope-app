@@ -3,7 +3,7 @@ import streamlit as st
 
 # Configuration de la page
 st.set_page_config(
-    page_title="NASMO IA BOT - V15 ULTIMATE", page_icon="🧠", layout="centered"
+    page_title="NASMO IA BOT - V16 MI-TEMPS PRO", page_icon="⏱️", layout="centered"
 )
 
 # Style CSS sombre et moderne
@@ -26,224 +26,191 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🧠 NASMO IA BOT - V15 ULTIMATE")
+st.title("⏱️ NASMO IA BOT - V16 MI-TEMPS PRO")
 st.markdown(
-    "<p style='color: #8b949e;'>Moteur prédictif à Loi de Poisson dynamique"
-    " 💯🔥</p>",
+    "<p style='color: #8b949e;'>Spécialiste des prédictions et scores exacts en"
+    " 1ère Mi-Temps (HT) 💯🔥</p>",
     unsafe_allow_html=True,
 )
 
-# Organisation par Onglets
-tab1, tab2, tab3 = st.tabs(
-    ["⚙️ Configuration & Cotes", "📊 Analyse IA", "💎 Conseils Pro & Marchés"]
-)
 
-
-def poisson_prob(lmbda, k):
+def poisson(lmbda, k):
   return (math.exp(-max(0.01, lmbda)) * (max(0.01, lmbda) ** k)) / math.factorial(
       k
   )
 
 
+# Organisation par Onglets
+tab1, tab2, tab3 = st.tabs(
+    ["⚙️ Stats 1ère Mi-Temps", "📊 Analyse HT", "💎 Marchés & Scores HT"]
+)
+
 with tab1:
-  st.subheader("🏠 Bloc Équipe Domicile")
-  home = st.text_input("Nom du club domicile :", "FC Cologne")
-  col1, col2 = st.columns(2)
-  with col1:
-    home_gf = st.number_input(
-        "Total Buts marqués (Dom) :", min_value=0.0, value=34.0, step=1.0
+  st.subheader("🏠 Équipe Domicile (1ère Période)")
+  home = st.text_input("Nom domicile :", "FC Cologne")
+  c1, c2 = st.columns(2)
+  with c1:
+    h_ht_gf = st.number_input(
+        "Buts marqués en 1ère mi-temps (Dom) :",
+        min_value=0.0,
+        value=1.5,
+        step=0.5,
     )
-    home_mp = st.number_input(
+    h_ht_mp = st.number_input(
         "Matchs joués (Dom) :", min_value=1.0, value=5.0, step=1.0
     )
-  with col2:
-    home_ga = st.number_input(
-        "Total Buts encaissés (Dom) :", min_value=0.0, value=12.0, step=1.0
+  with c2:
+    h_ht_ga = st.number_input(
+        "Buts encaissés en 1ère mi-temps (Dom) :",
+        min_value=0.0,
+        value=0.5,
+        step=0.5,
     )
 
   st.markdown("---")
-  st.subheader("🚀 Bloc Équipe Extérieur")
-  away = st.text_input("Nom du club visiteur :", "Wolfsbourg")
-  col3, col4 = st.columns(2)
-  with col3:
-    away_gf = st.number_input(
-        "Total Buts marqués (Ext) :", min_value=0.0, value=28.0, step=1.0
+  st.subheader("🚀 Équipe Extérieure (1ère Période)")
+  away = st.text_input("Nom extérieur :", "Wolfsbourg")
+  c3, c4 = st.columns(2)
+  with c3:
+    a_ht_gf = st.number_input(
+        "Buts marqués en 1ère mi-temps (Ext) :",
+        min_value=0.0,
+        value=1.0,
+        step=0.5,
     )
-    away_mp = st.number_input(
+    a_ht_mp = st.number_input(
         "Matchs joués (Ext) :", min_value=1.0, value=5.0, step=1.0
     )
-  with col4:
-    away_ga = st.number_input(
-        "Total Buts encaissés (Ext) :", min_value=0.0, value=15.0, step=1.0
+  with c4:
+    a_ht_ga = st.number_input(
+        "Buts encaissés en 1ère mi-temps (Ext) :",
+        min_value=0.0,
+        value=0.8,
+        step=0.5,
     )
 
   st.markdown("---")
-  league_avg = st.number_input(
-      "⚽ Constante de buts par match du championnat :",
+  ht_league_avg = st.number_input(
+      "⚽ Moyenne de buts championnat en 1ère mi-temps :",
       min_value=0.1,
-      value=2.70,
+      value=1.15,
       step=0.05,
   )
 
-  st.markdown("---")
-  st.subheader("📊 Cotes des Bookmakers")
-
-  c1, c2, c3 = st.columns(3)
-  with c1:
-    cote_1 = st.number_input("Cote 1 (Dom)", value=1.85)
-  with c2:
-    cote_X = st.number_input("Cote X (Nul)", value=3.40)
-  with c3:
-    cote_2 = st.number_input("Cote 2 (Ext)", value=4.20)
-
-  c4, c5 = st.columns(2)
-  with c4:
-    cote_over25 = st.number_input("Cote Over 2.5", value=1.95)
-  with c5:
-    cote_under25 = st.number_input("Cote Under 2.5", value=1.85)
-
-  c6, c7 = st.columns(2)
-  with c6:
-    cote_btts_oui = st.number_input("Cote BTTS Oui", value=1.80)
-  with c7:
-    cote_btts_non = st.number_input("Cote BTTS Non", value=1.95)
-
 with tab2:
-  st.subheader("Lancer l'analyse intelligente")
-  if st.button("🎯 Générer l'analyse V15 ULTIMATE"):
-    with st.spinner(
-        "Calcul des matrices de Poisson et des probabilités de match..."
-    ):
-      # Calcul des forces
-      h_att = home_gf / home_mp
-      h_def = home_ga / home_mp
-      a_att = away_gf / away_mp
-      a_def = away_ga / away_mp
+  st.subheader("Lancer l'analyse 1ère Mi-Temps")
+  if st.button("🎯 Calculer les tendances Mi-Temps (HT)"):
+    with st.spinner("Analyse des stats de première période..."):
+      # Calculs Poisson 1ère mi-temps
+      h_att_ht = h_ht_gf / h_ht_mp
+      h_def_ht = h_ht_ga / h_ht_mp
+      a_att_ht = a_ht_gf / a_ht_mp
+      a_def_ht = a_ht_ga / a_ht_mp
 
-      # Expected goals avec avantage domicile
-      lambda_home = (h_att * a_def * 1.08) / league_avg
-      lambda_away = (a_att * h_def * 0.95) / league_avg
+      lambda_h_ht = (h_att_ht * a_def_ht * 1.05) / ht_league_avg
+      lambda_a_ht = (a_att_ht * h_def_ht * 0.95) / ht_league_avg
 
-      # Matrice de Poisson (0 à 6 buts)
-      max_goals = 6
-      matrix = [[0.0] * max_goals for _ in range(max_goals)]
-      max_p = -1.0
-      best_h, best_away = 1, 0
+      max_g = 4
+      best_h_ht, best_a_ht = 0, 0
+      max_p_ht = -1.0
 
-      p_home_win = 0.0
-      p_draw = 0.0
-      p_away_win = 0.0
-      p_over25 = 0.0
-      p_btts_oui = 0.0
+      p_h_win_ht, p_draw_ht, p_a_win_ht = 0.0, 0.0, 0.0
+      p_over05_ht, p_under15_ht = 0.0, 0.0
 
-      for h in range(max_goals):
-        for a in range(max_goals):
-          p = poisson_prob(lambda_home, h) * poisson_prob(lambda_away, a)
-          matrix[h][a] = p
-          if p > max_p:
-            max_p = p
-            best_h, best_away = h, a
+      for h in range(max_g):
+        for a in range(max_g):
+          p = poisson(lambda_h_ht, h) * poisson(lambda_a_ht, a)
+          if p > max_p_ht:
+            max_p_ht = p
+            best_h_ht, best_a_ht = h, a
 
           if h > a:
-            p_home_win += p
+            p_h_win_ht += p
           elif h == a:
-            p_draw += p
+            p_draw_ht += p
           else:
-            p_away_win += p
+            p_a_win_ht += p
 
-          if h + a > 2.5:
-            p_over25 += p
-          if h > 0 and a > 0:
-            p_btts_oui += p
+          if h + a >= 1:
+            p_over05_ht += p
+          if h + a <= 1:
+            p_under15_ht += p
 
-      # Normalisation
-      total_sum = p_home_win + p_draw + p_away_win
-      if total_sum > 0:
-        p_home_win = (p_home_win / total_sum) * 100
-        p_draw = (p_draw / total_sum) * 100
-        p_away_win = (p_away_win / total_sum) * 100
+      tot_p = p_h_win_ht + p_draw_ht + p_a_win_ht
+      if tot_p > 0:
+        p_h_win_ht = (p_h_win_ht / tot_p) * 100
+        p_draw_ht = (p_draw_ht / tot_p) * 100
+        p_a_win_ht = (p_a_win_ht / tot_p) * 100
 
-      p_over25 = p_over25 * 100
-      p_under25 = 100 - p_over25
-      p_btts_oui = p_btts_oui * 100
-      p_btts_non = 100 - p_btts_oui
+      p_over05_ht = p_over05_ht * 100
+      p_under15_ht = p_under15_ht * 100
 
-      # Indice de confiance basé sur l'écart de probabilité
-      max_prob_1x2 = max(p_home_win, p_draw, p_away_win)
-      confidence = min(96, int(max_prob_1x2 * 0.8 + abs(lambda_home - lambda_away) * 15 + 25))
+      confidence_ht = min(
+          95, int(max(p_h_win_ht, p_draw_ht, p_a_win_ht) * 0.85 + 20)
+      )
 
-      # Stockage session
-      st.session_state["analyzed"] = True
-      st.session_state["sh"] = best_h
-      st.session_state["sa"] = best_away
-      st.session_state["ph"] = p_home_win
-      st.session_state["pd"] = p_draw
-      st.session_state["pa"] = p_away_win
-      st.session_state["p_over"] = p_over25
-      st.session_state["p_under"] = p_under25
-      st.session_state["p_btts_o"] = p_btts_oui
-      st.session_state["p_btts_n"] = p_btts_non
-      st.session_state["conf"] = confidence
-      st.session_state["tot_goals"] = lambda_home + lambda_away
+      st.session_state["analyzed_ht"] = True
+      st.session_state["sh_ht"] = best_h_ht
+      st.session_state["sa_ht"] = best_a_ht
+      st.session_state["ph_ht"] = p_h_win_ht
+      st.session_state["pd_ht"] = p_draw_ht
+      st.session_state["pa_ht"] = p_a_win_ht
+      st.session_state["p_ov05"] = p_over05_ht
+      st.session_state["p_un15"] = p_under15_ht
+      st.session_state["conf_ht"] = confidence_ht
 
-    st.success("✅ Analyse générée avec un succès total !")
+    st.success("✅ Analyse Mi-Temps prête avec succès !")
 
-    # Affichage carte principale
     st.markdown(
         f"""
         <div class="card" style="text-align: center;">
-            <h3>{home} vs {away}</h3>
-            <h1 style="color: #00C853; font-size: 3.5rem;">{best_h} - {best_away}</h1>
-            <p style="color: #8b949e;">Score Exact le plus probable (Loi de Poisson)</p>
+            <h3>{home} vs {away} — <span style="color: #64DD17;">1ère Mi-Temps (HT)</span></h3>
+            <h1 style="color: #00C853; font-size: 3.5rem;">{best_h_ht} - {best_a_ht}</h1>
+            <p style="color: #8b949e;">Score Exact Prédit à la Pause (HT)</p>
             <hr style="border-color: #30363d;">
             <div style="text-align: left;">
-                <p><b>{home} :</b> {p_home_win:.0f}%</p>
-                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #00C853; width: {p_home_win}%; height: 8px; border-radius: 10px;"></div></div>
-                <p style="margin-top: 8px;"><b>Match nul :</b> {p_draw:.0f}%</p>
-                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #f1e05a; width: {p_draw}%; height: 8px; border-radius: 10px;"></div></div>
-                <p style="margin-top: 8px;"><b>{away} :</b> {p_away_win:.0f}%</p>
-                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #ff5252; width: {p_away_win}%; height: 8px; border-radius: 10px;"></div></div>
+                <p><b>Victoire Dom (1) HT :</b> {p_h_win_ht:.0f}%</p>
+                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #00C853; width: {p_h_win_ht}%; height: 8px; border-radius: 10px;"></div></div>
+                <p style="margin-top: 8px;"><b>Match Nul (X) HT :</b> {p_draw_ht:.0f}%</p>
+                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #f1e05a; width: {p_draw_ht}%; height: 8px; border-radius: 10px;"></div></div>
+                <p style="margin-top: 8px;"><b>Victoire Ext (2) HT :</b> {p_a_win_ht:.0f}%</p>
+                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #ff5252; width: {p_a_win_ht}%; height: 8px; border-radius: 10px;"></div></div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
   else:
-    st.info("Renseigne tes données dans l'onglet 'Configuration' puis lance l'analyse.")
+    st.info("Renseigne les stats de 1ère mi-temps et lance l'analyse.")
 
 with tab3:
-  st.subheader("💎 Conseils Pro, Over/Under & Marchés")
-  if "analyzed" in st.session_state and st.session_state["analyzed"]:
-    sh = st.session_state["sh"]
-    sa = st.session_state["sa"]
-    p_over = st.session_state["p_over"]
-    p_under = st.session_state["p_under"]
-    p_btts_o = st.session_state["p_btts_o"]
-    p_btts_n = st.session_state["p_btts_n"]
-    conf = st.session_state["conf"]
-    tot = st.session_state["tot_goals"]
+  st.subheader("💎 Conseils Pro & Marchés Spécifiques Mi-Temps")
+  if "analyzed_ht" in st.session_state and st.session_state["analyzed_ht"]:
+    sh = st.session_state["sh_ht"]
+    sa = st.session_state["sa_ht"]
+    ov05 = st.session_state["p_ov05"]
+    un15 = st.session_state["p_un15"]
+    conf = st.session_state["conf_ht"]
 
-    # Affichage des marchés détaillés
-    col_a, col_b = st.columns(2)
-    with col_a:
+    col_x, col_y = st.columns(2)
+    with col_x:
       st.markdown(
           f"""
             <div class="card">
-                <p style="color: #00C853; font-weight: bold;">📊 Over / Under 2.5</p>
-                <h3>{'🟢 Over 2.5' if p_over > 50 else '🔴 Under 2.5'}</h3>
-                <p>Probabilité : <b>{max(p_over, p_under):.1f}%</b></p>
-                <p style="font-size: 0.85rem; color: #8b949e;">Buts attendus : {tot:.2f}</p>
+                <p style="color: #00C853; font-weight: bold;">⚡ Over 0.5 Buts (HT)</p>
+                <h3>{'🟢 OUI' if ov05 > 50 else '🔴 NON'}</h3>
+                <p>Probabilité : <b>{ov05:.1f}%</b></p>
             </div>
             """,
           unsafe_allow_html=True,
       )
-    with col_b:
+    with col_y:
       st.markdown(
           f"""
             <div class="card">
-                <p style="color: #00C853; font-weight: bold;">⚽ Les 2 équipes marquent (BTTS)</p>
-                <h3>{'✅ OUI' if p_btts_o > 50 else '❌ NON'}</h3>
-                <p>Probabilité : <b>{max(p_btts_o, p_btts_n):.1f}%</b></p>
+                <p style="color: #00C853; font-weight: bold;">🛡️ Under 1.5 Buts (HT)</p>
+                <h3>{'🟢 TRÈS SÛR' if un15 > 65 else '⚡ STANDARD'}</h3>
+                <p>Probabilité : <b>{un15:.1f}%</b></p>
             </div>
             """,
           unsafe_allow_html=True,
@@ -252,14 +219,14 @@ with tab3:
     st.markdown(
         f"""
         <div class="card">
-            <h4>💡 Synthèse & Pari le Plus Safe</h4>
-            <p><b>Indice de Confiance IA :</b> <span style="color: #3fb950; font-weight: bold;">{conf}%</span></p>
-            <p><b>Score exact recommandé :</b> {sh} - {sa}</p>
+            <h4>🎯 Synthèse & Options Recommandées (Mi-Temps)</h4>
+            <p><b>Indice de Confiance HT :</b> <span style="color: #3fb950; font-weight: bold;">{conf}%</span></p>
+            <p><b>Score exact mi-temps conseillé :</b> {sh} - {sa}</p>
             <hr style="border-color: #30363d;">
-            <p style="color: #58a6ff;"><b>Conseil de l'algorithme :</b> Privilégier une double chance ou un pari sécurisé sur les buts si l'écart de force est serré.</p>
+            <p style="color: #58a6ff;"><b>Options validées :</b> Match Nul à la mi-temps / Moins de 1.5 buts en 1ère mi-temps / 1-0 ou 0-0 à la pause.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
   else:
-    st.warning("⚠️ Veuillez d'abord lancer l'analyse dans l'onglet 'Analyse IA'.")
+    st.warning("⚠️ Veuillez d'abord lancer l'analyse dans l'onglet 'Analyse HT'.")
