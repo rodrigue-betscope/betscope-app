@@ -3,7 +3,7 @@ import streamlit as st
 
 # Configuration de la page
 st.set_page_config(
-    page_title="NASMO IA BOT - V14 PRO", page_icon="🧠", layout="centered"
+    page_title="NASMO IA BOT - V15 ULTIMATE", page_icon="🧠", layout="centered"
 )
 
 # Style CSS sombre et moderne
@@ -26,12 +26,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🧠 NASMO IA BOT - V14 Intelligent PRO")
+st.title("🧠 NASMO IA BOT - V15 ULTIMATE")
+st.markdown(
+    "<p style='color: #8b949e;'>Moteur prédictif à Loi de Poisson dynamique"
+    " 💯🔥</p>",
+    unsafe_allow_html=True,
+)
 
 # Organisation par Onglets
 tab1, tab2, tab3 = st.tabs(
-    ["⚙️ Configuration & Cotes", "📊 Analyse IA", "💎 Conseils Pro"]
+    ["⚙️ Configuration & Cotes", "📊 Analyse IA", "💎 Conseils Pro & Marchés"]
 )
+
+
+def poisson_prob(lmbda, k):
+  return (math.exp(-max(0.01, lmbda)) * (max(0.01, lmbda) ** k)) / math.factorial(
+      k
+  )
+
 
 with tab1:
   st.subheader("🏠 Bloc Équipe Domicile")
@@ -76,120 +88,178 @@ with tab1:
   st.markdown("---")
   st.subheader("📊 Cotes des Bookmakers")
 
-  st.markdown("**Résultat du match (1X2)**")
   c1, c2, c3 = st.columns(3)
   with c1:
-    cote_1 = st.number_input("1 (Dom)", value=1.31)
+    cote_1 = st.number_input("Cote 1 (Dom)", value=1.85)
   with c2:
-    cote_X = st.number_input("X (Nul)", value=5.00)
+    cote_X = st.number_input("Cote X (Nul)", value=3.40)
   with c3:
-    cote_2 = st.number_input("2 (Ext)", value=10.50)
+    cote_2 = st.number_input("Cote 2 (Ext)", value=4.20)
 
-  st.markdown("**Total de buts**")
   c4, c5 = st.columns(2)
   with c4:
-    cote_over25 = st.number_input("+2.5 buts", value=1.744)
+    cote_over25 = st.number_input("Cote Over 2.5", value=1.95)
   with c5:
-    cote_under25 = st.number_input("-2.5 buts", value=2.085)
+    cote_under25 = st.number_input("Cote Under 2.5", value=1.85)
 
-  st.markdown("**Les deux équipes marquent (BTTS)**")
   c6, c7 = st.columns(2)
   with c6:
-    cote_btts_oui = st.number_input("BTTS Oui", value=1.744)
+    cote_btts_oui = st.number_input("Cote BTTS Oui", value=1.80)
   with c7:
-    cote_btts_non = st.number_input("BTTS Non", value=2.085)
+    cote_btts_non = st.number_input("Cote BTTS Non", value=1.95)
 
 with tab2:
-  st.subheader("Lancer le moteur d'intelligence IA")
-  if st.button("🎯 Générer la prédiction IA V14"):
-    with st.spinner("Analyse des statistiques et calcul des cotes..."):
-      # Calculs avancés
-      home_att = home_gf / home_mp
-      home_def = home_ga / home_mp
-      away_att = away_gf / away_mp
-      away_def = away_ga / away_mp
+  st.subheader("Lancer l'analyse intelligente")
+  if st.button("🎯 Générer l'analyse V15 ULTIMATE"):
+    with st.spinner(
+        "Calcul des matrices de Poisson et des probabilités de match..."
+    ):
+      # Calcul des forces
+      h_att = home_gf / home_mp
+      h_def = home_ga / home_mp
+      a_att = away_gf / away_mp
+      a_def = away_ga / away_mp
 
-      # Avantage domicile
-      home_adv = 1.1
+      # Expected goals avec avantage domicile
+      lambda_home = (h_att * a_def * 1.08) / league_avg
+      lambda_away = (a_att * h_def * 0.95) / league_avg
 
-      pred_home = (home_att * away_def * home_adv) / league_avg
-      pred_away = (away_att * home_def) / league_avg
-      total_buts_prevu = pred_home + pred_away
+      # Matrice de Poisson (0 à 6 buts)
+      max_goals = 6
+      matrix = [[0.0] * max_goals for _ in range(max_goals)]
+      max_p = -1.0
+      best_h, best_away = 1, 0
 
-      # Probabilités 1X2
-      raw_home = (pred_home / (pred_home + pred_away + 0.2)) * 100
-      raw_away = (pred_away / (pred_home + pred_away + 0.2)) * 100
-      prob_draw = max(5.0, 100.0 - raw_home - raw_away)
-      total_p = raw_home + prob_draw + raw_away
-      prob_home = (raw_home / total_p) * 100
-      prob_away = (raw_away / total_p) * 100
+      p_home_win = 0.0
+      p_draw = 0.0
+      p_away_win = 0.0
+      p_over25 = 0.0
+      p_btts_oui = 0.0
 
-      score_home = max(0, round(pred_home))
-      score_away = max(0, round(pred_away))
+      for h in range(max_goals):
+        for a in range(max_goals):
+          p = poisson_prob(lambda_home, h) * poisson_prob(lambda_away, a)
+          matrix[h][a] = p
+          if p > max_p:
+            max_p = p
+            best_h, best_away = h, a
 
-      # Value bet sur le favori domicile
-      value_score = (prob_home / 100) * cote_1
-      confidence = min(99, abs(pred_home - pred_away) * 25 + 45)
+          if h > a:
+            p_home_win += p
+          elif h == a:
+            p_draw += p
+          else:
+            p_away_win += p
 
-      # Stockage pour l'onglet conseils
-      st.session_state["val_score"] = value_score
+          if h + a > 2.5:
+            p_over25 += p
+          if h > 0 and a > 0:
+            p_btts_oui += p
+
+      # Normalisation
+      total_sum = p_home_win + p_draw + p_away_win
+      if total_sum > 0:
+        p_home_win = (p_home_win / total_sum) * 100
+        p_draw = (p_draw / total_sum) * 100
+        p_away_win = (p_away_win / total_sum) * 100
+
+      p_over25 = p_over25 * 100
+      p_under25 = 100 - p_over25
+      p_btts_oui = p_btts_oui * 100
+      p_btts_non = 100 - p_btts_oui
+
+      # Indice de confiance basé sur l'écart de probabilité
+      max_prob_1x2 = max(p_home_win, p_draw, p_away_win)
+      confidence = min(96, int(max_prob_1x2 * 0.8 + abs(lambda_home - lambda_away) * 15 + 25))
+
+      # Stockage session
+      st.session_state["analyzed"] = True
+      st.session_state["sh"] = best_h
+      st.session_state["sa"] = best_away
+      st.session_state["ph"] = p_home_win
+      st.session_state["pd"] = p_draw
+      st.session_state["pa"] = p_away_win
+      st.session_state["p_over"] = p_over25
+      st.session_state["p_under"] = p_under25
+      st.session_state["p_btts_o"] = p_btts_oui
+      st.session_state["p_btts_n"] = p_btts_non
       st.session_state["conf"] = confidence
-      st.session_state["shome"] = score_home
-      st.session_state["saway"] = score_away
-      st.session_state["phome"] = prob_home
-      st.session_state["pdraw"] = prob_draw
-      st.session_state["paway"] = prob_away
-      st.session_state["tot"] = total_buts_prevu
+      st.session_state["tot_goals"] = lambda_home + lambda_away
 
-    st.success("✅ Analyse terminée avec succès !")
+    st.success("✅ Analyse générée avec un succès total !")
 
-    # Affichage du résultat style carte
+    # Affichage carte principale
     st.markdown(
         f"""
         <div class="card" style="text-align: center;">
             <h3>{home} vs {away}</h3>
-            <h1 style="color: #00C853; font-size: 3rem;">{score_home} - {score_away}</h1>
-            <p style="color: #8b949e;">Score prédit par l'IA</p>
+            <h1 style="color: #00C853; font-size: 3.5rem;">{best_h} - {best_away}</h1>
+            <p style="color: #8b949e;">Score Exact le plus probable (Loi de Poisson)</p>
             <hr style="border-color: #30363d;">
             <div style="text-align: left;">
-                <p><b>{home} :</b> {prob_home:.0f}%</p>
-                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #00C853; width: {prob_home}%; height: 8px; border-radius: 10px;"></div></div>
-                <p style="margin-top: 6px;"><b>Match nul :</b> {prob_draw:.0f}%</p>
-                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #f1e05a; width: {prob_draw}%; height: 8px; border-radius: 10px;"></div></div>
-                <p style="margin-top: 6px;"><b>{away} :</b> {prob_away:.0f}%</p>
-                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #ff5252; width: {prob_away}%; height: 8px; border-radius: 10px;"></div></div>
+                <p><b>{home} :</b> {p_home_win:.0f}%</p>
+                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #00C853; width: {p_home_win}%; height: 8px; border-radius: 10px;"></div></div>
+                <p style="margin-top: 8px;"><b>Match nul :</b> {p_draw:.0f}%</p>
+                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #f1e05a; width: {p_draw}%; height: 8px; border-radius: 10px;"></div></div>
+                <p style="margin-top: 8px;"><b>{away} :</b> {p_away_win:.0f}%</p>
+                <div style="background-color: #30363d; border-radius: 10px; height: 8px;"><div style="background-color: #ff5252; width: {p_away_win}%; height: 8px; border-radius: 10px;"></div></div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
   else:
-    st.info(
-        "Remplis bien tes paramètres dans l'onglet 'Configuration' puis clique"
-        " sur le bouton."
-    )
+    st.info("Renseigne tes données dans l'onglet 'Configuration' puis lance l'analyse.")
 
 with tab3:
-  st.subheader("💎 Conseils Pro & Value Bets")
-  if "conf" in st.session_state:
+  st.subheader("💎 Conseils Pro, Over/Under & Marchés")
+  if "analyzed" in st.session_state and st.session_state["analyzed"]:
+    sh = st.session_state["sh"]
+    sa = st.session_state["sa"]
+    p_over = st.session_state["p_over"]
+    p_under = st.session_state["p_under"]
+    p_btts_o = st.session_state["p_btts_o"]
+    p_btts_n = st.session_state["p_btts_n"]
+    conf = st.session_state["conf"]
+    tot = st.session_state["tot_goals"]
+
+    # Affichage des marchés détaillés
+    col_a, col_b = st.columns(2)
+    with col_a:
+      st.markdown(
+          f"""
+            <div class="card">
+                <p style="color: #00C853; font-weight: bold;">📊 Over / Under 2.5</p>
+                <h3>{'🟢 Over 2.5' if p_over > 50 else '🔴 Under 2.5'}</h3>
+                <p>Probabilité : <b>{max(p_over, p_under):.1f}%</b></p>
+                <p style="font-size: 0.85rem; color: #8b949e;">Buts attendus : {tot:.2f}</p>
+            </div>
+            """,
+          unsafe_allow_html=True,
+      )
+    with col_b:
+      st.markdown(
+          f"""
+            <div class="card">
+                <p style="color: #00C853; font-weight: bold;">⚽ Les 2 équipes marquent (BTTS)</p>
+                <h3>{'✅ OUI' if p_btts_o > 50 else '❌ NON'}</h3>
+                <p>Probabilité : <b>{max(p_btts_o, p_btts_n):.1f}%</b></p>
+            </div>
+            """,
+          unsafe_allow_html=True,
+      )
+
     st.markdown(
         f"""
         <div class="card">
-            <p><b>Indice de confiance IA :</b> {st.session_state['conf']:.0f}%</p>
-            <p><b>Total buts attendus :</b> {st.session_state['tot']:.2f}</p>
+            <h4>💡 Synthèse & Pari le Plus Safe</h4>
+            <p><b>Indice de Confiance IA :</b> <span style="color: #3fb950; font-weight: bold;">{conf}%</span></p>
+            <p><b>Score exact recommandé :</b> {sh} - {sa}</p>
+            <hr style="border-color: #30363d;">
+            <p style="color: #58a6ff;"><b>Conseil de l'algorithme :</b> Privilégier une double chance ou un pari sécurisé sur les buts si l'écart de force est serré.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    if st.session_state["val_score"] > 1.05:
-      st.success(
-          "💎 **VALUE BET DÉTECTÉ** : La cote de la victoire domicile est"
-          " mathématiquement avantageuse par rapport au risque !"
-      )
-    else:
-      st.warning(
-          "⚠️ Pas de value bet flagrant sur le 1X2, examine les marchés Over/Under"
-          " ou BTTS."
-      )
   else:
-    st.warning("Veuillez d'abord lancer l'analyse dans l'onglet 'Analyse IA'.")
+    st.warning("⚠️ Veuillez d'abord lancer l'analyse dans l'onglet 'Analyse IA'.")
