@@ -1,8 +1,13 @@
 import math
 import numpy as np
-from flask import Flask, request, jsonify
+import streamlit as st
 
-app = Flask(__name__)
+# Configuration de la page Streamlit
+st.set_page_config(
+    page_title="BetScope - Poisson v12",
+    page_icon="⚽",
+    layout="centered"
+)
 
 class FootballAnalyzer:
     """Moteur de calcul statistique pour les probabilités de matchs."""
@@ -24,7 +29,6 @@ class FootballAnalyzer:
     def _estimate_lambdas(self):
         best = None
         best_err = 1e9
-        # Recherche optimisée par grille
         for lam_h in np.linspace(0.4, 3.5, 40):
             for lam_a in np.linspace(0.3, 3.2, 40):
                 p_home, p_draw, p_away = 0.0, 0.0, 0.0
@@ -44,43 +48,71 @@ class FootballAnalyzer:
         return best
 
     def get_stats(self):
-        # Distribution complète des scores
         probs = np.zeros((self.max_goals+1, self.max_goals+1))
         for i in range(self.max_goals+1):
             for j in range(self.max_goals+1):
                 probs[i, j] = self._poisson_pmf(i, self.lam_h) * self._poisson_pmf(j, self.lam_a)
         
-        # BTTS (Buts > 0 pour les deux)
         btts = np.sum(probs[1:, 1:])
         
-        # Over/Under
         ou_stats = {}
         for t in [1.5, 2.5, 3.5, 4.5]:
-            # Over = Somme des probas où (i+j) > t
             over_prob = 0
             for i in range(self.max_goals+1):
                 for j in range(self.max_goals+1):
                     if (i + j) > t:
                         over_prob += probs[i, j]
-            ou_stats[f"Over_{t}"] = round(over_prob, 4)
-            ou_stats[f"Under_{t}"] = round(1 - over_prob, 4)
+            ou_stats[f"Over {t}"] = round(over_prob * 100, 2)
+            ou_stats[f"Under {t}"] = round((1 - over_prob) * 100, 2)
 
         return {
-            "lambdas": {"home": round(self.lam_h, 3), "away": round(self.lam_a, 3)},
-            "BTTS_Yes": round(btts, 4),
-            "BTTS_No": round(1 - btts, 4),
-            "Over_Under": ou_stats
+            "lambda_home": round(self.lam_h, 3),
+            "lambda_away": round(self.lam_a, 3),
+            "btts_yes": round(btts * 100, 2),
+            "btts_no": round((1 - btts) * 100, 2),
+            "over_under": ou_stats
         }
 
-@app.route("/predict", methods=["POST"])
-def predict():
-    data = request.get_json()
-    analyzer = FootballAnalyzer(
-        data["odds"]["home"], 
-        data["odds"]["draw"], 
-        data["odds"]["away"]
-    )
-    return jsonify(analyzer.get_stats())
+# --- Interface Utilisateur Streamlit ---
+st.title("⚽ BetScope : Poisson v12 Predictor")
+st.markdown("Entrez les cotes du match pour analyser les statistiques et probabilités via le modèle de Poisson.")
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+with st.form("prediction_form"):
+    st.subheader("📊 Saisie des Cotes du Match")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        odds_home = st.number_input("Cote Domicile (1)", min_value=1.01, value=2.33, step=0.01)
+    with col2:
+        odds_draw = st.number_input("Cote Nul (X)", min_value=1.01, value=2.78, step=0.01)
+    with col3:
+        odds_away = st.number_input("Cote Extérieur (2)", min_value=1.01, value=3.20, step=0.01)
+        
+    submitted = st.form_submit_button("Lancer l'analyse 🚀")
+
+if submitted:
+    analyzer = FootballAnalyzer(odds_home, odds_draw, odds_away)
+    stats = analyzer.get_stats()
+    
+    st.success("Analyse effectuée avec succès !")
+    
+    # Affichage des Buts Attendus (Lambdas)
+    st.subheader("🎯 Buts Attendus (Lambda)")
+    col_a, col_b = st.columns(2)
+    col_a.metric("Domicile (Lambda H)", stats["lambda_home"])
+    col_b.metric("Extérieur (Lambda A)", stats["lambda_away"])
+    
+    # Affichage BTTS
+    st.subheader("🤝 Les Deux Équipes Marquent (BTTS)")
+    col_c, col_d = st.columns(2)
+    col_c.metric("BTTS Oui", f"{stats['btts_yes']} %")
+    col_d.metric("BTTS Non", f"{stats['btts_no']} %")
+    
+    # Affichage Over / Under
+    st.subheader("📈 Seuils Over / Under")
+    ou_cols = st.columns(2)
+    items = list(stats["over_under"].items())
+    
+    for idx, (market, prob) in enumerate(items):
+        with ou_cols[idx % 2]:
+            st.metric(market, f"{prob} %")
