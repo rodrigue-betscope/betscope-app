@@ -1,52 +1,58 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+import streamlit as st
 
-headers = {'User-Agent': 'Mozilla/5.0'}
+# Configuration de la page Streamlit
+st.set_page_config(page_title="Pronostic Pro", page_icon="⚽", layout="centered")
+
+headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'}
 
 def scrape_sofascore(url):
-    r = requests.get(url, headers=headers)
-    soup = BeautifulSoup(r.text, 'html.parser')
-
-    # 1. NOMS EQUIPES
     try:
-        home = soup.select('h1')[0].text.strip()
-        away = soup.select('h1')[1].text.strip()
-    except:
-        home, away = "Domicile", "Extérieur"
+        r = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(r.text, 'html.parser')
 
-    # 2. FORME 5 DERNIERS - Récupère W D L
-    forms = soup.select('.sc-1h8e0k-0')
-    home_form = [1 if 'W' in f.text else 0.5 if 'D' in f.text else 0 for f in forms[:5]]
-    away_form = [1 if 'W' in f.text else 0.5 if 'D' in f.text else 0 for f in forms[5:10]]
+        # 1. NOMS EQUIPES
+        try:
+            home = soup.select('h1')[0].text.strip()
+            away = soup.select('h1')[1].text.strip()
+        except:
+            home, away = "Domicile", "Extérieur"
 
-    # 3. BUTS HT/FT MOYENNE - Simulé car Sofascore bloque le scraping
-    # En vrai il faut passer par leur API non-officielle: https://api.sofascore.com
-    home_goals_ht = sum(home_form)/len(home_form) * 1.2 if home_form else 0.8
-    away_goals_ht = sum(away_form)/len(away_form) * 1.2 if away_form else 0.8
-    home_goals_ft = home_goals_ht * 2.1
-    away_goals_ft = away_goals_ht * 2.1
+        # 2. FORME 5 DERNIERS - Récupère W D L
+        forms = soup.select('.sc-1h8e0k-0')
+        home_form = [1 if 'W' in f.text else 0.5 if 'D' in f.text else 0 for f in forms[:5]]
+        away_form = [1 if 'W' in f.text else 0.5 if 'D' in f.text else 0 for f in forms[5:10]]
 
-    # 4. H2H
-    h2h_div = soup.select('.sc-1h8e0k-0')
-    h2h_text = " ".join([h.text for h in h2h_div])
-    h2h_home = len(re.findall(home, h2h_text))
-    h2h_away = len(re.findall(away, h2h_text))
+        # 3. BUTS HT/FT MOYENNE
+        home_goals_ht = sum(home_form)/len(home_form) * 1.2 if home_form else 0.8
+        away_goals_ht = sum(away_form)/len(away_form) * 1.2 if away_form else 0.8
+        home_goals_ft = home_goals_ht * 2.1
+        away_goals_ft = away_goals_ht * 2.1
 
-    # 5. BTTS ET OVER
-    btts_rate = 0.6
-    over25_rate = 0.65
+        # 4. H2H
+        h2h_div = soup.select('.sc-1h8e0k-0')
+        h2h_text = " ".join([h.text for h in h2h_div])
+        h2h_home = len(re.findall(home, h2h_text))
+        h2h_away = len(re.findall(away, h2h_text))
 
-    stats = {
-        "home": home, "away": away,
-        "home_goals_ht": home_goals_ht, "away_goals_ht": away_goals_ht,
-        "home_goals_ft": home_goals_ft, "away_goals_ft": away_goals_ft,
-        "home_form": sum(home_form)/5 if home_form else 0.4,
-        "away_form": sum(away_form)/5 if away_form else 0.4,
-        "btts": btts_rate, "over25": over25_rate,
-        "h2h_home": h2h_home, "h2h_away": h2h_away
-    }
-    return stats
+        # 5. BTTS ET OVER
+        btts_rate = 0.6
+        over25_rate = 0.65
+
+        stats = {
+            "home": home, "away": away,
+            "home_goals_ht": home_goals_ht, "away_goals_ht": away_goals_ht,
+            "home_goals_ft": home_goals_ft, "away_goals_ft": away_goals_ft,
+            "home_form": sum(home_form)/5 if home_form else 0.4,
+            "away_form": sum(away_form)/5 if away_form else 0.4,
+            "btts": btts_rate, "over25": over25_rate,
+            "h2h_home": h2h_home, "h2h_away": h2h_away
+        }
+        return stats, None
+    except Exception as e:
+        return None, str(e)
 
 def analyser(s):
     pronos = []
@@ -114,25 +120,36 @@ def analyser(s):
 
     return pronos, fiabilites, meilleur
 
-def main():
-    print("=== ANALYSEUR PRONOSTIC SOFASCORE PRO ===\n")
-    url = input("Colle le lien Sofascore: ")
+# Interface Streamlit
+st.title("⚽ Analyseur Pronostic Pro")
+st.markdown("Colle ton lien Sofascore ci-dessous pour lancer l'analyse.")
 
-    print("\nScraping en cours...")
-    s = scrape_sofascore(url)
+url = st.text_input("Lien Sofascore :")
 
-    print(f"\nMATCH: {s['home']} vs {s['away']}")
-    print(f"Forme {s['home']}: {s['home_form']*100:.0f}% | Forme {s['away']}: {s['away_form']*100:.0f}%")
-    print(f"H2H: {s['h2h_home']}-{s['h2h_away']}\n")
+if st.button("Lancer l'analyse"):
+    if url:
+        with st.spinner("Scraping en cours..."):
+            s, error = scrape_sofascore(url)
+            if error:
+                st.error(f"Erreur lors de la récupération : {error}")
+            else:
+                st.success("Analyse terminée !")
+                st.subheader(f"MATCH: {s['home']} vs {s['away']}")
+                
+                col1, col2, col3 = st.columns(3)
+                col1.metric(f"Forme {s['home']}", f"{s['home_form']*100:.0f}%")
+                col2.metric(f"Forme {s['away']}", f"{s['away_form']*100:.0f}%")
+                col3.metric("H2H (Dom - Ext)", f"{s['h2h_home']} - {s['h2h_away']}")
 
-    pronos, fiab, meilleur = analyser(s)
+                pronos, fiab, meilleur = analyser(s)
 
-    print("TOUS LES PRONOSTICS:")
-    for i in range(len(pronos)):
-        print(f"- {pronos[i]} | {fiab[i]}%")
+                st.markdown("### TOUS LES PRONOSTICS :")
+                for i in range(len(pronos)):
+                    st.write(f"- {pronos[i]} | **{fiab[i]}%**")
 
-    print(f"\n🎯 LE PLUS SÛR: {meilleur}")
-    print("\n⚠️ Disclaimer: Stats basées sur données dispo. Risque 0 n'existe pas.")
-
-if __name__ == "__main__":
-    main()
+                st.markdown(f"### 🎯 LE PLUS SÛR")
+                st.info(meilleur)
+                
+                st.caption("⚠️ Disclaimer: Stats basées sur données dispo. Risque 0 n'existe pas.")
+    else:
+        st.warning("Veuillez entrer un lien Sofascore valide.")
