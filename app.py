@@ -1,8 +1,12 @@
 import math
 import numpy as np
-from flask import Flask, request, jsonify
+import streamlit as st
 
-app = Flask(__name__)
+st.set_page_config(
+    page_title="BetScope - Poisson v12 Pro",
+    page_icon="⚽",
+    layout="centered"
+)
 
 def poisson_pmf(k, lam):
     if lam <= 0:
@@ -20,7 +24,6 @@ def estimate_lambdas_from_1x2(p1, px, p2):
     best = None
     best_err = 1e9
 
-    # Balayage précis des scénarios de buts
     for lam_h in np.linspace(0.3, 4.0, 75):
         for lam_a in np.linspace(0.2, 3.5, 67):
             max_goals = 8
@@ -41,7 +44,7 @@ def estimate_lambdas_from_1x2(p1, px, p2):
             err = (p_home - p1) ** 2 + (p_draw - px) ** 2 + (p_away - p2) ** 2
             if err < best_err:
                 best_err = err
-                best = (lam_h, lam_a, p_home, p_draw, p_away)
+                best = (lam_h, lam_a)
 
     return best[0], best[1]
 
@@ -50,14 +53,12 @@ def get_exact_scores(lam_h, lam_a, max_goals=5):
     dist = []
     total_p = 0.0
     
-    # Calcul initial
     for i in range(max_goals + 1):
         for j in range(max_goals + 1):
             p = poisson_pmf(i, lam_h) * poisson_pmf(j, lam_a)
             dist.append({"score": f"{i}-{j}", "prob_raw": p})
             total_p += p
             
-    # Normalisation pour obtenir de vrais pourcentages exacts sur les scores affichés
     for item in dist:
         item["percentage"] = round((item["prob_raw"] / total_p) * 100, 2)
         del item["prob_raw"]
@@ -65,31 +66,50 @@ def get_exact_scores(lam_h, lam_a, max_goals=5):
     dist.sort(key=lambda x: x["percentage"], reverse=True)
     return dist
 
-@app.route("/predict", methods=["POST"])
-def predict():
-    data = request.get_json(force=True)
+# --- Interface Graphique Streamlit ---
+st.title("⚽ BetScope : Moteur Poisson Précis")
+st.markdown("Calculs statistiques rigoureux avec pourcentages normalisés à 100%.")
 
-    odds = data["odds"]
-    p1, px, p2 = remove_margin_from_odds([float(odds["home"]), float(odds["draw"]), float(odds["away"])])
-
-    # Estimation des forces d'attaque à 90 min
-    lam_h_full, lam_a_full = estimate_lambdas_from_1x2(p1, px, p2)
-
-    # Ajustement scientifique pour la 1ère mi-temps (45% de la masse de buts générale)
-    lam_h_ht = lam_h_full * 0.45
-    lam_a_ht = lam_a_full * 0.45
-
-    # Génération des vrais pourcentages de scores exacts (Top 6)
-    scores_mt1 = get_exact_scores(lam_h_ht, lam_a_ht, max_goals=4)[:6]
-    scores_fm = get_exact_scores(lam_h_full, lam_a_full, max_goals=5)[:6]
-
-    return jsonify({
-        "status": "success",
-        "notice": "Les pourcentages représentent des probabilités statistiques réelles basées sur les forces offensives.",
-        "exact_scores_first_half_percentage": scores_mt1,
-        "exact_scores_full_time_percentage": scores_fm
-    })
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+with st.form("prediction_form"):
+    st.subheader("📊 Saisie des Cotes du Match")
+    col1, col2, col3 = st.columns(3)
     
+    with col1:
+        odds_home = st.number_input("Cote Domicile (1)", min_value=1.01, value=2.33, step=0.01)
+    with col2:
+        odds_draw = st.number_input("Cote Nul (X)", min_value=1.01, value=2.78, step=0.01)
+    with col3:
+        odds_away = st.number_input("Cote Extérieur (2)", min_value=1.01, value=3.20, step=0.01)
+        
+    submitted = st.form_submit_button("Lancer l'analyse 🚀")
+
+if submitted:
+    with st.spinner("Analyse des forces et calcul des scores en cours..."):
+        p1, px, p2 = remove_margin_from_odds([float(odds_home), float(odds_draw), float(odds_away)])
+
+        # Estimation des forces d'attaque
+        lam_h_full, lam_a_full = estimate_lambdas_from_1x2(p1, px, p2)
+
+        # Ajustement pour la 1ère mi-temps (45% de la masse de buts)
+        lam_h_ht = lam_h_full * 0.45
+        lam_a_ht = lam_a_full * 0.45
+
+        # Génération des pourcentages normalisés
+        scores_mt1 = get_exact_scores(lam_h_ht, lam_a_ht, max_goals=4)[:4]
+        scores_fm = get_exact_scores(lam_h_full, lam_a_full, max_goals=5)[:6]
+
+    st.success("Analyse effectuée avec succès !")
+
+    # Affichage Mi-Temps
+    st.subheader("⏱️ Top Scores Exacts - 1ère Mi-Temps (HT)")
+    cols_ht = st.columns(len(scores_mt1))
+    for idx, item in enumerate(scores_mt1):
+        with cols_ht[idx]:
+            st.metric(f"Score {item['score']}", f"{item['percentage']} %")
+
+    # Affichage Fin de Match
+    st.subheader("🏆 Top Scores Exacts - Fin du Match (FT)")
+    cols_ft = st.columns(3)
+    for idx, item in enumerate(scores_fm):
+        col_target = cols_ft[idx % 3]
+        col_target.metric(f"Score {item['score']}", f"{item['percentage']} %")
