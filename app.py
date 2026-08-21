@@ -11,7 +11,7 @@ uploaded_file = st.file_uploader("Choisir une image de la grille", type=["jpg", 
 
 if uploaded_file is not None:
     st.success("✅ Grille chargée avec succès !")
-    st.image(uploaded_file, caption="Grille analysée", use_column_width=True)
+    st.image(uploaded_file, caption="Grille analysée", use_container_width=True)
     
     st.markdown("---")
     st.markdown("### 📊 Résultats de l'Analyse en Cours")
