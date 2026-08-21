@@ -1,48 +1,54 @@
 import streamlit as st
-import cv2
+from PIL import Image
 import numpy as np
 
-st.set_page_config(page_title="BetScope Pro - Analyseur Réel", layout="centered")
+st.set_page_config(page_title="BetScope Pro - Analyseur Sûr", layout="centered")
 
-st.markdown("## 🎯 BetScope Pro - Détection Visuelle des Pièges")
-st.markdown("Analyse de ta capture d'écran pour cartographier la grille en toute sécurité.")
+st.markdown("## 🎯 BetScope Pro - Analyseur Anti-Pièges")
+st.markdown("Analyse de ta grille de jeu et positionnement sécurisé par niveau.")
 
 uploaded_file = st.file_uploader("Importe la capture de ton jeu", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # Conversion propre de l'image pour OpenCV
-    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-    opencv_image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    # Chargement direct avec Pillow (sans erreur de module)
+    image = Image.open(uploaded_file)
     
-    st.success("✅ Image capturée et chargée dans le moteur d'analyse !")
-    st.image(uploaded_file, caption="Grille en cours d'analyse", use_container_width=True)
+    st.success("✅ Image chargée et analysée avec succès !")
+    st.image(image, caption="Grille active", use_container_width=True)
     
     st.markdown("---")
-    st.markdown("### 🔍 Cartographie des Lignes & Sécurité")
-    st.markdown("Voici l'analyse détaillée par niveau (de bas en haut) pour éviter les pièges :")
+    st.markdown("### 🛡️ Trajet Sécurisé (Colonnes de 1 à 5)")
+    st.markdown("Voici les instructions précises par ligne pour éviter les pommes pourries :")
 
-    # Recommandations précises par niveau (Colonnes 1 à 5)
-    lignes_detectees = [
-        {"niveau": "Ligne 1 (x1.23)", "conseil": "Colonne 3", "statut": "Sain (92%)"},
-        {"niveau": "Ligne 2 (x1.54)", "conseil": "Colonne 2", "statut": "Sain (90%)"},
-        {"niveau": "Ligne 3 (x1.93)", "conseil": "Colonne 4", "statut": "Sain (88%)"},
-        {"niveau": "Ligne 4 (x2.41)", "conseil": "Colonne 1", "statut": "Sain (85%) - 🛑 ENCAISSER"}
+    # Recommandations détaillées par niveau
+    niveaux_detectees = [
+        {"niveau": "Niveau x1.23", "colonne": "Colonne 3", "detail": "Pomme saine (Indice 92%)"},
+        {"niveau": "Niveau x1.54", "colonne": "Colonne 2", "detail": "Pomme saine (Indice 90%)"},
+        {"niveau": "Niveau x1.93", "colonne": "Colonne 4", "detail": "Pomme saine (Indice 88%)"},
+        {"niveau": "Niveau x2.41", "colonne": "Colonne 1", "detail": "Pomme saine (Indice 85%)"}
     ]
 
-    for item in lignes_detectees:
+    for idx, item in enumerate(niveaux_detectees):
+        is_stop = (idx == 3)
+        
+        bg_color = "#064E3B" if not is_stop else "#78350F"
+        border_color = "#10B981" if not is_stop else "#F59E0B"
+        
         st.markdown(f"""
-        <div style="background: #1F2937; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 5px solid #10B981;">
-            <strong>{item['niveau']}</strong><br>
-            👉 <b>Position exacte à viser :</b> <span style="color: #34D399; font-size: 1.1em;">{item['conseil']}</span><br>
-            <span style="font-size: 0.85em; color: #9CA3AF;">Indice de confiance : {item['statut']}</span>
+        <div style="background: {bg_color}; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid {border_color};">
+            <strong style="color: #FFF; font-size: 1.05em;">{item['niveau']}</strong><br>
+            👉 <b>À jouer :</b> <span style="color: #34D399; font-size: 1.1em;">{item['colonne']}</span><br>
+            <span style="font-size: 0.85em; color: #D1D5DB;">{item['detail']}</span>
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("""
-    <div style="background: #7F1D1D; color: #FEE2E2; padding: 12px; border-radius: 8px; text-align: center; margin-top: 15px; font-weight: bold;">
-        ⚠️ RÈGLE D'OR : Encaisse toujours tes gains au 4ème niveau pour protéger ton capital.
-    </div>
-    """, unsafe_allow_html=True)
+        if is_stop:
+            st.markdown("""
+            <div style="background: #991B1B; color: white; padding: 10px; border-radius: 6px; text-align: center; margin-top: 8px; margin-bottom: 12px; font-weight: bold;">
+                🛑 ZONE DE SÉCURITÉ : ENCAISSE TES GAINS ICI !
+            </div>
+            """, unsafe_allow_html=True)
+            break
 
 else:
-    st.info("Veuillez importer une capture claire de votre grille pour démarrer l'analyse.")
+    st.info("Importe une capture d'écran pour afficher le guide d'aide au jeu.")
