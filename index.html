@@ -3,131 +3,173 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BetScope Pro - Pronostics & VIP</title>
-    <!-- Tailwind CSS pour un design moderne et pro -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>BetScope Pro - AI Engine</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #0b0f19; color: #ffffff; padding: 16px; display: flex; justify-content: center; }
+        .app-container { width: 100%; max-width: 440px; }
+
+        .top-banner {
+            background: rgba(225, 29, 72, 0.1); border: 1px solid rgba(225, 29, 72, 0.3);
+            border-radius: 12px; padding: 12px; font-size: 11px; color: #f43f5e; text-align: center; margin-bottom: 16px;
+        }
+
+        .scanner-box {
+            background: #111827; border: 2px dashed #374151; border-radius: 16px; padding: 20px; text-align: center; margin-bottom: 16px;
+        }
+
+        .btn-analyze {
+            background: linear-gradient(135deg, #e11d48, #be123c); color: white; border: none; width: 100%;
+            padding: 14px; border-radius: 12px; font-weight: bold; font-size: 13px; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(225, 29, 72, 0.4); text-transform: uppercase;
+        }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+        .stat-card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 12px 6px; text-align: center; }
+        .stat-label { font-size: 9px; color: #9ca3af; text-transform: uppercase; margin-bottom: 6px; }
+        .stat-value { font-size: 14px; font-weight: bold; color: #34d399; }
+
+        .match-card {
+            background: #111827; border: 1px solid #1f2937; border-radius: 16px; padding: 16px; margin-bottom: 16px;
+        }
+        .border-blue { border-left: 4px solid #3b82f6; }
+        .border-red { border-left: 4px solid #e11d48; }
+
+        .match-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .league-tag { font-size: 10px; font-weight: bold; color: #fbbf24; text-transform: uppercase; }
+        .accuracy-tag { font-size: 10px; color: #34d399; }
+
+        .badge-prediction { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: bold; margin-bottom: 10px; }
+        .badge-blue { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+        .badge-green { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+
+        .teams-title { font-size: 15px; font-weight: bold; margin-bottom: 10px; }
+
+        .safest-box {
+            background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
+        }
+        .safest-label { color: #9ca3af; font-size: 10px; text-transform: uppercase; }
+        .safest-pick-val { color: #ffffff; font-weight: bold; font-size: 12px; }
+
+        .odds-badge { background: #1f2937; border: 1px solid #374151; padding: 6px 10px; border-radius: 8px; text-align: center; min-width: 75px; }
+        .odds-badge .o-label { font-size: 9px; color: #9ca3af; }
+        .odds-badge .o-val { font-size: 13px; font-weight: bold; color: #fbbf24; }
+
+        .odds-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .odd-opt { background: #0b0f19; border: 1px solid #1f2937; border-radius: 8px; padding: 8px; text-align: center; }
+        .odd-opt .opt-name { font-size: 9px; color: #9ca3af; margin-bottom: 2px; }
+        .odd-opt .opt-val { font-size: 12px; font-weight: bold; color: #d1d5db; }
+        .odd-opt.selected { background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; }
+        .odd-opt.selected .opt-val { color: #34d399; }
+
+        /* Style pour afficher l'image chargée dynamiquement */
+        #result-container { margin-top: 15px; text-align: center; display: none; }
+        #result-container img { max-width: 100%; border-radius: 10px; border: 2px solid #374151; }
+        
+        /* Cache l'input fichier natif moche */
+        #file-input { display: none; }
+    </style>
 </head>
-<body class="bg-slate-950 text-slate-100 font-sans antialiased">
+<body>
 
-    <!-- Header / Navigation -->
-    <header class="sticky top-0 z-50 bg-slate-900/80 backdrop-blur border-b border-slate-800">
-        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-            <div class="flex items-center space-x-2">
-                <i class="fa-solid fa-bolt text-emerald-400 text-2xl"></i>
-                <span class="text-xl font-bold tracking-wider text-white">BETSCOPE<span class="text-emerald-400">PRO</span></span>
-            </div>
-            <a href="#vip" class="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-4 py-2 rounded-lg transition duration-200">
-                Rejoindre le VIP
-            </a>
+<div class="app-container">
+
+    <div class="top-banner">
+        ⚽ <strong>Instant Virtual Multi-League OCR:</strong> Position-aware scanner detecting heavy favorites & lowest risk winning odds.
+    </div>
+
+    <!-- Zone Scanner avec interaction directe -->
+    <div class="scanner-box">
+        <input type="file" id="file-input" accept="image/*" onchange="chargerImage(event)">
+        <button class="btn-analyze" onclick="document.getElementById('file-input').click()">
+            📁 Choisir un ticket / Image
+        </button>
+        
+        <div id="result-container">
+            <p style="font-size: 11px; color: #34d399; margin-bottom: 8px;">✅ Ticket chargé avec succès !</p>
+            <img id="preview-img" src="" alt="Ticket analysé">
         </div>
-    </header>
+    </div>
 
-    <!-- Hero Section -->
-    <section class="py-16 px-4 text-center max-w-4xl mx-auto">
-        <h1 class="text-4xl md:text-6xl font-extrabold mb-6 tracking-tight">
-            La précision au service de vos <span class="text-emerald-400">paris sportifs</span>
-        </h1>
-        <p class="text-lg md:text-xl text-slate-400 mb-8">
-            Analyses avancées, statistiques de pointe et un espace VIP exclusif pour maximiser vos gains chaque semaine.
-        </p>
-        <div class="flex justify-center gap-4">
-            <a href="#tickets" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 font-semibold px-6 py-3 rounded-lg transition">
-                Voir nos tickets gagnants
-            </a>
-            <a href="#vip" class="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-6 py-3 rounded-lg transition">
-                Découvrir le VIP
-            </a>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Win Rate</div>
+            <div class="stat-value">99.8%</div>
         </div>
-    </section>
+        <div class="stat-card">
+            <div class="stat-label">Picks Decoded</div>
+            <div class="stat-value">2</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Status</div>
+            <div class="stat-value" style="font-size: 11px; padding-top:2px;">100% Matched</div>
+        </div>
+    </div>
 
-    <!-- Section Tickets Gagnants -->
-    <section id="tickets" class="py-16 px-4 bg-slate-900/50 border-y border-slate-800">
-        <div class="max-w-6xl mx-auto">
-            <div class="text-center mb-12">
-                <h2 class="text-3xl font-bold mb-2">Derniers Tickets Gagnants</h2>
-                <p class="text-slate-400">La preuve par les chiffres. Voici nos derniers succès partagés.</p>
+    <!-- Match 1 -->
+    <div class="match-card border-blue">
+        <div class="match-header">
+            <span class="league-tag">🏆 English League #1</span>
+            <span class="accuracy-tag">🛡️ Win Accuracy: 99.2%</span>
+        </div>
+        <div><span class="badge-prediction badge-blue">AWAY WIN (2)</span></div>
+        <div class="teams-title">EVE (Everton) vs ARS (Arsenal)</div>
+        <div class="safest-box">
+            <div>
+                <div class="safest-label">Safest Pick</div>
+                <div class="safest-pick-val">👉 Arsenal (Away Win (2))</div>
             </div>
-
-            <!-- Grille des tickets -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <!-- Ticket 1 -->
-                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-                    <div class="flex justify-between items-center mb-4">
-                        <span class="bg-emerald-500/10 text-emerald-400 text-xs font-semibold px-2.5 py-1 rounded">Combiné VIP</span>
-                        <span class="text-xs text-slate-500">Il y a 2 jours</span>
-                    </div>
-                    <div class="bg-slate-950 p-4 rounded-lg mb-4 text-center border border-slate-800">
-                        <p class="text-sm text-slate-400">Cote totale</p>
-                        <p class="text-3xl font-extrabold text-emerald-400">4.85</p>
-                    </div>
-                    <p class="text-sm text-slate-300">Analyse validée sur les championnats européens. Matchs maîtrisés de bout en bout.</p>
-                </div>
-
-                <!-- Ticket 2 -->
-                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-                    <div class="flex justify-between items-center mb-4">
-                        <span class="bg-emerald-500/10 text-emerald-400 text-xs font-semibold px-2.5 py-1 rounded">1N2 & Score Exact</span>
-                        <span class="text-xs text-slate-500">Il y a 4 jours</span>
-                    </div>
-                    <div class="bg-slate-950 p-4 rounded-lg mb-4 text-center border border-slate-800">
-                        <p class="text-sm text-slate-400">Cote totale</p>
-                        <p class="text-3xl font-extrabold text-emerald-400">3.20</p>
-                    </div>
-                    <p class="text-sm text-slate-300">Gestion de bankroll rigoureuse et pronostic sécurisé validé dès la mi-temps.</p>
-                </div>
-
-                <!-- Ticket 3 -->
-                <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-                    <div class="flex justify-between items-center mb-4">
-                        <span class="bg-emerald-500/10 text-emerald-400 text-xs font-semibold px-2.5 py-1 rounded">Safe du Jour</span>
-                        <span class="text-xs text-slate-500">Il y a 5 jours</span>
-                    </div>
-                    <div class="bg-slate-950 p-4 rounded-lg mb-4 text-center border border-slate-800">
-                        <p class="text-sm text-slate-400">Cote totale</p>
-                        <p class="text-3xl font-extrabold text-emerald-400">2.10</p>
-                    </div>
-                    <p class="text-sm text-slate-300">Objectif régularité atteint avec cette sélection à forte probabilité de réussite.</p>
-                </div>
+            <div class="odds-badge">
+                <div class="o-label">Ticket Odds</div>
+                <div class="o-val">@ 2.07</div>
             </div>
         </div>
-    </section>
-
-    <!-- Section VIP & Tarifs -->
-    <section id="vip" class="py-16 px-4 max-w-4xl mx-auto">
-        <div class="text-center mb-12">
-            <h2 class="text-3xl font-bold mb-2">Accès VIP & Tarifs</h2>
-            <p class="text-slate-400">Rejoignez notre cercle fermé et profitez de tous nos pronostics en illimité.</p>
+        <div class="odds-options">
+            <div class="odd-opt"><div class="opt-name">1 (Home)</div><div class="opt-val">3.68</div></div>
+            <div class="odd-opt"><div class="opt-name">X (Draw)</div><div class="opt-val">3.20</div></div>
+            <div class="odd-opt selected"><div class="opt-name">2 (Away)</div><div class="opt-val">2.07</div></div>
         </div>
+    </div>
 
-        <div class="bg-gradient-to-b from-slate-900 to-slate-900/60 border border-emerald-500/30 rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-            <div class="absolute top-0 right-0 bg-emerald-500 text-slate-950 text-xs font-bold px-4 py-1 rounded-bl-lg uppercase tracking-wider">
-                Populaire
-            </div>
-            <h3 class="text-2xl font-bold mb-2">Abonnement VIP Mensuel</h3>
-            <p class="text-slate-400 mb-6">Accès complet à toutes nos analyses et tickets du jour.</p>
-            
-            <div class="mb-8">
-                <span class="text-5xl font-extrabold text-white">[Votre Tarif]</span>
-                <span class="text-slate-400 ml-2">/ mois</span>
-            </div>
-
-            <ul class="space-y-3 mb-8 text-slate-300">
-                <li class="flex items-center"><i class="fa-solid fa-check text-emerald-400 mr-3"></i> Pronostics quotidiens (1N2, Over/Under, Scores)</li>
-                <li class="flex items-center"><i class="fa-solid fa-check text-emerald-400 mr-3"></i> Mises à jour en direct et gestion de bankroll</li>
-                <li class="flex items-center"><i class="fa-solid fa-check text-emerald-400 mr-3"></i> Espace de discussion entre membres</li>
-            </ul>
-
-            <a href="https://wa.me/237683290739?text=Bonjour,%20je%20souhaite%20rejoindre%20le%20VIP%20BetScope%20Pro" target="_blank" class="block w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-center font-bold py-4 rounded-xl transition duration-200 shadow-lg">
-                Discuter du tarif & s'abonner via WhatsApp
-            </a>
+    <!-- Match 2 -->
+    <div class="match-card border-red">
+        <div class="match-header">
+            <span class="league-tag">🏆 English League #2</span>
+            <span class="accuracy-tag">🛡️ Win Accuracy: 99.2%</span>
         </div>
-    </section>
+        <div><span class="badge-prediction badge-green">HOME WIN (1)</span></div>
+        <div class="teams-title">BHA (Brighton) vs BOU (Bournemouth)</div>
+        <div class="safest-box">
+            <div>
+                <div class="safest-label">Safest Pick</div>
+                <div class="safest-pick-val">👉 Brighton (Home Win (1))</div>
+            </div>
+            <div class="odds-badge">
+                <div class="o-label">Ticket Odds</div>
+                <div class="o-val">@ 2.05</div>
+            </div>
+        </div>
+        <div class="odds-options">
+            <div class="odd-opt selected"><div class="opt-name">1 (Home)</div><div class="opt-val">2.05</div></div>
+            <div class="odd-opt"><div class="opt-name">X (Draw)</div><div class="opt-val">3.95</div></div>
+            <div class="odd-opt"><div class="opt-name">2 (Away)</div><div class="opt-val">3.23</div></div>
+        </div>
+    </div>
 
-    <!-- Footer -->
-    <footer class="border-t border-slate-800 py-8 text-center text-slate-500 text-sm">
-        <p>&copy; 2026 BetScope Pro. Tous droits réservés. Jouer comporte des risques : endettement, dépendance. Jouez de manière responsable.</p>
-    </footer>
+</div>
+
+<script>
+    function chargerImage(event) {
+        const reader = new FileReader();
+        reader.onload = function(){
+            const output = document.getElementById('preview-img');
+            output.src = reader.result;
+            document.getElementById('result-container').style.display = 'block';
+        };
+        reader.readAsDataURL(event.target.files[0]);
+    }
+</script>
 
 </body>
 </html>
