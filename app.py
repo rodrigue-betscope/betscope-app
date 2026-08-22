@@ -98,7 +98,6 @@ def blend_lambdas(
 
 def score_table(mat: np.ndarray, top_n: int = 10) -> pd.DataFrame:
     items = []
-    # mat.shape[0] et mat.shape[1] corrigés pour éviter l'erreur d'itération
     for h in range(mat.shape[0]):
         for a in range(mat.shape[1]):
             items.append((f"{h} - {a}", float(mat[h, a] * 100.0)))
@@ -144,7 +143,8 @@ def confidence_index(market: np.ndarray, model: np.ndarray, top_prob: float, sam
     score = 100.0 * (0.38 * agreement + 0.18 * sample_factor + 0.29 * top_factor + 0.15 * edge_factor)
     score = clamp(score, 0.0, 100.0)
 
-    if conf_score >= 95:
+    # CORRECTION : Utilisation de la variable 'score' et non 'conf_score' qui n'existait pas encore ici
+    if score >= 95:
         label = "SIGNAL EXCEPTIONNEL"
         color = "inverse"
     elif score >= 90:
@@ -232,7 +232,6 @@ with tab3:
     top_score_prob = float(mat_model.max())
     edge = abs(probs_model["1"] - p_market[0])
     
-    # Appel de fonction entièrement encapsulé et corrigé ici
     conf_score, conf_label, conf_color = confidence_index(
         p_market, 
         np.array([probs_model["1"], probs_model["X"], probs_model["2"]]), 
@@ -243,4 +242,25 @@ with tab3:
     
     st.subheader("⚡ Évaluation Statistique Globale")
     
+    # Gestion propre de l'affichage de fin de script
     if conf_score >= 95:
+        st.success(f"Score de Confiance : {conf_score} / 100 — {conf_label}")
+    elif conf_score >= 90:
+        st.info(f"Score de Confiance : {conf_score} / 100 — {conf_label}")
+    elif conf_score >= 80:
+        st.warning(f"Score de Confiance : {conf_score} / 100 — {conf_label}")
+    else:
+        st.error(f"Score de Confiance : {conf_score} / 100 — {conf_label}")
+
+    st.markdown("### 🎯 Marchés Cibles Recommandés")
+    col_res1, col_res2 = st.columns(2)
+    
+    with col_res1:
+        st.markdown("#### Top Scores Exacts")
+        df_scores = score_table(mat_model, top_n=5)
+        st.dataframe(df_scores, use_container_width=True)
+        
+    with col_res2:
+        st.markdown("#### Probabilités Mi-Temps / Fin de Match")
+        df_htft = compute_htft_probs(final_lh, final_la)
+        st.dataframe(df_htft.head(5), use_container_width=True)
