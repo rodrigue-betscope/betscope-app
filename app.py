@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 
-# Configuration de la page principale
+# Configuration de l'application
 st.set_page_config(
     page_title="ROI DE POISSON — Analyse Pro",
     page_icon="⚽",
@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # -------------------------------------------------------------------------
-# Outils mathématiques & Distribution de Poisson
+# LOGIQUE MATHÉMATIQUE & FONCTIONS DE CALCUL
 # -------------------------------------------------------------------------
 def clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
@@ -36,12 +36,10 @@ def poisson_matrix(lam_home: float, lam_away: float, max_goals: int = 8) -> np.n
     return m
 
 def normalize_odds(odds: List[float]) -> np.ndarray:
-    """Convertit les cotes décimales en probabilités implicites normalisées."""
     inv = np.array([1.0 / max(o, 1.01) for o in odds], dtype=float)
     return inv / inv.sum()
 
 def recent_team_stats(rows: List[Dict]) -> Dict[str, float]:
-    """Stats pondérées: le match le plus récent pèse le plus (jusqu'à 5 matchs)."""
     if not rows:
         return {"gf": 1.35, "ga": 1.35, "xgf": 1.35, "xga": 1.35, "n": 0}
     
@@ -58,7 +56,6 @@ def recent_team_stats(rows: List[Dict]) -> Dict[str, float]:
     return {"gf": gf, "ga": ga, "xgf": xgf, "xga": xga, "n": len(rows)}
 
 def market_expected_goals(p1: float, px: float, p2: float) -> Tuple[float, float]:
-    """Approximation des lambdas à partir du marché 1X2."""
     target = np.array([p1, px, p2])
     best = (1.35, 1.10)
     best_loss = 1e9
@@ -66,9 +63,9 @@ def market_expected_goals(p1: float, px: float, p2: float) -> Tuple[float, float
     for lh in np.arange(0.25, 3.51, 0.05):
         for la in np.arange(0.20, 3.21, 0.05):
             mat = poisson_matrix(float(lh), float(la), 8)
-            home = np.tril(mat, -1).sum()   # i > j
+            home = np.tril(mat, -1).sum()
             draw = np.trace(mat)
-            away = np.triu(mat, 1).sum()    # i < j
+            away = np.triu(mat, 1).sum()
             probs = np.array([home, draw, away])
             loss = float(np.sum((probs - target) ** 2))
             if loss < best_loss:
@@ -81,7 +78,6 @@ def blend_lambdas(
     home_stats: Dict[str, float], away_stats: Dict[str, float],
     home_advantage: float, injury_home: float, injury_away: float,
 ) -> Tuple[float, float]:
-    """Mélange les probabilités du marché et la forme statistique récente."""
     home_form_attack = 0.55 * home_stats["gf"] + 0.45 * home_stats["xgf"]
     away_defense = 0.55 * away_stats["ga"] + 0.45 * away_stats["xga"]
     
@@ -100,29 +96,25 @@ def blend_lambdas(
 
     return clamp(lh, 0.15, 4.50), clamp(la, 0.15, 4.50)
 
-def score_table(mat: np.ndarray, top_n: int = 12) -> pd.DataFrame:
+def score_table(mat: np.ndarray, top_n: int = 10) -> pd.DataFrame:
     items = []
     for h in range(mat.shape[0]):
         for a in range(mat.shape[1]):
-            items.append((f"{h}-{a}", float(mat[h, a] * 100.0)))
+            items.append((f"{h} - {a}", float(mat[h, a] * 100.0)))
     items.sort(key=lambda x: x[1], reverse=True)
-    return pd.DataFrame(items[:top_n], columns=["Score", "Probabilité %"])
+    df = pd.DataFrame(items[:top_n], columns=["Score Exact", "Probabilité"])
+    df["Probabilité"] = df["Probabilité"].map("{:,.2f} %".format)
+    return df
 
 def compute_htft_probs(lam_h: float, lam_a: float) -> pd.DataFrame:
-    """Simule le marché Mi-Temps / Fin du Match (MT-Fin) via Poisson."""
     lh_m1, la_m1 = lam_h * 0.45, lam_a * 0.45
     lh_m2, la_m2 = lam_h * 0.55, lam_a * 0.55
 
     m1 = poisson_matrix(lh_m1, la_m1, max_goals=4)
     m2 = poisson_matrix(lh_m2, la_m2, max_goals=4)
 
-    p1_m1 = np.tril(m1, -1).sum()
-    px_m1 = np.trace(m1)
-    p2_m1 = np.triu(m1, 1).sum()
-
-    p1_m2 = np.tril(m2, -1).sum()
-    px_m2 = np.trace(m2)
-    p2_m2 = np.triu(m2, 1).sum()
+    p1_m1, px_m1, p2_m1 = np.tril(m1, -1).sum(), np.trace(m1), np.triu(m1, 1).sum()
+    p1_m2, px_m2, p2_m2 = np.tril(m2, -1).sum(), np.trace(m2), np.triu(m2, 1).sum()
 
     scenarios = [
         ("1/1", p1_m1 * p1_m2), ("1/X", p1_m1 * px_m2), ("1/2", p1_m1 * p2_m2),
@@ -130,9 +122,9 @@ def compute_htft_probs(lam_h: float, lam_a: float) -> pd.DataFrame:
         ("2/1", p2_m1 * p1_m2), ("2/X", p2_m1 * px_m2), ("2/2", p2_m1 * p2_m2)
     ]
     
-    df = pd.DataFrame(scenarios, columns=["Scénario MT/FM", "Probabilité %"])
-    df["Probabilité %"] = round(df["Probabilité %"] * 100, 2)
-    return df.sort_values(by="Probabilité %", ascending=False)
+    df = pd.DataFrame(scenarios, columns=["Marché MT-Fin", "Probabilité"])
+    df["Probabilité"] = (df["Probabilité"] * 100).map("{:,.2f} %".format)
+    return df.sort_values(by="Marché MT-Fin")
 
 def market_probs_from_matrix(mat: np.ndarray) -> Dict[str, float]:
     return {
@@ -141,108 +133,108 @@ def market_probs_from_matrix(mat: np.ndarray) -> Dict[str, float]:
         "2": float(np.triu(mat, 1).sum()),
     }
 
-def ocr_image(image: Image.Image) -> str:
-    try:
-        import pytesseract
-        return pytesseract.image_to_string(image, config="--psm 6")
-    except Exception:
-        return "Tesseract n'est pas installé ou configuré sur ce système."
+# -------------------------------------------------------------------------
+# CRITÉRE DE CONFIGURATION DES SIGNAUX DEMANDÉS
+# -------------------------------------------------------------------------
+def confidence_index(market: np.ndarray, model: np.ndarray, top_prob: float, sample_n: int, edge: float) -> Tuple[float, str, str]:
+    agreement = 1.0 - float(np.mean(np.abs(market - model))) / 0.50
+    agreement = clamp(agreement, 0.0, 1.0)
+    sample_factor = clamp(sample_n / 10.0, 0.0, 1.0)
+    top_factor = clamp((top_prob - 0.30) / 0.45, 0.0, 1.0)
+    edge_factor = clamp(edge / 0.20, 0.0, 1.0)
+    
+    score = 100.0 * (0.38 * agreement + 0.18 * sample_factor + 0.29 * top_factor + 0.15 * edge_factor)
+    score = clamp(score, 0.0, 100.0)
+
+    # Classification selon vos critères stricts
+    if score >= 95:
+        label = "SIGNAL EXCEPTIONNEL"
+        color = "inverse"  # Pour affichage Streamlit spécifique
+    elif score >= 90:
+        label = "SIGNAL TRÈS FORT"
+        color = "normal"
+    elif score >= 80:
+        label = "SIGNAL FORT"
+        color = "normal"
+    else:
+        label = "PRUDENCE / PAS DE PARI"
+        color = "off"
+
+    return round(score, 1), label, color
 
 # -------------------------------------------------------------------------
-# Interface Utilisateur Streamlit
+# INTERFACE UTILISATEUR
 # -------------------------------------------------------------------------
-st.title("⚽ ROI DE POISSON — Analyse Pro")
-st.caption("Analyse stratégique combinant modélisation de Poisson, cotes du marché, forme récente et gestion des blessures.")
+st.title("⚽ ROI DE POISSON — Analyse Pro Stratégique")
+st.caption("Mise en valeur exclusive des marchés Score Exact et Mi-Temps/Fin (MT-Fin) avec filtres de signaux stricts.")
 
 with st.sidebar:
-    st.header("⚙️ Paramètres Généraux")
+    st.header("⚙️ Paramètres d'Ajustement")
     home_advantage = st.slider("Avantage domicile (%)", -10, 15, 5)
-    max_goals = st.slider("Nombre de buts maximum simulés", 6, 12, 8)
-    st.info("⚠️ Les modèles mathématiques procurent des indicateurs de tendance. Aucun algorithme ne garantit un succès à 100%.")
+    max_goals = st.slider("Nombre de buts max simulés", 6, 12, 8)
+    st.markdown("---")
+    st.markdown("**Échelle des Signaux configurée :**")
+    st.markdown("🔥 **95–100** : Signal Exceptionnel\n🟢 **90–94** : Signal Très Fort\n🟢 **80–89** : Signal Fort\n🔴 **<80** : Prudence / Pas de pari")
 
-tab1, tab2, tab3 = st.tabs(["📷 1. Captures d'écran (OCR)", "📊 2. Données du Match", "🧠 3. Analyse & Résultats"])
+tab1, tab2, tab3 = st.tabs(["📷 1. Captures d'écran", "📊 2. Paramètres du match", "🧠 3. Signaux & Marchés Cibles"])
 
 with tab1:
-    st.subheader("Extraction visuelle optionnelle")
+    st.subheader("Vérification visuelle")
     c1, c2 = st.columns(2)
     with c1:
         img_score = st.file_uploader("Capture Score exact", type=["png", "jpg", "jpeg"], key="score_img")
-        if img_score:
-            image1 = Image.open(img_score)
-            st.image(image1, caption="Aperçu Score Exact", use_container_width=True)
-            txt1 = ocr_image(image1)
-            with st.expander("Texte brut extrait (OCR)"):
-                st.code(txt1)
+        if img_score: st.image(Image.open(img_score), use_container_width=True)
     with c2:
         img_htft = st.file_uploader("Capture MT-Fin", type=["png", "jpg", "jpeg"], key="htft_img")
-        if img_htft:
-            image2 = Image.open(img_htft)
-            st.image(image2, caption="Aperçu MT-Fin", use_container_width=True)
-            txt2 = ocr_image(image2)
-            with st.expander("Texte brut extrait (OCR)"):
-                st.code(txt2)
+        if img_htft: st.image(Image.open(img_htft), use_container_width=True)
 
 with tab2:
-    st.subheader("Saisie manuelle des données du match")
-    
+    st.subheader("Données d'entrée (Traitement en arrière-plan)")
     col_odds, col_injuries = st.columns(2)
     with col_odds:
         st.markdown("**Cotes du Marché 1X2**")
-        o1 = st.number_input("Cote Victoire Domicile (1)", min_value=1.01, value=2.10, step=0.05)
-        ox = st.number_input("Cote Match Nul (X)", min_value=1.01, value=3.40, step=0.05)
-        o2 = st.number_input("Cote Victoire Extérieur (2)", min_value=1.01, value=3.50, step=0.05)
+        o1 = st.number_input("Cote Domicile (1)", min_value=1.01, value=2.10, step=0.05)
+        ox = st.number_input("Cote Nul (X)", min_value=1.01, value=3.40, step=0.05)
+        o2 = st.number_input("Cote Extérieur (2)", min_value=1.01, value=3.50, step=0.05)
     with col_injuries:
-        st.markdown("**Impact des Blessures (Attaque)**")
-        inj_home = st.slider("Impact Équipe Domicile (%)", -35, 20, 0, help="Négatif = Attaque affaiblie")
-        inj_away = st.slider("Impact Équipe Extérieur (%)", -35, 20, 0)
+        st.markdown("**Impact Blessures (Attaque %)**")
+        inj_home = st.slider("Impact Domicile (%)", -35, 20, 0)
+        inj_away = st.slider("Impact Extérieur (%)", -35, 20, 0)
 
     st.markdown("---")
-    st.markdown("**Historique Récent (Forme & xG des 3 derniers matchs)**")
-    
+    st.markdown("**Forme récente (Calcul pondéré sur les derniers matchs)**")
     ch, ca = st.columns(2)
-    h_rows = []
-    a_rows = []
-    
     with ch:
-        st.markdown("*Équipe à Domicile*")
+        st.markdown("*Forme Domicile (Buts Marqués / Encaissés)*")
+        h_rows = []
         for i in range(1, 4):
-            c_a, c_b = st.columns(2)
-            gf = c_a.number_input(f"Dom -{i} : Buts Marqués", min_value=0, value=1, key=f"h_gf_{i}")
-            ga = c_b.number_input(f"Dom -{i} : Buts Encaissés", min_value=0, value=1, key=f"h_ga_{i}")
-            h_rows.append({"gf": gf, "ga": ga, "xgf": gf * 1.1, "xga": ga * 0.9})
-            
+            cx1, cx2 = st.columns(2)
+            gf = cx1.number_input(f"Match -{i} : GF", min_value=0, value=2, key=f"h_gf_{i}")
+            ga = cx2.number_input(f"Match -{i} : GA", min_value=0, value=1, key=f"h_ga_{i}")
+            h_rows.append({"gf": gf, "ga": ga, "xgf": gf * 1.05, "xga": ga * 0.95})
     with ca:
-        st.markdown("*Équipe à l'Extérieur*")
+        st.markdown("*Forme Extérieur (Buts Marqués / Encaissés)*")
+        a_rows = []
         for i in range(1, 4):
-            c_a, c_b = st.columns(2)
-            gf = c_a.number_input(f"Ext -{i} : Buts Marqués", min_value=0, value=1, key=f"a_gf_{i}")
-            ga = c_b.number_input(f"Ext -{i} : Buts Encaissés", min_value=0, value=1, key=f"a_ga_{i}")
-            a_rows.append({"gf": gf, "ga": ga, "xgf": gf * 1.1, "xga": ga * 0.9})
+            cx1, cx2 = st.columns(2)
+            gf = cx1.number_input(f"Match -{i} : GF", min_value=0, value=1, key=f"a_gf_{i}")
+            ga = cx2.number_input(f"Match -{i} : GA", min_value=0, value=1, key=f"a_ga_{i}")
+            a_rows.append({"gf": gf, "ga": ga, "xgf": gf * 1.0, "xga": ga * 1.0})
 
 with tab3:
-    st.subheader("Rapports d'analyse et probabilités")
-    
-    market_probs = normalize_odds([o1, ox, o2])
-    market_lh, market_la = market_expected_goals(market_probs[0], market_probs[1], market_probs[2])
+    # Calculs de fond
+    p_market = normalize_odds([o1, ox, o2])
+    m_lh, m_la = market_expected_goals(p_market[0], p_market[1], p_market[2])
     
     h_stats = recent_team_stats(h_rows)
     a_stats = recent_team_stats(a_rows)
+    final_lh, final_la = blend_lambdas(m_lh, m_la, h_stats, a_stats, home_advantage, inj_home, inj_away)
     
-    lam_h, lam_a = blend_lambdas(
-        market_lh, market_la, h_stats, a_stats,
-        home_advantage=home_advantage, injury_home=inj_home, injury_away=inj_away
-    )
+    mat_model = poisson_matrix(final_lh, final_la, max_goals)
+    probs_model = market_probs_from_matrix(mat_model)
     
-    matrix = poisson_matrix(lam_h, lam_a, max_goals=max_goals)
+    top_score_prob = float(mat_model.max())
+    edge = abs(probs_model["1"] - p_market[0])
     
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
-        st.metric("Buts attendus Domicile (Lambda)", f"{lam_h:.2f}")
-    with col_m2:
-        st.metric("Buts attendus Extérieur (Lambda)", f"{lam_a:.2f}")
-        
-    st.markdown("### 🎯 Scores exacts les plus probables")
-    st.dataframe(score_table(matrix, top_n=6), use_container_width=True)
-    
-    st.markdown("### ⏱️ Analyse Mi-Temps / Fin de Match")
-    st.dataframe(compute_htft_probs(lam_h, lam_a), use_container_width=True)
+    conf_score, conf_label, conf_color = confidence_index(
+        p_market, 
