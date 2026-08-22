@@ -98,6 +98,7 @@ def blend_lambdas(
 
 def score_table(mat: np.ndarray, top_n: int = 10) -> pd.DataFrame:
     items = []
+    # mat.shape[0] et mat.shape[1] corrigés pour éviter l'erreur d'itération
     for h in range(mat.shape[0]):
         for a in range(mat.shape[1]):
             items.append((f"{h} - {a}", float(mat[h, a] * 100.0)))
@@ -124,7 +125,7 @@ def compute_htft_probs(lam_h: float, lam_a: float) -> pd.DataFrame:
     
     df = pd.DataFrame(scenarios, columns=["Marché MT-Fin", "Probabilité"])
     df["Probabilité"] = (df["Probabilité"] * 100).map("{:,.2f} %".format)
-    return df.sort_values(by="Marché MT-Fin")
+    return df.sort_values(by="Probabilité", ascending=False)
 
 def market_probs_from_matrix(mat: np.ndarray) -> Dict[str, float]:
     return {
@@ -133,9 +134,6 @@ def market_probs_from_matrix(mat: np.ndarray) -> Dict[str, float]:
         "2": float(np.triu(mat, 1).sum()),
     }
 
-# -------------------------------------------------------------------------
-# CRITÉRE DE CONFIGURATION DES SIGNAUX DEMANDÉS
-# -------------------------------------------------------------------------
 def confidence_index(market: np.ndarray, model: np.ndarray, top_prob: float, sample_n: int, edge: float) -> Tuple[float, str, str]:
     agreement = 1.0 - float(np.mean(np.abs(market - model))) / 0.50
     agreement = clamp(agreement, 0.0, 1.0)
@@ -146,10 +144,9 @@ def confidence_index(market: np.ndarray, model: np.ndarray, top_prob: float, sam
     score = 100.0 * (0.38 * agreement + 0.18 * sample_factor + 0.29 * top_factor + 0.15 * edge_factor)
     score = clamp(score, 0.0, 100.0)
 
-    # Classification selon vos critères stricts
     if score >= 95:
         label = "SIGNAL EXCEPTIONNEL"
-        color = "inverse"  # Pour affichage Streamlit spécifique
+        color = "inverse"
     elif score >= 90:
         label = "SIGNAL TRÈS FORT"
         color = "normal"
@@ -173,7 +170,7 @@ with st.sidebar:
     home_advantage = st.slider("Avantage domicile (%)", -10, 15, 5)
     max_goals = st.slider("Nombre de buts max simulés", 6, 12, 8)
     st.markdown("---")
-    st.markdown("**Échelle des Signaux configurée :**")
+    st.markdown("**Échelle des Signaux :**")
     st.markdown("🔥 **95–100** : Signal Exceptionnel\n🟢 **90–94** : Signal Très Fort\n🟢 **80–89** : Signal Fort\n🔴 **<80** : Prudence / Pas de pari")
 
 tab1, tab2, tab3 = st.tabs(["📷 1. Captures d'écran", "📊 2. Paramètres du match", "🧠 3. Signaux & Marchés Cibles"])
@@ -222,7 +219,6 @@ with tab2:
             a_rows.append({"gf": gf, "ga": ga, "xgf": gf * 1.0, "xga": ga * 1.0})
 
 with tab3:
-    # Calculs de fond
     p_market = normalize_odds([o1, ox, o2])
     m_lh, m_la = market_expected_goals(p_market[0], p_market[1], p_market[2])
     
@@ -236,5 +232,15 @@ with tab3:
     top_score_prob = float(mat_model.max())
     edge = abs(probs_model["1"] - p_market[0])
     
+    # Appel de fonction entièrement encapsulé et corrigé ici
     conf_score, conf_label, conf_color = confidence_index(
         p_market, 
+        np.array([probs_model["1"], probs_model["X"], probs_model["2"]]), 
+        top_score_prob, 
+        h_stats["n"] + a_stats["n"], 
+        edge
+    )
+    
+    st.subheader("⚡ Évaluation Statistique Globale")
+    
+    if conf_score >= 95:
