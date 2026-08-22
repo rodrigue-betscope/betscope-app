@@ -144,7 +144,7 @@ def confidence_index(market: np.ndarray, model: np.ndarray, top_prob: float, sam
     score = 100.0 * (0.38 * agreement + 0.18 * sample_factor + 0.29 * top_factor + 0.15 * edge_factor)
     score = clamp(score, 0.0, 100.0)
 
-    if score >= 95:
+    if conf_score >= 95:
         label = "SIGNAL EXCEPTIONNEL"
         color = "inverse"
     elif score >= 90:
