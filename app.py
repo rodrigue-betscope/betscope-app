@@ -1,242 +1,352 @@
-# app.py
-import io
 import math
-import re
-from typing import Dict, List, Tuple
-import numpy as np
-import pandas as pd
-import streamlit as st
-import requests
-from PIL import Image
+import time
+from datetime import date, datetime, timedelta
 
-# Configuration de l'application
+import pandas as pd
+import requests
+import streamlit as st
+
+# ============================================================
+# RODRIGUE 0-0 PRO — TheSportsDB
+# Sélectionne EXACTEMENT 2 matchs avec la probabilité modélisée
+# la plus élevée d'un score final 0-0.
+#
+# IMPORTANT :
+# - Aucun modèle ne peut garantir un score exact.
+# - TheSportsDB fournit les données, le modèle calcule un classement.
+# - La version gratuite de TheSportsDB a des limites de requêtes.
+# ============================================================
+
 st.set_page_config(
-    page_title="ROI DE POISSON — Analyse Pro",
+    page_title="Rodrigue 0-0 PRO",
     page_icon="⚽",
     layout="wide",
 )
 
-# -------------------------------------------------------------------------
-# INTÉGRATION DE THESPORTSDB (LOGOS & VISUELS) AVEC CACHE
-# -------------------------------------------------------------------------
-@st.cache_data(ttl=3600)  # Conserve les logos en mémoire pendant 1 heure pour éviter le blocage API
-def get_team_visuals(team_name: str) -> dict:
-    """
-    Récupère le logo (Badge) et le nom du stade depuis TheSportsDB.
-    Utilise la clé de test publique '1'.
-    """
-    if not team_name or team_name.strip() == "":
-        return {"logo": None, "stadium_name": None}
-        
-    url = f"https://thesportsdb.com{team_name.strip()}"
+API_KEY = "123"
+BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"
+
+# Cache court pour éviter de dépasser inutilement les limites API.
+@st.cache_data(ttl=300, show_spinner=False)
+def api_get(endpoint: str, params: dict):
+    url = f"{BASE_URL}/{endpoint}"
+    r = requests.get(url, params=params, timeout=20)
+    r.raise_for_status()
+    return r.json()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def events_for_day(selected_date: str):
+    data = api_get(
+        "eventsday.php",
+        {"d": selected_date, "s": "Soccer"},
+    )
+    return data.get("events") or []
+
+@st.cache_data(ttl=300, show_spinner=False)
+def last_team_event(team_id: str):
+    if not team_id:
+        return None
     try:
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if data and data.get("teams"):
-                team_info = data["teams"][0]  # Récupère le premier résultat le plus proche
-                return {
-                    "logo": team_info.get("strTeamBadge"),
-                    "stadium_name": team_info.get("strStadium"),
-                }
+        data = api_get("eventslast.php", {"id": team_id})
+        events = data.get("results") or data.get("events") or []
+        return events[0] if events else None
     except Exception:
-        pass
-    
-    # Fallback si l'équipe n'est pas trouvée
-    return {"logo": None, "stadium_name": None}
+        return None
 
-# -------------------------------------------------------------------------
-# LOGIQUE MATHÉMATIQUE & FONCTIONS DE CALCUL
-# -------------------------------------------------------------------------
-def clamp(x: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, x))
+def as_float(value, default=None):
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (ValueError, TypeError):
+        return default
 
-def poisson_pmf(k: int, lam: float) -> float:
-    if lam <= 0:
-        return 1.0 if k == 0 else 0.0
-    return math.exp(-lam) * (lam ** k) / math.factorial(k)
+def event_is_finished(e: dict) -> bool:
+    status = str(e.get("strStatus") or "").lower()
+    if any(x in status for x in ["finished", "ft", "after", "aet", "pen"]):
+        return True
 
-def poisson_matrix(lam_home: float, lam_away: float, max_goals: int = 8) -> np.ndarray:
-    ph = np.array([poisson_pmf(i, lam_home) for i in range(max_goals + 1)])
-    pa = np.array([poisson_pmf(j, lam_away) for j in range(max_goals + 1)])
-    m = np.outer(ph, pa)
-    s = m.sum()
-    if s > 0:
-        m /= s
-    return m
+    # Les champs de score sont généralement remplis après le match.
+    hs = e.get("intHomeScore")
+    as_ = e.get("intAwayScore")
+    if hs not in (None, "") and as_ not in (None, ""):
+        return True
 
-def normalize_odds(odds: List[float]) -> np.ndarray:
-    inv = np.array([1.0 / max(o, 1.01) for o in odds], dtype=float)
-    return inv / inv.sum()
+    return False
 
-def recent_team_stats(rows: List[Dict]) -> Dict[str, float]:
-    if not rows:
-        return {"gf": 1.35, "ga": 1.35, "xgf": 1.35, "xga": 1.35, "n": 0}
-    
-    n_matchs = min(len(rows), 5)
-    all_weights = np.array([1.00, 0.92, 0.84, 0.76, 0.68])
-    weights = all_weights[:n_matchs]
-    weights = weights / weights.sum()
+def recent_goal_estimate(team_event: dict, team_id: str):
+    """
+    Avec la clé gratuite, TheSportsDB peut limiter les historiques.
+    On utilise donc la dernière rencontre disponible comme information
+    complémentaire, fortement régularisée vers une moyenne neutre.
+    """
+    if not team_event:
+        return None
 
-    gf = sum(rows[i]["gf"] * weights[i] for i in range(n_matchs))
-    ga = sum(rows[i]["ga"] * weights[i] for i in range(n_matchs))
-    xgf = sum(rows[i]["xgf"] * weights[i] for i in range(n_matchs))
-    xga = sum(rows[i]["xga"] * weights[i] for i in range(n_matchs))
+    home_id = str(team_event.get("idHomeTeam") or "")
+    away_id = str(team_event.get("idAwayTeam") or "")
+    hs = as_float(team_event.get("intHomeScore"))
+    aws = as_float(team_event.get("intAwayScore"))
 
-    return {"gf": gf, "ga": ga, "xgf": xgf, "xga": xga, "n": len(rows)}
+    if hs is None or aws is None:
+        return None
 
-def market_expected_goals(p1: float, px: float, p2: float) -> Tuple[float, float]:
-    target = np.array([p1, px, p2])
-    best = (1.35, 1.10)
-    best_loss = 1e9
+    if str(team_id) == home_id:
+        return hs, aws
+    if str(team_id) == away_id:
+        return aws, hs
 
-    for lh in np.arange(0.25, 3.51, 0.05):
-        for la in np.arange(0.20, 3.21, 0.05):
-            mat = poisson_matrix(float(lh), float(la), 8)
-            home = np.tril(mat, -1).sum()
-            draw = np.trace(mat)
-            away = np.triu(mat, 1).sum()
-            probs = np.array([home, draw, away])
-            loss = float(np.sum((probs - target) ** 2))
-            if loss < best_loss:
-                best_loss = loss
-                best = (float(lh), float(la))
-    return best
+    return None
 
-def blend_lambdas(
-    market_lh: float, market_la: float,
-    home_stats: Dict[str, float], away_stats: Dict[str, float],
-    home_advantage: float, injury_home: float, injury_away: float,
-) -> Tuple[float, float]:
-    home_form_attack = 0.55 * home_stats["gf"] + 0.45 * home_stats["xgf"]
-    away_defense = 0.55 * away_stats["ga"] + 0.45 * away_stats["xga"]
-    
-    away_form_attack = 0.55 * away_stats["gf"] + 0.45 * away_stats["xgf"]
-    home_defense = 0.55 * home_stats["ga"] + 0.45 * home_stats["xga"]
+def poisson_pmf_zero(lam: float) -> float:
+    return math.exp(-max(0.01, lam))
 
-    form_home = 0.58 * home_form_attack + 0.42 * away_defense
-    form_away = 0.58 * away_form_attack + 0.42 * home_defense
+def shrink(value, baseline, weight=0.35):
+    return baseline * (1 - weight) + value * weight
 
-    lh = 0.62 * market_lh + 0.38 * form_home
-    la = 0.62 * market_la + 0.38 * form_away
+def model_match(event: dict):
+    """
+    Modèle 0-0 :
+    1) construit une estimation des buts attendus pour chaque équipe;
+    2) régularise fortement quand les données historiques sont limitées;
+    3) calcule P(0-0)=exp(-lambda_home-lambda_away);
+    4) applique de petits ajustements seulement quand les informations
+       disponibles sont cohérentes.
 
-    lh *= 1.0 + clamp(home_advantage / 100.0, -0.10, 0.15)
-    lh *= 1.0 + clamp(injury_home / 100.0, -0.35, 0.20)
-    la *= 1.0 + clamp(injury_away / 100.0, -0.35, 0.20)
+    Ce n'est PAS une garantie de résultat.
+    """
+    home = str(event.get("strHomeTeam") or "Équipe domicile")
+    away = str(event.get("strAwayTeam") or "Équipe extérieur")
+    hid = str(event.get("idHomeTeam") or "")
+    aid = str(event.get("idAwayTeam") or "")
 
-    return clamp(lh, 0.15, 4.50), clamp(la, 0.15, 4.50)
+    h_last = last_team_event(hid)
+    a_last = last_team_event(aid)
 
-def score_table(mat: np.ndarray, top_n: int = 10) -> pd.DataFrame:
-    items = []
-    # Correction stricte des dimensions de boucles NumPy
-    for h in range(mat.shape[0]):
-        for a in range(mat.shape[1]):
-            items.append((f"{h} - {a}", float(mat[h, a] * 100.0)))
-    items.sort(key=lambda x: x[1], reverse=True)
-    df = pd.DataFrame(items[:top_n], columns=["Score Exact", "Probabilité"])
-    df["Probabilité"] = df["Probabilité"].map("{:,.2f} %".format)
-    return df
+    h_data = recent_goal_estimate(h_last, hid)
+    a_data = recent_goal_estimate(a_last, aid)
 
-def compute_htft_probs(lam_h: float, lam_a: float) -> pd.DataFrame:
-    lh_m1, la_m1 = lam_h * 0.45, lam_a * 0.45
-    lh_m2, la_m2 = lam_h * 0.55, lam_a * 0.55
+    # Prior conservateur de buts par équipe.
+    # Le prior empêche un seul match historique de sur-ajuster le modèle.
+    HOME_BASE = 1.25
+    AWAY_BASE = 1.10
 
-    m1 = poisson_matrix(lh_m1, la_m1, max_goals=4)
-    m2 = poisson_matrix(lh_m2, la_m2, max_goals=4)
+    h_scored = h_conceded = None
+    a_scored = a_conceded = None
 
-    p1_m1, px_m1, p2_m1 = np.tril(m1, -1).sum(), np.trace(m1), np.triu(m1, 1).sum()
-    p1_m2, px_m2, p2_m2 = np.tril(m2, -1).sum(), np.trace(m2), np.triu(m2, 1).sum()
+    if h_data:
+        h_scored, h_conceded = h_data
+    if a_data:
+        a_scored, a_conceded = a_data
 
-    scenarios = [
-        ("1/1", p1_m1 * p1_m2), ("1/X", p1_m1 * px_m2), ("1/2", p1_m1 * p2_m2),
-        ("X/1", px_m1 * p1_m2), ("X/X", px_m1 * px_m2), ("X/2", px_m1 * p2_m2),
-        ("2/1", p2_m1 * p1_m2), ("2/X", p2_m1 * px_m2), ("2/2", p2_m1 * p2_m2)
-    ]
-    
-    df = pd.DataFrame(scenarios, columns=["Marché MT-Fin", "Probabilité"])
-    df["Probabilité"] = (df["Probabilité"] * 100).map("{:,.2f} %".format)
-    return df.sort_values(by="Marché MT-Fin")
+    # Si données disponibles : moyenne très régularisée.
+    # Attaque équipe + défense adverse.
+    if h_scored is not None and a_conceded is not None:
+        lam_h = 0.50 * shrink(h_scored, HOME_BASE) + 0.50 * shrink(a_conceded, HOME_BASE)
+    else:
+        lam_h = HOME_BASE
 
-def market_probs_from_matrix(mat: np.ndarray) -> Dict[str, float]:
+    if a_scored is not None and h_conceded is not None:
+        lam_a = 0.50 * shrink(a_scored, AWAY_BASE) + 0.50 * shrink(h_conceded, AWAY_BASE)
+    else:
+        lam_a = AWAY_BASE
+
+    # Si les deux dernières données montrent une faible production offensive,
+    # on baisse légèrement lambda. Si elles montrent une attaque forte, on
+    # augmente légèrement. Bornes pour éviter les valeurs absurdes.
+    if h_scored is not None and a_scored is not None:
+        avg_scored = (h_scored + a_scored) / 2.0
+        if avg_scored <= 0.5:
+            lam_h *= 0.86
+            lam_a *= 0.86
+        elif avg_scored >= 2.5:
+            lam_h *= 1.10
+            lam_a *= 1.10
+
+    lam_h = min(max(lam_h, 0.20), 2.80)
+    lam_a = min(max(lam_a, 0.20), 2.60)
+
+    p00 = poisson_pmf_zero(lam_h + lam_a)
+
+    # Petit bonus de stabilité si les deux derniers matchs disponibles
+    # étaient sans but pour l'équipe concernée.
+    zero_signal = 0.0
+    if h_data and h_data[0] == 0:
+        zero_signal += 0.025
+    if a_data and a_data[0] == 0:
+        zero_signal += 0.025
+
+    p00 = min(p00 + zero_signal, 0.90)
+
+    # Score de sélection : probabilité 0-0 principalement.
+    # On favorise aussi les matchs avec données historiques disponibles.
+    data_bonus = 0.0
+    if h_data:
+        data_bonus += 0.01
+    if a_data:
+        data_bonus += 0.01
+
+    ranking_score = p00 + data_bonus
+
     return {
-        "1": float(np.tril(mat, -1).sum()),
-        "X": float(np.trace(mat)),
-        "2": float(np.triu(mat, 1).sum()),
+        "home": home,
+        "away": away,
+        "lambda_home": lam_h,
+        "lambda_away": lam_a,
+        "p00": p00,
+        "ranking_score": ranking_score,
+        "home_data": bool(h_data),
+        "away_data": bool(a_data),
+        "league": event.get("strLeague") or "Compétition inconnue",
+        "time": event.get("strTime") or event.get("strTimeLocal") or "",
+        "event_id": event.get("idEvent"),
     }
 
-# -------------------------------------------------------------------------
-# ÉCHELLE STRICTE DES 4 NIVEAUX DE SIGNAUX DEMANDÉS
-# -------------------------------------------------------------------------
-def confidence_index(market: np.ndarray, model: np.ndarray, top_prob: float, sample_n: int, edge: float) -> Tuple[float, str]:
-    agreement = 1.0 - float(np.mean(np.abs(market - model))) / 0.50
-    agreement = clamp(agreement, 0.0, 1.0)
-    sample_factor = clamp(sample_n / 10.0, 0.0, 1.0)
-    top_factor = clamp((top_prob - 0.30) / 0.45, 0.0, 1.0)
-    edge_factor = clamp(edge / 0.20, 0.0, 1.0)
-    
-    score = 100.0 * (0.38 * agreement + 0.18 * sample_factor + 0.29 * top_factor + 0.15 * edge_factor)
-    score = clamp(score, 0.0, 100.0)
+def get_all_candidates(selected_date: date):
+    raw = events_for_day(selected_date.isoformat())
+    candidates = []
 
-    if score >= 95:
-        label = "SIGNAL EXCEPTIONNEL 🔥"
-    elif score >= 90:
-        label = "SIGNAL TRÈS FORT 🟢"
-    elif score >= 80:
-        label = "SIGNAL FORT 🟢"
-    else:
-        label = "PRUDENCE / PAS DE PARI 🔴"
+    for e in raw:
+        if str(e.get("strSport") or "").lower() != "soccer":
+            continue
+        if event_is_finished(e):
+            continue
 
-    return round(score, 1), label
+        # Évite les événements sans deux équipes.
+        if not e.get("strHomeTeam") or not e.get("strAwayTeam"):
+            continue
 
-# -------------------------------------------------------------------------
-# INTERFACE UTILISATEUR STREAMLIT
-# -------------------------------------------------------------------------
-st.title("⚽ ROI DE POISSON — Analyse Pro Stratégique")
-st.caption("Filtres de signaux stricts, visuels TheSportsDB et focus exclusif sur les marchés Score Exact et MT-Fin.")
+        try:
+            candidates.append(model_match(e))
+        except Exception:
+            # Un événement défectueux ne doit pas bloquer toute l'analyse.
+            continue
 
-with st.sidebar:
-    st.header("⚙️ Paramètres d'Ajustement")
-    home_advantage = st.slider("Avantage domicile (%)", -10, 15, 5)
-    max_goals = st.slider("Nombre de buts max simulés", 6, 12, 8)
-    st.markdown("---")
-    st.markdown("**Échelle des Signaux configurée :**")
-    st.markdown("🔥 **95–100** : Signal Exceptionnel\n🟢 **90–94** : Signal Très Fort\n🟢 **80–89** : Signal Fort\n🔴 **<80** : Prudence / Pas de pari")
+    candidates.sort(key=lambda x: x["ranking_score"], reverse=True)
+    return candidates
 
-tab1, tab2, tab3 = st.tabs(["📷 1. Captures d'écran", "📊 2. Données & Équipes", "🧠 3. Signaux & Rapports Target"])
+# ============================================================
+# INTERFACE
+# ============================================================
 
-with tab1:
-    st.subheader("Vérification visuelle")
-    c1, c2 = st.columns(2)
-    with c1:
-        img_score = st.file_uploader("Capture Score exact", type=["png", "jpg", "jpeg"], key="score_img")
-        if img_score: st.image(Image.open(img_score), use_container_width=True)
-    with c2:
-        img_htft = st.file_uploader("Capture MT-Fin", type=["png", "jpg", "jpeg"], key="htft_img")
-        if img_htft: st.image(Image.open(img_htft), use_container_width=True)
+st.title("⚽ RODRIGUE 0-0 PRO")
+st.caption("Moteur probabiliste spécialisé dans la sélection de 2 matchs — Score exact 0-0")
 
-with tab2:
-    st.subheader("Identification des clubs & Saisie des statistiques")
-    
-    # Bloc d'écriture des noms (TheSportsDB va chercher ces chaînes de texte)
-    col_names = st.columns(2)
-    team_home = col_names.text_input("Nom de l'équipe à Domicile", value="Arsenal")
-    team_away = col_names.text_input("Nom de l'équipe à l'Extérieur", value="Chelsea")
-    
-    st.markdown("---")
-    col_odds, col_injuries = st.columns(2)
-    with col_odds:
-        st.markdown("**Cotes du Marché 1X2**")
-        o1 = st.number_input("Cote Domicile (1)", min_value=1.01, value=2.10, step=0.05)
-        ox = st.number_input("Cote Nul (X)", min_value=1.01, value=3.40, step=0.05)
-        o2 = st.number_input("Cote Extérieur (2)", min_value=1.01, value=3.50, step=0.05)
-    with col_injuries:
-        st.markdown("**Impact Blessures (Attaque %)**")
-        inj_home = st.slider("Impact Domicile (%)", -35, 20, 0)
-        inj_away = st.slider("Impact Extérieur (%)", -35, 20, 0)
+st.info(
+    "🎯 OBJECTIF : afficher uniquement les 2 matchs classés n°1 et n°2 "
+    "pour le score exact 0-0. Les pourcentages sont des estimations "
+    "mathématiques, jamais une certitude."
+)
 
-    st.markdown("---")
-    st.markdown("**Forme récente (Saisie des 3 derniers matchs)**")
-    ch, ca = st.columns(2)
-    with ch:
-        st.markdown(f"*Forme de {team_home}*")
-        h_rows = []
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    selected_date = st.date_input(
+        "📅 Date des matchs",
+        value=date.today(),
+        min_value=date(2000, 1, 1),
+        max_value=date(2035, 12, 31),
+        format="DD/MM/YYYY",
+    )
+
+with col2:
+    st.write(" ")
+    st.write(" ")
+    launch = st.button("🔥 ANALYSER LES 2 MEILLEURS 0-0", use_container_width=True)
+
+if launch:
+    with st.spinner("🔎 Recherche des matchs + calcul probabiliste..."):
+        try:
+            candidates = get_all_candidates(selected_date)
+        except requests.HTTPError as e:
+            st.error(f"Erreur API TheSportsDB : {e}")
+            st.stop()
+        except requests.RequestException as e:
+            st.error(f"Impossible de joindre TheSportsDB : {e}")
+            st.stop()
+        except Exception as e:
+            st.error(f"Erreur inattendue : {e}")
+            st.stop()
+
+    st.divider()
+
+    if len(candidates) < 2:
+        st.warning(
+            f"⚠️ Seulement {len(candidates)} match(s) exploitable(s) pour "
+            f"le {selected_date.strftime('%d/%m/%Y')}. "
+            "Le moteur ne fabrique pas un faux deuxième match."
+        )
+        st.stop()
+
+    top2 = candidates[:2]
+
+    st.subheader(f"🏆 TOP 2 — SCORE EXACT 0-0 — {selected_date.strftime('%d/%m/%Y')}")
+
+    for rank, item in enumerate(top2, start=1):
+        p = item["p00"] * 100
+
+        st.markdown(f"### #{rank} — {item['home']} 🆚 {item['away']}")
+        c1, c2, c3, c4 = st.columns(4)
+
+        with c1:
+            st.metric("🎯 Score exact", "0 - 0")
+        with c2:
+            st.metric("📊 P(0-0)", f"{p:.2f}%")
+        with c3:
+            st.metric("⚽ λ domicile", f"{item['lambda_home']:.2f}")
+        with c4:
+            st.metric("⚽ λ extérieur", f"{item['lambda_away']:.2f}")
+
+        st.write(
+            f"**Compétition :** {item['league']}  |  "
+            f"**Heure :** {item['time'] or 'non fournie'}"
+        )
+
+        data_quality = (
+            "données récentes disponibles pour les deux équipes"
+            if item["home_data"] and item["away_data"]
+            else "historique partiel — estimation davantage régularisée"
+        )
+        st.caption(f"ℹ️ {data_quality}. ID événement : {item['event_id']}")
+
+        st.divider()
+
+    # Tableau interne de contrôle : uniquement les 2 sélectionnés.
+    table = pd.DataFrame([
+        {
+            "Rang": i + 1,
+            "Match": f"{x['home']} - {x['away']}",
+            "Prédiction": "0-0",
+            "Probabilité modèle": f"{x['p00']*100:.2f}%",
+            "Compétition": x["league"],
+        }
+        for i, x in enumerate(top2)
+    ])
+
+    st.dataframe(table, use_container_width=True, hide_index=True)
+
+    st.success(
+        "✅ Sélection terminée : exactement 2 matchs sont affichés. "
+        "Le moteur ne prétend pas garantir le score."
+    )
+
+st.divider()
+
+st.markdown(
+    """
+### 🧠 Méthode
+
+- Données de calendrier : **TheSportsDB Free API**.
+- Sélection automatique de la date choisie.
+- Filtrage des matchs de football non terminés.
+- Estimation des buts attendus λ domicile / extérieur.
+- Probabilité Poisson du score exact : **P(0-0) = e^-(λdom + λext)**.
+- Classement de tous les matchs disponibles.
+- Affichage final limité à **2 matchs exactement**.
+
+⚠️ **Important :** un score exact 0-0 est un événement difficile à prédire. 
+Un pourcentage élevé ne signifie pas que le 0-0 est certain.
+"""
+)
+
+st.caption("Source données : TheSportsDB — API officielle. Utilisation responsable.")
