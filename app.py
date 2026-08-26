@@ -1,4 +1,3 @@
-from datetime import datetime
 import streamlit as st
 
 # Configuration de la page Streamlit
@@ -6,49 +5,43 @@ st.set_page_config(
     page_title="BetScope Pro - Matchs 0-0 du Jour", page_icon="⚽", layout="centered"
 )
 
-# Date exacte d'aujourd'hui : Mercredi 26 Août 2026
 date_du_jour = "Mercredi 26 Août 2026"
 
-st.title("🎯 BetScope Pro : Analyse 0-0")
+st.title("🎯 BetScope Pro : Saisie des Matchs 0-0")
 st.write(f"📅 **Date officielle :** {date_du_jour}")
-st.markdown("---")
-
-st.subheader("🔥 Vos 2 Vrais Matchs du Jour (Sélection Réelle)")
 st.write(
-    "Entrez ou vérifiez vos affiches réelles du jour repérées sur le bookmaker"
-    " pour l'analyse :"
+    "Entrez ci-dessous les vrais matchs repérés sur votre bookmaker pour"
+    " aujourd'hui :"
 )
-
-# Formulaire ou affichage direct des deux vrais matchs du jour
-# Vous pouvez modifier ces champs directement dans votre code avec les vrais matchs trouvés sur 1Xbet aujourd'hui
-match_1 = {
-    "equipes": "[Entrez le Vrai Match 1 d'aujourd'hui sur 1Xbet]",
-    "championnat": "Ligue / Championnat du 26/08/2026",
-    "cote_00": "À vérifier sur 1Xbet",
-    "fiabilite": "Analyse Poisson active",
-}
-
-match_2 = {
-    "equipes": "[Entrez le Vrai Match 2 d'aujourd'hui sur 1Xbet]",
-    "championnat": "Ligue / Championnat du 26/08/2026",
-    "cote_00": "À vérifier sur 1Xbet",
-    "fiabilite": "Analyse Poisson active",
-}
-
-# Affichage propre du Match 1
-st.success(f"### Match 1 : {match_1['equipes']}")
-st.write(f"**Compétition :** {match_1['championnat']}")
-st.write(f"**Cote 0-0 estimée :** {match_1['cote_00']}")
 st.markdown("---")
 
-# Affichage propre du Match 2
-st.success(f"### Match 2 : {match_2['equipes']}")
-st.write(f"**Compétition :** {match_2['championnat']}")
-st.write(f"**Cote 0-0 estimée :** {match_2['cote_00']}")
+# Création de champs interactifs où vous pouvez taper ce que vous voulez
+match_1_saisi = st.text_input(
+    "📝 Nom du Match 1 (ex: Équipe A vs Équipe B)",
+    "Entrez le match 1 d'aujourd'hui",
+)
+cote_1 = st.text_input("📊 Cote 0-0 estimée pour le Match 1", "7.20")
+
 st.markdown("---")
 
-st.warning(
-    "⚠️ **Conseil de sécurité :** Vérifiez toujours les compositions d'équipes"
-    " et les côtes en direct sur 1Xbet avant de valider votre pari pour ce 26"
-    " août 2026."
+match_2_saisi = st.text_input(
+    "📝 Nom du Match 2 (ex: Équipe C vs Équipe D)",
+    "Entrez le match 2 d'aujourd'hui",
+)
+cote_2 = st.text_input("📊 Cote 0-0 estimée pour le Match 2", "6.90")
+
+st.markdown("---")
+
+# Affichage dynamique de votre sélection validée
+st.subheader("🔥 Votre Sélection Validée du Jour")
+
+st.success(f"### Match 1 : {match_1_saisi}")
+st.write(f"**Cote 0-0 :** {cote_1}")
+
+st.success(f"### Match 2 : {match_2_saisi}")
+st.write(f"**Cote 0-0 :** {cote_2}")
+
+st.info(
+    "💡 Dès que vous tapez les noms dans les cases ci-dessus, ils s'affichent"
+    " instantanément en bas !"
 )
