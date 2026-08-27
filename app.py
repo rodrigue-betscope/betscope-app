@@ -372,7 +372,7 @@ if st.button("🚀 ANALYSER LES VRAIS MATCHS", type="primary", use_container_wid
         filtered_matches = [m for m in matches if m.get("status") in valid_statuses]
 
         if not filtered_matches and matches:
-            filtered_matches = [m for m in matches if m.get("status"] not in ["CANCELLED", "POSTPONED"]]
+            filtered_matches = [m for m in matches if m.get("status") not in ["CANCELLED", "POSTPONED"]]
 
         if not filtered_matches:
             st.error(f"❌ Aucun match disponible pour la date du {selected_date} dans les compétitions sélectionnées.")
