@@ -324,8 +324,6 @@ def analyze_match(match, match_date):
     
     quality = elite_quality_score(home_stats, away_stats)
     
-    # CALCUL DE L'INDICE DE FIABILITÉ MONDIAL (ÉLITE 95-100%)
-    # Calibré pour refléter une certitude algorithmique de haut vol sur les matchs sûrs
     best_prob = ranked[0][1] * 100
     elite_confidence = float(np.clip((best_prob * 0.75) + (quality * 0.25) + 12.5, 88.0, 99.4))
 
@@ -367,7 +365,6 @@ with st.sidebar:
         format_func=lambda x: COMPETITIONS[x],
     )
     
-    # Filtre de sévérité pour garantir le 95-100%
     min_confidence_filter = st.slider(
         "🎯 Indice de Confiance Minimum Requis (%)", 
         min_value=85, max_value=98, value=90, step=1,
@@ -388,7 +385,7 @@ if st.button("🚀 LANCER L'ANALYSE 100% FIABLE", type="primary", use_container_
         filtered_matches = [m for m in matches if m.get("status") in valid_statuses]
 
         if not filtered_matches and matches:
-            filtered_matches = [m for m in matches if m.get("status"] not in ["CANCELLED", "POSTPONED"]]
+            filtered_matches = [m for m in matches if m.get("status") not in ["CANCELLED", "POSTPONED"]]
 
         if not filtered_matches:
             st.error(f"❌ Aucun match disponible entre le {start_date} et le {end_date}.")
@@ -420,12 +417,11 @@ if st.button("🚀 LANCER L'ANALYSE 100% FIABLE", type="primary", use_container_
             st.error("❌ Aucun match n'a pu être analysé avec un historique suffisant.")
             st.stop()
 
-        # APPLICATION DU FILTRE DE FIABILITÉ STRICT (ÉLITE 95-100%)
         results = [r for r in raw_results if r["elite_confidence"] >= min_confidence_filter]
 
         if not results:
-            st.warning(f"⚠️ Aucun match ne respecte le seuil ultra-sain de {min_confidence_filter}% pour cette période.")
-            st.info("💡 **Conseil de pro :** Baisse légèrement le curseur de confiance dans la barre latérale (ex: à 88%) ou élargis la date de fin pour trouver les pépites validées.")
+            st.warning(f"⚠️ Aucun match ne respecte le seuil de {min_confidence_filter}% pour cette période.")
+            st.info("💡 **Conseil :** Baisse légèrement le curseur de confiance dans la barre latérale (ex: à 88%) ou élargis la plage de dates.")
             st.stop()
 
         results.sort(key=lambda x: x["elite_confidence"], reverse=True)
@@ -448,7 +444,6 @@ if st.button("🚀 LANCER L'ANALYSE 100% FIABLE", type="primary", use_container_
                 st.subheader(f"⚽ {result['home']} vs {result['away']}")
                 st.caption(f"🏆 {result['competition']} | ⏰ Heure UTC : {result['utcDate']}")
 
-                # Affichage des métriques d'élite
                 c1, c2, c3 = st.columns(3)
                 c1.metric("🎯 Option Validée (MT/FT)", best_market)
                 c2.metric("📊 Probabilité Statistique", f"{best_prob * 100:.1f}%")
