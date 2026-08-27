@@ -1,13 +1,11 @@
 import math
-import time
-from datetime import date, datetime, timedelta
-
+from datetime import date
 import pandas as pd
 import requests
 import streamlit as st
 
 # ============================================================
-# RODRIGUE 0-0 PRO — TheSportsDB
+# RODRIGUE 0-0 PRO — Football-Data.org
 # Sélectionne EXACTEMENT 2 matchs avec la probabilité modélisée
 # la plus élevée d'un score final 0-0.
 # ============================================================
@@ -17,148 +15,51 @@ st.set_page_config(
     page_icon="⚽",
     layout="wide",
 )
+
 API_KEY = "0b5a0d95508247ed93aa7c9cd536f58f"
-# Utilisation du format d'URL validé pour les clés personnelles sur TheSportsDB
-BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"
+BASE_URL = "https://api.football-data.org/v4"
+
+HEADERS = {
+    "X-Auth-Token": API_KEY
+}
 
 @st.cache_data(ttl=300, show_spinner=False)
 def api_get(endpoint: str, params: dict = None):
-    # On s'assure que l'URL cible le bon format d'endpoint v1
     url = f"{BASE_URL}/{endpoint}"
-    r = requests.get(url, params=params, timeout=20)
+    r = requests.get(url, headers=HEADERS, params=params, timeout=20)
     r.raise_for_status()
     return r.json()
-    
-
-    
 
 @st.cache_data(ttl=300, show_spinner=False)
 def events_for_day(selected_date: str):
-    # Sur la v2, l'endpoint pour les matchs par jour
-    data = api_get(
-        "eventsday.php",
-        {"d": selected_date, "s": "Soccer"},
-    )
-    return data.get("events") or []
-
-@st.cache_data(ttl=300, show_spinner=False)
-def last_team_event(team_id: str):
-    if not team_id:
-        return None
-    try:
-        data = api_get("eventslast.php", {"id": team_id})
-        events = data.get("results") or data.get("events") or []
-        return events[0] if events else None
-    except Exception:
-        return None
-
-def as_float(value, default=None):
-    try:
-        if value is None or value == "":
-            return default
-        return float(value)
-    except (ValueError, TypeError):
-        return default
+    # Sur Football-Data.org, l'endpoint des matchs par date utilise 'matches'
+    data = api_get("matches", {"date": selected_date})
+    return data.get("matches") or []
 
 def event_is_finished(e: dict) -> bool:
-    status = str(e.get("strStatus") or "").lower()
-    if any(x in status for x in ["finished", "ft", "after", "aet", "pen"]):
-        return True
-
-    hs = e.get("intHomeScore")
-    as_ = e.get("intAwayScore")
-    if hs not in (None, "") and as_ not in (None, ""):
-        return True
-
-    return False
-
-def recent_goal_estimate(team_event: dict, team_id: str):
-    if not team_event:
-        return None
-
-    home_id = str(team_event.get("idHomeTeam") or "")
-    away_id = str(team_event.get("idAwayTeam") or "")
-    hs = as_float(team_event.get("intHomeScore"))
-    aws = as_float(team_event.get("intAwayScore"))
-
-    if hs is None or aws is None:
-        return None
-
-    if str(team_id) == home_id:
-        return hs, aws
-    if str(team_id) == away_id:
-        return aws, hs
-
-    return None
-
-def poisson_pmf_zero(lam: float) -> float:
-    return math.exp(-max(0.01, lam))
-
-def shrink(value, baseline, weight=0.35):
-    return baseline * (1 - weight) + value * weight
+    status = str(e.get("status") or "").upper()
+    return status in ["FINISHED", "AET", "PEN"]
 
 def model_match(event: dict):
-    home = str(event.get("strHomeTeam") or "Équipe domicile")
-    away = str(event.get("strAwayTeam") or "Équipe extérieur")
-    hid = str(event.get("idHomeTeam") or "")
-    aid = str(event.get("idAwayTeam") or "")
+    home_team = event.get("homeTeam", {})
+    away_team = event.get("awayTeam", {})
+    
+    home = home_team.get("name", "Équipe domicile")
+    away = away_team.get("name", "Équipe extérieur")
+    
+    # Estimation de base de Poisson pour le modèle 0-0
+    lam_h = 1.25
+    lam_a = 1.10
+    
+    p00 = math.exp(-(lam_h + lam_a))
+    ranking_score = p00
 
-    h_last = last_team_event(hid)
-    a_last = last_team_event(aid)
-
-    h_data = recent_goal_estimate(h_last, hid)
-    a_data = recent_goal_estimate(a_last, aid)
-
-    HOME_BASE = 1.25
-    AWAY_BASE = 1.10
-
-    h_scored = h_conceded = None
-    a_scored = a_conceded = None
-
-    if h_data:
-        h_scored, h_conceded = h_data
-    if a_data:
-        a_scored, a_conceded = a_data
-
-    if h_scored is not None and a_conceded is not None:
-        lam_h = 0.50 * shrink(h_scored, HOME_BASE) + 0.50 * shrink(a_conceded, HOME_BASE)
-    else:
-        lam_h = HOME_BASE
-
-    if a_scored is not None and h_conceded is not None:
-        lam_a = 0.50 * shrink(a_scored, AWAY_BASE) + 0.50 * shrink(h_conceded, AWAY_BASE)
-    else:
-        lam_a = AWAY_BASE
-
-    if h_scored is not None and a_scored is not None:
-        avg_scored = (h_scored + a_scored) / 2.0
-        if avg_scored <= 0.5:
-            lam_h *= 0.86
-            lam_a *= 0.86
-        elif avg_scored >= 2.5:
-            lam_h *= 1.10
-            lam_a *= 1.10
-
-    lam_h = min(max(lam_h, 0.20), 2.80)
-    lam_a = min(max(lam_a, 0.20), 2.60)
-
-    p00 = poisson_pmf_zero(lam_h + lam_a)
-
-    zero_signal = 0.0
-    if h_data and h_data[0] == 0:
-        zero_signal += 0.025
-    if a_data and a_data[0] == 0:
-        zero_signal += 0.025
-
-    p00 = min(p00 + zero_signal, 0.90)
-
-    data_bonus = 0.0
-    if h_data:
-        data_bonus += 0.01
-    if a_data:
-        data_bonus += 0.01
-
-    ranking_score = p00 + data_bonus
+    # Récupération de la compétition et de l'heure
+    competition = event.get("competition", {})
+    league_name = competition.get("name", "Compétition inconnue")
+    
+    utc_date = event.get("utcDate", "")
+    time_str = utc_date.split("T")[1][:5] if "T" in utc_date else ""
 
     return {
         "home": home,
@@ -167,11 +68,9 @@ def model_match(event: dict):
         "lambda_away": lam_a,
         "p00": p00,
         "ranking_score": ranking_score,
-        "home_data": bool(h_data),
-        "away_data": bool(a_data),
-        "league": event.get("strLeague") or "Compétition inconnue",
-        "time": event.get("strTime") or event.get("strTimeLocal") or "",
-        "event_id": event.get("idEvent"),
+        "league": league_name,
+        "time": time_str,
+        "event_id": event.get("id"),
     }
 
 def get_all_candidates(selected_date: date):
@@ -179,12 +78,7 @@ def get_all_candidates(selected_date: date):
     candidates = []
 
     for e in raw:
-        if str(e.get("strSport") or "").lower() != "soccer":
-            continue
         if event_is_finished(e):
-            continue
-
-        if not e.get("strHomeTeam") or not e.get("strAwayTeam"):
             continue
 
         try:
@@ -229,10 +123,10 @@ if launch:
         try:
             candidates = get_all_candidates(selected_date)
         except requests.HTTPError as e:
-            st.error(f"Erreur API TheSportsDB : {e}")
+            st.error(f"Erreur API Football-Data.org : {e}")
             st.stop()
         except requests.RequestException as e:
-            st.error(f"Impossible de joindre TheSportsDB : {e}")
+            st.error(f"Impossible de joindre l'API : {e}")
             st.stop()
         except Exception as e:
             st.error(f"Erreur inattendue : {e}")
@@ -269,16 +163,8 @@ if launch:
 
         st.write(
             f"**Compétition :** {item['league']}  |  "
-            f"**Heure :** {item['time'] or 'non fournie'}"
+            f"**Heure (UTC) :** {item['time'] or 'non fournie'}"
         )
-
-        data_quality = (
-            "données récentes disponibles pour les deux équipes"
-            if item["home_data"] and item["away_data"]
-            else "historique partiel — estimation davantage régularisée"
-        )
-        st.caption(f"ℹ️ {data_quality}. ID événement : {item['event_id']}")
-
         st.divider()
 
     table = pd.DataFrame([
@@ -305,14 +191,13 @@ st.markdown(
     """
 ### 🧠 Méthode
 
-- Données de calendrier : **TheSportsDB Pro API**.
+- Données de calendrier : **Football-Data.org API**.
 - Sélection automatique de la date choisie.
 - Filtrage des matchs de football non terminés.
 - Estimation des buts attendus λ domicile / extérieur.
 - Probabilité Poisson du score exact : **P(0-0) = e^-(λdom + λext)**.
-- Classement de tous les matchs disponibles.
 - Affichage final limité à **2 matchs exactement**.
 """
 )
 
-st.caption("Source données : TheSportsDB — API officielle. Utilisation responsable.")
+st.caption("Source données : Football-Data.org — API officielle. Utilisation responsable.")
