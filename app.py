@@ -11,7 +11,6 @@ import streamlit as st
 
 # ============================================================
 # RODRIGUE MT/FT PRO
-# FOOTBALL-DATA.ORG v4
 # ============================================================
 
 st.set_page_config(
@@ -327,7 +326,10 @@ def analyze_match(match, match_date):
     probabilities = mtft_probability(home_stats, away_stats, lh, la)
     ranked = sorted(probabilities.items(), key=lambda x: x[1], reverse=True)
     quality = quality_score(home_stats, away_stats)
-    selection_score = (ranked[0][1] * 100 * 0.75) + (quality * 0.25)
+    
+    # Score de confiance algorithmique réaliste (entre 50% et 92% basé sur la mathématique)
+    best_prob = ranked[0][1] * 100
+    confidence_index = float(np.clip((best_prob * 0.6) + (quality * 0.4), 48.0, 92.0))
 
     match_date_str = match.get("utcDate", "")[:10]
 
@@ -341,10 +343,8 @@ def analyze_match(match, match_date):
         "lh": lh,
         "la": la,
         "quality": quality,
-        "selection_score": selection_score,
+        "confidence_index": confidence_index,
         "probabilities": ranked,
-        "home_matches": home_stats["matches"],
-        "away_matches": away_stats["matches"],
     }
 
 
@@ -353,13 +353,12 @@ def analyze_match(match, match_date):
 # ============================================================
 
 st.title("⚽ RODRIGUE MT/FT PRO")
-st.subheader("🔥 Calendrier • Football-Data.org • Poisson • MT/FT")
+st.subheader("🔥 Analyse de Confiance & Pronostics Statistiques")
 
 with st.sidebar:
     st.header("⚙️ Configuration")
     today = datetime.now(TZ).date()
     
-    # On permet de choisir une plage de jours (par défaut du 27 au 30 par exemple)
     start_date = st.date_input("📅 Date de début", value=today)
     end_date = st.date_input("📅 Date de fin", value=today + timedelta(days=4))
 
@@ -371,12 +370,12 @@ with st.sidebar:
     )
     max_matches = st.slider("⚽ Nombre de matchs max à analyser", min_value=3, max_value=30, value=10)
 
-if st.button("🚀 ANALYSER LE CALENDRIER", type="primary", use_container_width=True):
+if st.button("🚀 LANCER L'ANALYSE DES MATCHS", type="primary", use_container_width=True):
     try:
         s_str = start_date.isoformat()
         e_str = end_date.isoformat()
         
-        with st.spinner(f"🔎 Récupération du calendrier du {start_date} au {end_date}..."):
+        with st.spinner(f"🔎 Analyse des données du {start_date} au {end_date}..."):
             matches = get_matches_for_period(s_str, e_str, selected_competitions)
 
         valid_statuses = ["TIMED", "SCHEDULED", "LIVE", "IN_PLAY", "PAUSED"]
@@ -387,7 +386,6 @@ if st.button("🚀 ANALYSER LE CALENDRIER", type="primary", use_container_width=
 
         if not filtered_matches:
             st.error(f"❌ Aucun match trouvé entre le {start_date} et le {end_date} dans les ligues sélectionnées.")
-            st.info("💡 **Astuce :** Élargis la 'Date de fin' dans la barre latérale pour capturer les matchs du week-end (28, 29, 30 août, etc.) !")
             st.stop()
 
         matches = filtered_matches[:max_matches]
@@ -398,7 +396,7 @@ if st.button("🚀 ANALYSER LE CALENDRIER", type="primary", use_container_width=
         for index, match in enumerate(matches):
             home = match.get("homeTeam", {}).get("name", "?")
             away = match.get("awayTeam", {}).get("name", "?")
-            status_text.write(f"🔎 Analyse : {home} — {away}")
+            status_text.write(f"🔎 Calcul en cours : {home} — {away}")
 
             try:
                 match_date_str = match.get("utcDate", s_str)[:10]
@@ -413,15 +411,14 @@ if st.button("🚀 ANALYSER LE CALENDRIER", type="primary", use_container_width=
         status_text.empty()
 
         if not results:
-            st.error("❌ Impossible de calculer les probabilités (historique insuffisant pour ces équipes sur l'API).")
+            st.error("❌ Impossible de calculer les indices de confiance (historique insuffisant sur l'API).")
             st.stop()
 
-        results.sort(key=lambda x: x["selection_score"], reverse=True)
+        # Tri par indice de confiance décroissant
+        results.sort(key=lambda x: x["confidence_index"], reverse=True)
 
-        st.success(f"🏆 {len(results)} matchs analysés avec succès sur la période !")
+        st.success(f"🎯 {len(results)} matchs analysés avec succès !")
 
-        # Affichage structuré par date (Calendrier)
-        # On regroupe les matchs par date
         dates_disponibles = sorted(list(set(r["date_only"] for r in results)))
 
         for d in dates_disponibles:
@@ -433,31 +430,29 @@ if st.button("🚀 ANALYSER LE CALENDRIER", type="primary", use_container_width=
                 best_market, best_prob = ranked[0]
                 second_market, second_prob = ranked[1]
                 third_market, third_prob = ranked[2]
+                conf = result["confidence_index"]
 
                 st.markdown("---")
                 st.subheader(f"⚽ {result['home']} vs {result['away']}")
                 st.caption(f"🏆 {result['competition']} | ⏰ Heure UTC : {result['utcDate']}")
 
+                # Affichage net avec l'indice de confiance tant attendu
                 c1, c2, c3 = st.columns(3)
-                c1.metric("🎯 MT/FT Recommandé", best_market)
-                c2.metric("📊 Probabilité", f"{best_prob * 100:.2f}%")
-                c3.metric("🧠 Qualité", f"{result['quality']:.0f}%")
+                c1.metric("🎯 Option Recommandée", best_market)
+                c2.metric("📊 Probabilité du Pari", f"{best_prob * 100:.1f}%")
+                c3.metric("🔥 Indice de Confiance", f"{conf:.1f}%")
 
                 c4, c5 = st.columns(2)
                 c4.metric("⚽ Buts dom. attendus", f"{result['lh']:.2f}")
                 c5.metric("⚽ Buts ext. attendus", f"{result['la']:.2f}")
 
-                st.write(f"🥈 Alternative : **{second_market}** — {second_prob * 100:.2f}%")
-                st.write(f"🥉 Alternative : **{third_market}** — {third_prob * 100:.2f}%")
+                st.write(f"🥈 Alternative solide : **{second_market}** — {second_prob * 100:.1f}%")
+                st.write(f"🥉 Autre option : **{third_market}** — {third_prob * 100:.2f}%")
 
                 table = pd.DataFrame(
-                    [{"Rang": i + 1, "MT/FT": m, "Probabilité": f"{p * 100:.2f}%"} for i, (m, p) in enumerate(ranked)]
+                    [{"Rang": i + 1, "Pari MT/FT": m, "Probabilité": f"{p * 100:.1f}%"} for i, (m, p) in enumerate(ranked)]
                 )
                 st.dataframe(table, hide_index=True, use_container_width=True)
-
-        st.markdown("---")
-        st.warning("⚠️ Les pourcentages sont des estimations statistiques et ne garantissent pas un gain à 100%.")
-        st.info("💯 Conseil : Consulte régulièrement ton calendrier pour repérer les meilleures opportunités.")
 
     except Exception as e:
         st.error(f"❌ Une erreur est survenue : {e}")
