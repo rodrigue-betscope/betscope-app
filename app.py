@@ -23,7 +23,7 @@ st.set_page_config(
     layout="wide",
 )
 
-API_KEY = "123"
+API_KEY = "0b5a0d95508247ed93aa7c9cd536f58f"
 BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"
 
 # Cache court pour éviter de dépasser inutilement les limites API.
