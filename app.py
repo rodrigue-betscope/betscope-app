@@ -91,15 +91,15 @@ def api_get(endpoint, params=None, retry=True):
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_matches_for_date(selected_date, competitions_list):
+def get_matches_for_period(start_date, end_date, competitions_list):
     if not competitions_list:
         return []
     comps_str = ",".join(competitions_list)
     data = api_get(
         "/matches",
         {
-            "dateFrom": selected_date,
-            "dateTo": selected_date,
+            "dateFrom": start_date,
+            "dateTo": end_date,
             "competitions": comps_str,
         },
     )
@@ -108,7 +108,10 @@ def get_matches_for_date(selected_date, competitions_list):
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_team_history(team_id, before_date, limit=20):
-    end_date = datetime.strptime(before_date, "%Y-%m-%d").date() - timedelta(days=1)
+    try:
+        end_date = datetime.strptime(before_date, "%Y-%m-%d").date() - timedelta(days=1)
+    except Exception:
+        end_date = datetime.now(TZ).date() - timedelta(days=1)
     start_date = end_date - timedelta(days=180)
     data = api_get(
         f"/teams/{team_id}/matches",
@@ -299,7 +302,7 @@ def quality_score(home_stats, away_stats):
     return 0.65 * match_quality + 0.35 * field_quality
 
 
-def analyze_match(match, selected_date):
+def analyze_match(match, match_date):
     home_team = match.get("homeTeam", {})
     away_team = match.get("awayTeam", {})
     home_id = home_team.get("id")
@@ -308,8 +311,8 @@ def analyze_match(match, selected_date):
     if not home_id or not away_id:
         return None
 
-    history_home = get_team_history(home_id, selected_date, 20)
-    history_away = get_team_history(away_id, selected_date, 20)
+    history_home = get_team_history(home_id, match_date, 20)
+    history_away = get_team_history(away_id, match_date, 20)
 
     home_stats = calculate_team_stats(history_home, home_id)
     away_stats = calculate_team_stats(history_away, away_id)
@@ -326,12 +329,15 @@ def analyze_match(match, selected_date):
     quality = quality_score(home_stats, away_stats)
     selection_score = (ranked[0][1] * 100 * 0.75) + (quality * 0.25)
 
+    match_date_str = match.get("utcDate", "")[:10]
+
     return {
         "id": match.get("id"),
         "home": home_team.get("name", "Domicile"),
         "away": away_team.get("name", "Extérieur"),
         "competition": match.get("competition", {}).get("name", "Compétition"),
         "utcDate": match.get("utcDate", ""),
+        "date_only": match_date_str,
         "lh": lh,
         "la": la,
         "quality": quality,
@@ -347,26 +353,31 @@ def analyze_match(match, selected_date):
 # ============================================================
 
 st.title("⚽ RODRIGUE MT/FT PRO")
-st.subheader("🔥 Football-Data.org • Poisson • MT/FT")
+st.subheader("🔥 Calendrier • Football-Data.org • Poisson • MT/FT")
 
 with st.sidebar:
     st.header("⚙️ Configuration")
     today = datetime.now(TZ).date()
-    selected_date = st.date_input("📅 Date des matchs", value=today)
+    
+    # On permet de choisir une plage de jours (par défaut du 27 au 30 par exemple)
+    start_date = st.date_input("📅 Date de début", value=today)
+    end_date = st.date_input("📅 Date de fin", value=today + timedelta(days=4))
+
     selected_competitions = st.multiselect(
         "🏆 Compétitions",
         options=list(COMPETITIONS.keys()),
-        default=["PL", "BL1", "SA", "PD", "FL1", "DED", "PPL"],
+        default=["PL", "BL1", "SA", "PD", "FL1", "DED", "PPL", "CL"],
         format_func=lambda x: COMPETITIONS[x],
     )
-    max_matches = st.slider("⚽ Nombre de matchs max", min_value=3, max_value=20, value=6)
+    max_matches = st.slider("⚽ Nombre de matchs max à analyser", min_value=3, max_value=30, value=10)
 
-if st.button("🚀 ANALYSER LES VRAIS MATCHS", type="primary", use_container_width=True):
+if st.button("🚀 ANALYSER LE CALENDRIER", type="primary", use_container_width=True):
     try:
-        date_string = selected_date.isoformat()
+        s_str = start_date.isoformat()
+        e_str = end_date.isoformat()
         
-        with st.spinner("🔎 Récupération des matchs..."):
-            matches = get_matches_for_date(date_string, selected_competitions)
+        with st.spinner(f"🔎 Récupération du calendrier du {start_date} au {end_date}..."):
+            matches = get_matches_for_period(s_str, e_str, selected_competitions)
 
         valid_statuses = ["TIMED", "SCHEDULED", "LIVE", "IN_PLAY", "PAUSED"]
         filtered_matches = [m for m in matches if m.get("status") in valid_statuses]
@@ -375,8 +386,8 @@ if st.button("🚀 ANALYSER LES VRAIS MATCHS", type="primary", use_container_wid
             filtered_matches = [m for m in matches if m.get("status") not in ["CANCELLED", "POSTPONED"]]
 
         if not filtered_matches:
-            st.error(f"❌ Aucun match disponible pour la date du {selected_date} dans les compétitions sélectionnées.")
-            st.info("💡 **Astuce :** Vérifie si les championnats choisis ont des matchs programmés aujourd'hui, ou essaie de sélectionner d'autres ligues dans la barre latérale.")
+            st.error(f"❌ Aucun match trouvé entre le {start_date} et le {end_date} dans les ligues sélectionnées.")
+            st.info("💡 **Astuce :** Élargis la 'Date de fin' dans la barre latérale pour capturer les matchs du week-end (28, 29, 30 août, etc.) !")
             st.stop()
 
         matches = filtered_matches[:max_matches]
@@ -390,7 +401,8 @@ if st.button("🚀 ANALYSER LES VRAIS MATCHS", type="primary", use_container_wid
             status_text.write(f"🔎 Analyse : {home} — {away}")
 
             try:
-                result = analyze_match(match, date_string)
+                match_date_str = match.get("utcDate", s_str)[:10]
+                result = analyze_match(match, match_date_str)
                 if result:
                     results.append(result)
             except Exception:
@@ -405,40 +417,47 @@ if st.button("🚀 ANALYSER LES VRAIS MATCHS", type="primary", use_container_wid
             st.stop()
 
         results.sort(key=lambda x: x["selection_score"], reverse=True)
-        top3 = results[:3]
 
-        st.success(f"🏆 {len(results)} matchs analysés avec succès !")
+        st.success(f"🏆 {len(results)} matchs analysés avec succès sur la période !")
 
-        for rank, result in enumerate(top3, 1):
-            ranked = result["probabilities"]
-            best_market, best_prob = ranked[0]
-            second_market, second_prob = ranked[1]
-            third_market, third_prob = ranked[2]
+        # Affichage structuré par date (Calendrier)
+        # On regroupe les matchs par date
+        dates_disponibles = sorted(list(set(r["date_only"] for r in results)))
 
-            st.markdown("---")
-            st.subheader(f"🏆 #{rank} {result['home']} — {result['away']}")
-            st.caption(f"🏆 {result['competition']}")
+        for d in dates_disponibles:
+            st.markdown(f"### 📅 Matchs du {d}")
+            matchs_du_jour = [r for r in results if r["date_only"] == d]
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("🎯 MT/FT", best_market)
-            c2.metric("📊 Probabilité", f"{best_prob * 100:.2f}%")
-            c3.metric("🧠 Qualité", f"{result['quality']:.0f}%")
+            for rank, result in enumerate(matchs_du_jour, 1):
+                ranked = result["probabilities"]
+                best_market, best_prob = ranked[0]
+                second_market, second_prob = ranked[1]
+                third_market, third_prob = ranked[2]
 
-            c4, c5 = st.columns(2)
-            c4.metric("⚽ Buts dom. attendus", f"{result['lh']:.2f}")
-            c5.metric("⚽ Buts ext. attendus", f"{result['la']:.2f}")
+                st.markdown("---")
+                st.subheader(f"⚽ {result['home']} vs {result['away']}")
+                st.caption(f"🏆 {result['competition']} | ⏰ Heure UTC : {result['utcDate']}")
 
-            st.write(f"🥈 Alternative : **{second_market}** — {second_prob * 100:.2f}%")
-            st.write(f"🥉 Alternative : **{third_market}** — {third_prob * 100:.2f}%")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("🎯 MT/FT Recommandé", best_market)
+                c2.metric("📊 Probabilité", f"{best_prob * 100:.2f}%")
+                c3.metric("🧠 Qualité", f"{result['quality']:.0f}%")
 
-            table = pd.DataFrame(
-                [{"Rang": i + 1, "MT/FT": m, "Probabilité": f"{p * 100:.2f}%"} for i, (m, p) in enumerate(ranked)]
-            )
-            st.dataframe(table, hide_index=True, use_container_width=True)
+                c4, c5 = st.columns(2)
+                c4.metric("⚽ Buts dom. attendus", f"{result['lh']:.2f}")
+                c5.metric("⚽ Buts ext. attendus", f"{result['la']:.2f}")
+
+                st.write(f"🥈 Alternative : **{second_market}** — {second_prob * 100:.2f}%")
+                st.write(f"🥉 Alternative : **{third_market}** — {third_prob * 100:.2f}%")
+
+                table = pd.DataFrame(
+                    [{"Rang": i + 1, "MT/FT": m, "Probabilité": f"{p * 100:.2f}%"} for i, (m, p) in enumerate(ranked)]
+                )
+                st.dataframe(table, hide_index=True, use_container_width=True)
 
         st.markdown("---")
         st.warning("⚠️ Les pourcentages sont des estimations statistiques et ne garantissent pas un gain à 100%.")
-        st.info("💯 Conseil : Privilégie les championnats majeurs avec beaucoup d'historique.")
+        st.info("💯 Conseil : Consulte régulièrement ton calendrier pour repérer les meilleures opportunités.")
 
     except Exception as e:
         st.error(f"❌ Une erreur est survenue : {e}")
