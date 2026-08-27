@@ -184,13 +184,20 @@ def api_get(
 )
 def get_matches_for_date(
     selected_date,
+    competitions_list,
 ):
-
+    if not competitions_list:
+        return []
+        
+    # Football-Data.org accepte un paramètre 'competitions' séparé par des virgules (ex: "PL,BL1,SA")
+    comps_str = ",".join(competitions_list)
+    
     data = api_get(
         "/matches",
         {
             "dateFrom": selected_date,
             "dateTo": selected_date,
+            "competitions": comps_str,
         },
     )
 
