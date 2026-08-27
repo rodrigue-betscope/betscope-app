@@ -17,17 +17,19 @@ st.set_page_config(
     page_icon="⚽",
     layout="wide",
 )
-
 API_KEY = "0b5a0d95508247ed93aa7c9cd536f58f"
-# On repasse sur l'URL v1 standard, mais avec la structure acceptée
+# Utilisation du format d'URL validé pour les clés personnelles sur TheSportsDB
 BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"
 
 @st.cache_data(ttl=300, show_spinner=False)
 def api_get(endpoint: str, params: dict = None):
+    # On s'assure que l'URL cible le bon format d'endpoint v1
     url = f"{BASE_URL}/{endpoint}"
     r = requests.get(url, params=params, timeout=20)
     r.raise_for_status()
     return r.json()
+    
+
     
 
 @st.cache_data(ttl=300, show_spinner=False)
