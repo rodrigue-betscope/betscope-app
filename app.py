@@ -19,16 +19,16 @@ st.set_page_config(
 )
 
 API_KEY = "0b5a0d95508247ed93aa7c9cd536f58f"
-# Correction de l'URL pour accepter la clé API enregistrée
-BASE_URL = f"https://www.thesportsdb.com/api/v2/json/{API_KEY}"
+# On repasse sur l'URL v1 standard, mais avec la structure acceptée
+BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"
 
-# Cache court pour éviter de dépasser inutilement les limites API.
 @st.cache_data(ttl=300, show_spinner=False)
 def api_get(endpoint: str, params: dict = None):
     url = f"{BASE_URL}/{endpoint}"
     r = requests.get(url, params=params, timeout=20)
     r.raise_for_status()
     return r.json()
+    
 
 @st.cache_data(ttl=300, show_spinner=False)
 def events_for_day(selected_date: str):
