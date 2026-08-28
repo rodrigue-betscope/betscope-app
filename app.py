@@ -1332,13 +1332,16 @@ def search_matches(
         api_key
     )
 
-    return api.many(
-        "/fixtures",
-        {
-            "date":
-                match_date
-        }
-    )
+    try:
+        return api.many(
+            "/fixtures",
+            {
+                "date":
+                    match_date
+            }
+        )
+    except Exception:
+        return []
 
 
 @st.cache_data(
@@ -1713,7 +1716,7 @@ else:
     if not fixtures:
 
         st.warning(
-            "Aucun match trouvé."
+            "Aucun match trouvé (ou restriction de l'API par date). Utilise plutôt le Fixture ID dans la barre latérale."
         )
 
         st.stop()
@@ -2723,6 +2726,7 @@ if st.button(
                 bookmakers = (
                     item.get(
                         "bookmakers",
+                        []
                     )
                 )
 
