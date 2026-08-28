@@ -1088,8 +1088,6 @@ def build_prediction(
         else recent_a_ga
     )
 
-    # Pondération statistiques saison + forme récente.
-
     home_attack = (
         0.68 * home_attack
         + 0.32 * recent_h_gf
@@ -1109,8 +1107,6 @@ def build_prediction(
         0.68 * away_defence
         + 0.32 * recent_a_ga
     )
-
-    # Modèle attaque/défense.
 
     lambda_home = (
 
@@ -1138,13 +1134,9 @@ def build_prediction(
         0.25 * 1.10
     )
 
-    # Avantage terrain.
-
     lambda_home *= 1.06
 
     lambda_away *= 0.97
-
-    # H2H à faible pondération.
 
     h2h_home, h2h_away = (
         h2h_average(
@@ -1172,8 +1164,6 @@ def build_prediction(
             + 0.08 * h2h_away
         )
 
-    # Blessures / suspensions.
-
     home_penalty = injury_penalty(
         home_injuries
     )
@@ -1189,8 +1179,6 @@ def build_prediction(
     lambda_away *= (
         1 - away_penalty
     )
-
-    # Limites de sécurité.
 
     lambda_home = clamp(
         lambda_home,
@@ -1217,7 +1205,6 @@ def build_prediction(
         0.46
     )
 
-    # Qualité des données.
     quality_points = 0
     total_points = 10
 
@@ -1634,7 +1621,7 @@ if not api_key:
 
 
 # ============================================================
-# CHOIX DU MATCH (SÉCURISÉ & CONTOURNEMENT AUTOMATIQUE)
+# CHOIX DU MATCH (SÉCURISÉ & ROBUSTE)
 # ============================================================
 
 selected_fixture = None
@@ -1657,6 +1644,10 @@ if fixture_id.strip():
         )
 
         st.stop()
+
+    except RuntimeError as e:
+
+        st.warning(f"Impossible de récupérer ce match via l'ID : {e}")
 
 else:
 
@@ -1714,22 +1705,12 @@ else:
 
     if not fixtures:
 
-        # Secours automatique pour éviter le blocage total si l'API ne renvoie rien pour la date
         st.warning(
-            "⚠️ Aucun match trouvé pour cette date via l'API (assure-toi d'utiliser une clé valide sur **API-Football / API-Sports** et non football-data.org). "
-            "Tu peux entrer directement un **Fixture ID** valide ci-contre (ex: 592874) ou changer la date."
+            "⚠️ Aucun match trouvé pour cette date via l'API. "
+            "Entre un **Fixture ID** valide dans la barre latérale pour charger un match directement."
         )
-        
-        # Champ de secours direct dans la page principale pour forcer un ID si besoin
-        fallback_id = st.text_input("Ou entre un Fixture ID de secours ici pour continuer :", value="")
-        if fallback_id.strip():
-            try:
-                selected_fixture = get_fixture(api_key, int(fallback_id.strip()))
-            except Exception:
-                pass
 
-        if not selected_fixture:
-            st.stop()
+        st.stop()
 
     if fixtures and not selected_fixture:
         choices = []
@@ -1787,10 +1768,6 @@ else:
 
 
 if not selected_fixture:
-
-    st.error(
-        "Match introuvable. Vérifie ton Fixture ID ou ta clé API-Football."
-    )
 
     st.stop()
 
@@ -2031,10 +2008,6 @@ if st.button(
             )
 
 
-        # ====================================================
-        # RÉSULTAT PRINCIPAL
-        # ====================================================
-
         st.success(
             "✅ Analyse terminée"
         )
@@ -2092,10 +2065,6 @@ if st.button(
         )
 
 
-        # ====================================================
-        # MEILLEURS MARCHÉS
-        # ====================================================
-
         st.markdown(
             "## ⭐ MARCHÉS LES PLUS PROBABLES"
         )
@@ -2127,10 +2096,6 @@ if st.button(
             use_container_width=True
         )
 
-
-        # ====================================================
-        # DOUBLE CHANCE
-        # ====================================================
 
         st.markdown(
             "## 🛡️ DOUBLE CHANCE"
@@ -2177,10 +2142,6 @@ if st.button(
         )
 
 
-        # ====================================================
-        # OVER UNDER
-        # ====================================================
-
         st.markdown(
             "## ⚽ OVER / UNDER"
         )
@@ -2223,10 +2184,6 @@ if st.button(
         )
 
 
-        # ====================================================
-        # BTTS
-        # ====================================================
-
         st.markdown(
             "## 🥅 BTTS"
         )
@@ -2265,10 +2222,6 @@ if st.button(
             )
         )
 
-
-        # ====================================================
-        # MI-TEMPS
-        # ====================================================
 
         st.markdown(
             "## ⏱️ MI-TEMPS"
@@ -2320,10 +2273,6 @@ if st.button(
         )
 
 
-        # ====================================================
-        # HT / FT
-        # ====================================================
-
         st.markdown(
             "## 🔥 HT / FT"
         )
@@ -2364,10 +2313,6 @@ if st.button(
         )
 
 
-        # ====================================================
-        # SCORES EXACTS
-        # ====================================================
-
         st.markdown(
             "## 🎯 SCORES EXACTS"
         )
@@ -2405,10 +2350,6 @@ if st.button(
             f"{percent(exact[0][1])}**"
         )
 
-
-        # ====================================================
-        # FORME
-        # ====================================================
 
         st.markdown(
             "## 📈 FORME RÉCENTE"
@@ -2468,10 +2409,6 @@ if st.button(
                     use_container_width=True
                 )
 
-
-        # ====================================================
-        # ABSENCES
-        # ====================================================
 
         st.markdown(
             "## 🚑 BLESSURES / ABSENCES"
@@ -2570,10 +2507,6 @@ if st.button(
                 )
 
 
-        # ====================================================
-        # H2H
-        # ====================================================
-
         st.markdown(
             "## 🤝 H2H"
         )
@@ -2643,10 +2576,6 @@ if st.button(
             )
 
 
-        # ====================================================
-        # PRÉDICTION API
-        # ====================================================
-
         if api_prediction:
 
             st.markdown(
@@ -2704,7 +2633,6 @@ if st.button(
                     advice
                 )
 
-
             under_over = (
                 api_prediction
                 .get(
@@ -2719,10 +2647,6 @@ if st.button(
                     under_over
                 )
 
-
-        # ====================================================
-        # COTES
-        # ====================================================
 
         if odds:
 
@@ -2791,18 +2715,12 @@ if st.button(
                 )
 
 
-        # ====================================================
-        # SYNTHÈSE
-        # ====================================================
-
         st.markdown(
             "## 🧠 SYNTHÈSE FINALE"
         )
 
         best_market = ranked[0]
-
         best_exact = exact[0]
-
         best_htft = htft[0]
 
         st.info(
