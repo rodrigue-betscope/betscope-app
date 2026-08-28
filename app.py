@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI (Version Blindée & Recherche Corrigée)
+# RODRIGUE PRO FOOTBALL AI (Version Blindée & Recherche Globale)
 # ============================================================
 
 import os
@@ -635,7 +635,7 @@ with st.sidebar:
     st.header("🎯 MATCH")
     fixture_id = st.text_input("Fixture ID", placeholder="Exemple : 1234567")
     match_date = st.date_input("Date du match", value=datetime.now().date())
-    team_search = st.text_input("Ou recherche par équipe", placeholder="Exemple : Santander ou Elche")
+    team_search = st.text_input("Ou recherche par équipe", placeholder="Exemple : Tokyo, Shanghai, Santander...")
     score_count = st.slider("Scores exacts affichés", 5, 20, 10)
 
 if not api_key:
@@ -650,56 +650,75 @@ if fixture_id.strip():
     except ValueError:
         st.error("Le Fixture ID doit être numérique.")
         st.stop()
-else:
-    with st.spinner("Recherche des matchs réels..."):
-        fixtures = search_matches(api_key, match_date.isoformat())
-
-    if team_search.strip() and isinstance(fixtures, list):
-        raw_query = team_search.strip().lower()
-        query_parts = [q.strip() for q in raw_query.replace(" vs ", "v").split("v")]
+elif team_search.strip():
+    with st.spinner("Recherche mondiale de l'équipe dans l'API..."):
+        api = APIFootball(api_key)
+        search_query = team_search.strip()
+        teams_data = api.many("/teams", {"search": search_query})
         
-        filtered = []
+        fixtures = []
+        if teams_data:
+            found_team_id = teams_data[0].get("team", {}).get("id")
+            found_team_name = teams_data[0].get("team", {}).get("name")
+            st.caption(f"Équipe détectée : **{found_team_name}** (ID: {found_team_id})")
+            fixtures = api.many("/fixtures", {"team": found_team_id, "next": 15})
+        
+        if not fixtures:
+            fixtures = search_matches(api_key, match_date.isoformat())
+
+        if not fixtures or not isinstance(fixtures, list):
+            st.warning("Aucun match trouvé pour cette recherche. Vérifie l'orthographe.")
+            st.stop()
+
+        choices = []
+        fixture_map = {}
         for f in fixtures:
             if not isinstance(f, dict):
                 continue
             teams = f.get("teams", {})
-            home = teams.get("home", {}).get("name", "").lower()
-            away = teams.get("away", {}).get("name", "").lower()
+            league = f.get("league", {})
+            home = teams.get("home", {}).get("name", "?")
+            away = teams.get("away", {}).get("name", "?")
+            fx_id = f.get("fixture", {}).get("id", "")
+            league_name = league.get("name", "")
+            fx_date = f.get("fixture", {}).get("date", "")[:10]
             
-            match_found = False
-            for part in query_parts:
-                if part and (part in home or part in away):
-                    match_found = True
-                    break
-            if match_found or raw_query in home or raw_query in away:
-                filtered.append(f)
-        fixtures = filtered
+            label = f"{fx_date} | {home} vs {away} ({league_name}) [ID: {fx_id}]"
+            choices.append(label)
+            fixture_map[label] = fx_id
 
-    if not fixtures:
-        st.warning("Aucun match trouvé pour cette date / recherche.")
-        st.stop()
+        selected_label = st.selectbox("Choisis parmi les matchs trouvés :", choices)
+        if selected_label:
+            selected_id = fixture_map[selected_label]
+            selected_fixture = get_fixture(api_key, selected_id)
+else:
+    with st.spinner("Chargement des matchs du jour depuis ton API..."):
+        fixtures = search_matches(api_key, match_date.isoformat())
+        
+    if fixtures:
+        choices = []
+        fixture_map = {}
+        for f in fixtures:
+            if not isinstance(f, dict):
+                continue
+            teams = f.get("teams", {})
+            league = f.get("league", {})
+            home = teams.get("home", {}).get("name", "?")
+            away = teams.get("away", {}).get("name", "?")
+            fx_id = f.get("fixture", {}).get("id", "")
+            league_name = league.get("name", "")
+            
+            label = f"{home} vs {away} ({league_name}) [ID: {fx_id}]"
+            choices.append(label)
+            fixture_map[label] = fx_id
 
-    choices = []
-    for f in fixtures:
-        if not isinstance(f, dict):
-            continue
-        teams = f.get("teams", {})
-        league = f.get("league", {})
-        home = teams.get("home", {}).get("name", "?")
-        away = teams.get("away", {}).get("name", "?")
-        fx_id = f.get("fixture", {}).get("id", "")
-        league_name = league.get("name", "")
-        choices.append(f"{fx_id} | {home} vs {away} | {league_name}")
-
-    choice = st.selectbox("Match réel", choices)
-    try:
-        selected_id = int(choice.split(" | ", 1)[0])
-        selected_fixture = get_fixture(api_key, selected_id)
-    except Exception:
-        selected_fixture = None
+        selected_label = st.selectbox("Matchs du jour disponibles :", choices)
+        if selected_label:
+            selected_id = fixture_map[selected_label]
+            selected_fixture = get_fixture(api_key, selected_id)
 
 if not selected_fixture:
-    st.error("Match introuvable ou erreur de chargement.")
+    st.info("Entre un **Fixture ID** ou tape le nom d'une équipe (Chine, Japon, etc.) dans la barre latérale pour charger les matchs.")
     st.stop()
 
 
