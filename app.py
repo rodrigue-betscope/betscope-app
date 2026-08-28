@@ -110,9 +110,16 @@ def get_matches_for_period(start_date, end_date, competitions_list, status_filte
 def get_live_matches(competitions_list):
     if not competitions_list:
         return []
+    today_str = datetime.now(TZ).date().isoformat()
     comps_str = ",".join(competitions_list)
-    data = api_get("/matches", {"status": "LIVE,IN_PLAY,PAUSED", "competitions": comps_str})
-    return data.get("matches", [])
+    try:
+        data = api_get("/matches", {"dateFrom": today_str, "dateTo": today_str, "competitions": comps_str})
+        matches = data.get("matches", [])
+        live_statuses = ["LIVE", "IN_PLAY", "PAUSED", "HT"]
+        return [m for m in matches if m.get("status") in live_statuses or m.get("score", {}).get("duration") == "REGULAR"]
+    except Exception:
+        data = api_get("/matches", {"status": "SCHEDULED", "competitions": comps_str})
+        return []
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -367,7 +374,6 @@ def analyze_match(match, match_date):
 st.title("👑 RODRIGUE ELITE PREDICTOR PRO")
 st.subheader("🌍 Moteur Mondial (Japon, Chine, Europe, Amériques) • Direct Live & Prédictions 95-100%")
 
-# Onglets principaux pour basculer entre Prédictions Calendrier et Matchs en Direct
 tab_calendar, tab_live = st.tabs(["📅 Prédictions Calendrier", "⚡ Matchs en Direct (LIVE)"])
 
 with st.sidebar:
@@ -514,9 +520,8 @@ with tab_live:
                     
                     sc1, sc2 = st.columns(2)
                     sc1.metric("⚽ Score Actuel (Temps Réglementaire)", f"{score_full.get('home', 0)} - {score_full.get('away', 0)}")
-                    sc2.metric("⏱️ Score Mi-Temps", f"{score_half.get('home', 0)} - {score_half.get('halfTime', {}).get('away', 0) if isinstance(score_half, dict) else '?'}")
+                    sc2.metric("⏱️ Score Mi-Temps", f"{score_half.get('home', 0)} - {score_half.get('away', 0) if isinstance(score_half, dict) else '?'}")
 
-                    # Analyse prédictive instantanée live
                     match_date_str = match.get("utcDate", datetime.now(TZ).isoformat())[:10]
                     live_result = analyze_match(match, match_date_str)
                     
