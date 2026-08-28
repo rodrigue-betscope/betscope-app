@@ -1,767 +1,818 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - FOOTBALL-DATA.ORG V4
+# RODRIGUE PRO FOOTBALL AI — API-FOOTBALL V3
 # ============================================================
 # Installation:
-#   pip install streamlit requests pandas numpy
+#   pip install -r requirements.txt
 #
-# Streamlit Cloud:
-#   Settings > Secrets
-#   [football_data]
-#   token = "TA_CLE_FOOTBALL_DATA"
+# Lancement:
+#   streamlit run app.py
 #
-# Local:
-#   create .streamlit/secrets.toml with:
-#   [football_data]
-#   token = "TA_CLE_FOOTBALL_DATA"
+# API:
+#   https://v3.football.api-sports.io
 #
-# API: https://api.football-data.org/v4
-#
-# Important:
-# football-data.org does NOT expose injuries, H2H, bookmaker odds,
-# corners/cards and detailed statistics on the basic/free coverage.
-# The application therefore does not invent those data.
+# IMPORTANT:
+# Aucun modèle ne peut garantir 90/100 % de réussite sur des paris.
+# Cette application calcule des probabilités à partir des données
+# réellement disponibles dans API-FOOTBALL et affiche un score de
+# confiance séparé de la probabilité du marché.
 # ============================================================
 
 import math
-from datetime import date, timedelta
+import os
+import re
+import time
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
 
+BASE_URL = "https://v3.football.api-sports.io"
+DEFAULT_TZ = "Africa/Douala"
+TIMEOUT = 25
 
 st.set_page_config(
     page_title="Rodrigue Pro Football AI",
     page_icon="⚽",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-API_BASE = "https://api.football-data.org/v4"
+# ----------------------------- CSS -----------------------------
+st.markdown("""
+<style>
+.block-container {padding-top: 1rem; padding-bottom: 2rem;}
+.big-title {font-size: 2.0rem; font-weight: 800;}
+.subtle {color:#6b7280;}
+.pred {font-size: 1.45rem; font-weight: 800;}
+.good {font-weight: 800;}
+.small {font-size: .86rem;}
+</style>
+""", unsafe_allow_html=True)
 
-# Main competitions commonly available on the free tier.
-COMPETITIONS = {
-    "Premier League": "PL",
-    "La Liga": "PD",
-    "Bundesliga": "BL1",
-    "Serie A": "SA",
-    "Ligue 1": "FL1",
-    "Champions League": "CL",
-    "Eredivisie": "DED",
-    "Primeira Liga": "PPL",
-    "Championship": "ELC",
-    "Brasileirão Série A": "BSA",
-    "World Cup": "WC",
-    "European Championship": "EC",
-}
-
-OUTCOMES = ("1", "X", "2")
-
-
-# ============================================================
-# API
-# ============================================================
-
-class FootballDataAPI:
-    def __init__(self, token):
-        self.token = token.strip()
-        self.session = requests.Session()
-        self.session.headers.update({
-            "X-Auth-Token": self.token,
-            "Accept": "application/json",
-        })
-
-    def get(self, endpoint, params=None):
-        if not self.token:
-            raise RuntimeError("Clé Football-Data.org absente.")
-
-        try:
-            response = self.session.get(
-                API_BASE + endpoint,
-                params=params or {},
-                timeout=30,
-            )
-        except requests.RequestException as exc:
-            raise RuntimeError(f"Erreur réseau: {exc}") from exc
-
-        if response.status_code == 401:
-            raise RuntimeError("Clé Football-Data.org invalide.")
-        if response.status_code == 403:
-            raise RuntimeError(
-                "Accès refusé: cette compétition ou cette donnée "
-                "n'est pas incluse dans ton abonnement."
-            )
-        if response.status_code == 429:
-            raise RuntimeError(
-                "Limite API atteinte. Attends environ une minute puis réessaie."
-            )
-
-        if not response.ok:
-            try:
-                detail = response.json()
-            except Exception:
-                detail = response.text
-            raise RuntimeError(
-                f"Football-Data.org HTTP {response.status_code}: {detail}"
-            )
-
-        return response.json()
-
-
-# ============================================================
-# MATHS
-# ============================================================
-
-def poisson_probability(k, lam):
-    lam = max(float(lam), 0.001)
-    return math.exp(-lam) * lam ** k / math.factorial(k)
-
-
-def probability_matrix(lambda_home, lambda_away, max_goals=8):
-    matrix = np.zeros((max_goals + 1, max_goals + 1))
-
-    for h in range(max_goals + 1):
-        for a in range(max_goals + 1):
-            matrix[h, a] = (
-                poisson_probability(h, lambda_home)
-                * poisson_probability(a, lambda_away)
-            )
-
-    total = matrix.sum()
-    if total:
-        matrix /= total
-    return matrix
-
-
-def result_score(home, away):
-    if home > away:
-        return "1"
-    if home < away:
-        return "2"
-    return "X"
-
-
-def calculate_markets(lambda_home, lambda_away):
-    matrix = probability_matrix(lambda_home, lambda_away)
-    totals = {}
-    p1 = px = p2 = pbtts = 0.0
-    scores = []
-
-    for h in range(matrix.shape[0]):
-        for a in range(matrix.shape[1]):
-            p = float(matrix[h, a])
-            totals[h + a] = totals.get(h + a, 0.0) + p
-
-            if h > a:
-                p1 += p
-            elif h == a:
-                px += p
-            else:
-                p2 += p
-
-            if h >= 1 and a >= 1:
-                pbtts += p
-
-            scores.append((f"{h}-{a}", p))
-
-    def over(line):
-        return sum(p for goals, p in totals.items() if goals > line)
-
-    def under(line):
-        return sum(p for goals, p in totals.items() if goals < line)
-
-    markets = {
-        "1": p1,
-        "X": px,
-        "2": p2,
-        "1X": p1 + px,
-        "X2": px + p2,
-        "12": p1 + p2,
-        "BTTS Oui": pbtts,
-        "BTTS Non": 1 - pbtts,
-        "Over 0.5": over(0.5),
-        "Under 0.5": under(0.5),
-        "Over 1.5": over(1.5),
-        "Under 1.5": under(1.5),
-        "Over 2.5": over(2.5),
-        "Under 2.5": under(2.5),
-        "Over 3.5": over(3.5),
-        "Under 3.5": under(3.5),
-        "Over 4.5": over(4.5),
-        "Under 4.5": under(4.5),
-    }
-
-    # Asian total 4.0: push is handled separately.
-    p_eq_4 = totals.get(4, 0.0)
-    markets["Over 4.0"] = over(4.0)
-    markets["Under 4.0"] = under(4.0)
-
-    # These are intentionally approximations, not independent probabilities.
-    markets["BTTS + Over 2.5"] = sum(
-        float(matrix[h, a])
-        for h in range(matrix.shape[0])
-        for a in range(matrix.shape[1])
-        if h >= 1 and a >= 1 and h + a > 2.5
-    )
-    markets["BTTS + Under 2.5"] = sum(
-        float(matrix[h, a])
-        for h in range(matrix.shape[0])
-        for a in range(matrix.shape[1])
-        if h >= 1 and a >= 1 and h + a < 2.5
-    )
-
-    scores.sort(key=lambda x: x[1], reverse=True)
-    return markets, scores, p_eq_4
-
-
-def calculate_htft(lambda_home, lambda_away):
-    ht_home = max(0.01, lambda_home * 0.46)
-    ht_away = max(0.01, lambda_away * 0.46)
-    second_home = max(0.01, lambda_home - ht_home)
-    second_away = max(0.01, lambda_away - ht_away)
-
-    result = {f"{ht}/{ft}": 0.0 for ht in OUTCOMES for ft in OUTCOMES}
-
-    for h1 in range(7):
-        for a1 in range(7):
-            p1 = poisson_probability(h1, ht_home)
-            p2 = poisson_probability(a1, ht_away)
-            ht_p = p1 * p2
-            ht_result = result_score(h1, a1)
-
-            for h2 in range(7):
-                for a2 in range(7):
-                    p = (
-                        ht_p
-                        * poisson_probability(h2, second_home)
-                        * poisson_probability(a2, second_away)
-                    )
-                    ft_result = result_score(h1 + h2, a1 + a2)
-                    result[f"{ht_result}/{ft_result}"] += p
-
-    total = sum(result.values())
-    if total:
-        result = {k: v / total for k, v in result.items()}
-    return result
-
-
-# ============================================================
-# MATCHES / FORM
-# ============================================================
-
-def match_is_finished(match):
-    return match.get("status") == "FINISHED"
-
-
-def team_result(match, team_id):
-    home = match.get("homeTeam", {})
-    away = match.get("awayTeam", {})
-    score = match.get("score", {}).get("fullTime", {})
-
-    hg = score.get("home")
-    ag = score.get("away")
-
-    if hg is None or ag is None:
-        return None
-
-    if home.get("id") == team_id:
-        gf, ga = hg, ag
-    elif away.get("id") == team_id:
-        gf, ga = ag, hg
-    else:
-        return None
-
-    result = "W" if gf > ga else "D" if gf == ga else "L"
-    return {"gf": gf, "ga": ga, "result": result}
-
-
-def recent_team_form(all_matches, team_id, limit=10):
-    rows = []
-
-    for match in all_matches:
-        if not match_is_finished(match):
-            continue
-
-        data = team_result(match, team_id)
-        if not data:
-            continue
-
-        rows.append({
-            "date": match.get("utcDate", ""),
-            "gf": data["gf"],
-            "ga": data["ga"],
-            "result": data["result"],
-        })
-
-    rows.sort(key=lambda x: x["date"], reverse=True)
-    return rows[:limit]
-
-
-def weighted_average(rows, key, default):
-    if not rows:
+# ----------------------------- Helpers -----------------------------
+def safe_float(x, default=0.0):
+    try:
+        if x is None or x == "":
+            return default
+        return float(x)
+    except Exception:
         return default
 
-    values = [float(r[key]) for r in rows]
-    weights = [math.exp(-0.15 * i) for i in range(len(values))]
-    return float(np.average(values, weights=weights))
+def pct(x):
+    return f"{max(0.0, min(100.0, x)):.1f}%"
 
+def clamp(x, lo=0.0, hi=1.0):
+    return max(lo, min(hi, x))
 
-def form_string(rows):
-    return "".join(r["result"] for r in rows)
+def poisson_pmf(k: int, lam: float) -> float:
+    lam = max(0.0001, float(lam))
+    return math.exp(-lam) * (lam ** k) / math.factorial(k)
 
+def normalize_probs(d: Dict[str, float]) -> Dict[str, float]:
+    s = sum(max(0.0, v) for v in d.values())
+    if s <= 0:
+        return {k: 1.0 / len(d) for k in d}
+    return {k: max(0.0, v) / s for k, v in d.items()}
 
-# ============================================================
-# MODEL
-# ============================================================
+def val(obj, *keys, default=None):
+    cur = obj
+    for k in keys:
+        if isinstance(cur, dict):
+            cur = cur.get(k, default)
+        else:
+            return default
+    return cur
 
-def model_prediction(match, home_form, away_form):
-    home_id = match["homeTeam"]["id"]
-    away_id = match["awayTeam"]["id"]
+# ----------------------------- API client -----------------------------
+class APIFootball:
+    def __init__(self, key: str):
+        self.key = key.strip()
+        self.session = requests.Session()
+        self.session.headers.update({
+            "x-apisports-key": self.key,
+            "Accept": "application/json",
+            "User-Agent": "Rodrigue-Pro-Football-AI/1.0",
+        })
 
-    home_gf = weighted_average(home_form, "gf", 1.35)
-    home_ga = weighted_average(home_form, "ga", 1.20)
-    away_gf = weighted_average(away_form, "gf", 1.20)
-    away_ga = weighted_average(away_form, "ga", 1.35)
+    @st.cache_data(ttl=60, show_spinner=False)
+    def _get_cached(_self, endpoint: str, params_tuple: Tuple[Tuple[str, str], ...]):
+        params = dict(params_tuple)
+        r = _self.session.get(BASE_URL + endpoint, params=params, timeout=TIMEOUT)
+        if r.status_code in (429, 500, 502, 503, 504):
+            time.sleep(1.2)
+            r = _self.session.get(BASE_URL + endpoint, params=params, timeout=TIMEOUT)
+        try:
+            data = r.json()
+        except Exception:
+            raise RuntimeError(f"Réponse API invalide HTTP {r.status_code}")
+        if r.status_code >= 400:
+            raise RuntimeError(f"HTTP {r.status_code}: {data}")
+        errors = data.get("errors")
+        if errors:
+            # API-FOOTBALL peut renvoyer une erreur sous forme de dict ou liste.
+            raise RuntimeError(f"API-FOOTBALL: {errors}")
+        return data
 
-    # Recent form is the available data source. Home advantage is modest.
-    lambda_home = (
-        0.58 * home_gf
-        + 0.42 * away_ga
-    ) * 1.06
+    def get(self, endpoint: str, params: Optional[Dict[str, Any]] = None):
+        params = params or {}
+        clean = {}
+        for k, v in params.items():
+            if v is not None and v != "":
+                clean[k] = str(v)
+        return self._get_cached(endpoint, tuple(sorted(clean.items())))
 
-    lambda_away = (
-        0.58 * away_gf
-        + 0.42 * home_ga
-    ) * 0.97
+# ----------------------------- Extraction -----------------------------
+def response_data(data):
+    return data.get("response", []) if isinstance(data, dict) else []
 
-    lambda_home = float(np.clip(lambda_home, 0.15, 4.50))
-    lambda_away = float(np.clip(lambda_away, 0.15, 4.50))
+def fixture_name(f):
+    return f"{val(f,'teams','home','name',default='Home')} — {val(f,'teams','away','name',default='Away')}"
 
-    markets, scores, p4 = calculate_markets(
-        lambda_home, lambda_away
-    )
-    htft = calculate_htft(lambda_home, lambda_away)
+def fixture_score(f):
+    h = val(f, "goals", "home", default=None)
+    a = val(f, "goals", "away", default=None)
+    return h, a
 
-    best_market = max(markets.items(), key=lambda x: x[1])
+def team_stats_basic(api, team_id, league_id, season):
+    try:
+        d = api.get("/teams/statistics", {
+            "team": team_id, "league": league_id, "season": season
+        })
+        r = response_data(d)
+        return r[0] if r else {}
+    except Exception:
+        return {}
 
+def recent_fixtures(api, team_id, last=10):
+    try:
+        d = api.get("/fixtures", {"team": team_id, "last": last})
+        return response_data(d)
+    except Exception:
+        return []
+
+def get_h2h(api, home_id, away_id, last=10):
+    try:
+        d = api.get("/fixtures/headtohead", {
+            "h2h": f"{home_id}-{away_id}", "last": last
+        })
+        return response_data(d)
+    except Exception:
+        return []
+
+def get_injuries(api, fixture_id=None, league_id=None, season=None, team_id=None):
+    p = {}
+    if fixture_id:
+        p["fixture"] = fixture_id
+    else:
+        if league_id: p["league"] = league_id
+        if season: p["season"] = season
+        if team_id: p["team"] = team_id
+    try:
+        return response_data(api.get("/injuries", p))
+    except Exception:
+        return []
+
+def extract_form(fixtures, team_id):
+    out = []
+    for f in fixtures:
+        status = val(f, "fixture", "status", "short", default="")
+        if status not in ("FT", "AET", "PEN"):
+            continue
+        home_id = val(f, "teams", "home", "id")
+        away_id = val(f, "teams", "away", "id")
+        gh, ga = fixture_score(f)
+        if gh is None or ga is None:
+            continue
+        if team_id == home_id:
+            gf, gc = gh, ga
+            result = "W" if gh > ga else "D" if gh == ga else "L"
+        elif team_id == away_id:
+            gf, gc = ga, gh
+            result = "W" if ga > gh else "D" if ga == gh else "L"
+        else:
+            continue
+        out.append({"result": result, "gf": gf, "ga": ga, "fixture": f})
+    return out
+
+def weighted_form(form_rows):
+    if not form_rows:
+        return {"ppg": 1.0, "gf": 1.2, "ga": 1.2, "attack": 1.0, "def": 1.0}
+    weights = np.array([0.55 ** i for i in range(len(form_rows))], dtype=float)
+    weights = weights / weights.sum()
+    gf = sum(r["gf"] * w for r, w in zip(form_rows, weights))
+    ga = sum(r["ga"] * w for r, w in zip(form_rows, weights))
+    pts = sum((3 if r["result"]=="W" else 1 if r["result"]=="D" else 0) * w
+              for r, w in zip(form_rows, weights))
+    # Base conversion around 1.35 goals per team per match.
+    attack = clamp(gf / 1.35, .35, 2.2)
+    defense = clamp(1.35 / max(.25, ga), .35, 2.2)
+    return {"ppg": pts, "gf": gf, "ga": ga, "attack": attack, "def": defense}
+
+def stat_percent(stats, path, default=0.0):
+    x = stats
+    for k in path:
+        if isinstance(x, dict):
+            x = x.get(k)
+        else:
+            x = None
+            break
+    if isinstance(x, dict):
+        x = x.get("percentage", x.get("total"))
+    return safe_float(x, default)
+
+# ----------------------------- Model -----------------------------
+def poisson_matrix(lh, la, max_goals=7):
+    mat = np.zeros((max_goals+1, max_goals+1))
+    for h in range(max_goals+1):
+        for a in range(max_goals+1):
+            mat[h, a] = poisson_pmf(h, lh) * poisson_pmf(a, la)
+    # Tail above max_goals is tiny for normal football lambdas.
+    return mat / mat.sum()
+
+def markets_from_matrix(mat):
+    n = mat.shape[0]
+    home = float(sum(mat[h,a] for h in range(n) for a in range(n) if h > a))
+    draw = float(sum(mat[h,a] for h in range(n) for a in range(n) if h == a))
+    away = float(sum(mat[h,a] for h in range(n) for a in range(n) if h < a))
+    over05 = float(sum(mat[h,a] for h in range(n) for a in range(n) if h+a > .5))
+    over15 = float(sum(mat[h,a] for h in range(n) for a in range(n) if h+a > 1.5))
+    over25 = float(sum(mat[h,a] for h in range(n) for a in range(n) if h+a > 2.5))
+    over35 = float(sum(mat[h,a] for h in range(n) for a in range(n) if h+a > 3.5))
+    over45 = float(sum(mat[h,a] for h in range(n) for a in range(n) if h+a > 4.5))
+    btts = float(sum(mat[h,a] for h in range(n) for a in range(n) if h > 0 and a > 0))
     return {
-        "home_id": home_id,
-        "away_id": away_id,
-        "lambda_home": lambda_home,
-        "lambda_away": lambda_away,
-        "markets": markets,
-        "scores": scores,
-        "htft": htft,
-        "best_market": best_market,
-        "p4": p4,
+        "1": home, "X": draw, "2": away,
+        "1X": home+draw, "X2": draw+away, "12": home+away,
+        "O0.5": over05, "U0.5": 1-over05,
+        "O1.5": over15, "U1.5": 1-over15,
+        "O2.5": over25, "U2.5": 1-over25,
+        "O3.5": over35, "U3.5": 1-over35,
+        "O4.5": over45, "U4.5": 1-over45,
+        "BTTS Oui": btts, "BTTS Non": 1-btts,
     }
 
+def exact_scores(mat, topn=15):
+    items = []
+    for h in range(mat.shape[0]):
+        for a in range(mat.shape[1]):
+            items.append((float(mat[h,a]), h, a))
+    items.sort(reverse=True)
+    return items[:topn]
 
-# ============================================================
-# API HELPERS
-# ============================================================
+def infer_lambdas(home_stats, away_stats, home_form, away_form, h2h,
+                  home_injuries, away_injuries, api_prediction=None,
+                  home_odds=None, away_odds=None):
+    # Start with league/team scoring base.
+    hg = stat_percent(home_stats, ["goals", "for", "average", "home"], 1.45)
+    ag = stat_percent(away_stats, ["goals", "for", "average", "away"], 1.15)
+    hga = stat_percent(home_stats, ["goals", "against", "average", "home"], 1.10)
+    aga = stat_percent(away_stats, ["goals", "against", "average", "away"], 1.25)
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_matches(token, date_from, date_to, competition_codes):
-    api = FootballDataAPI(token)
-    data = api.get(
-        "/matches",
-        params={
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "competitions": ",".join(competition_codes),
-        },
-    )
-    return data.get("matches", [])
+    # API stats sometimes use all instead of home/away.
+    if hg <= .05: hg = stat_percent(home_stats, ["goals","for","average","all"], 1.45)
+    if ag <= .05: ag = stat_percent(away_stats, ["goals","for","average","all"], 1.15)
+    if hga <= .05: hga = stat_percent(home_stats, ["goals","against","average","all"], 1.10)
+    if aga <= .05: aga = stat_percent(away_stats, ["goals","against","average","all"], 1.25)
 
+    # Form blend.
+    lh = 0.52 * hg + 0.23 * home_form["gf"] + 0.25 * aga
+    la = 0.52 * ag + 0.23 * away_form["gf"] + 0.25 * hga
 
-@st.cache_data(ttl=600, show_spinner=False)
-def fetch_recent_matches(token, date_from, date_to, competition_codes):
-    api = FootballDataAPI(token)
-    data = api.get(
-        "/matches",
-        params={
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "competitions": ",".join(competition_codes),
-            "status": "FINISHED",
-        },
-    )
-    return data.get("matches", [])
+    # Defensive opponent adjustment.
+    lh *= (0.82 + 0.18 * clamp(home_form["attack"], .5, 1.7))
+    la *= (0.82 + 0.18 * clamp(away_form["attack"], .5, 1.7))
 
+    # H2H only gets a low weight; it must not dominate current form.
+    h2h_rows = []
+    for f in h2h:
+        if val(f,"fixture","status","short") not in ("FT","AET","PEN"):
+            continue
+        gh, ga = fixture_score(f)
+        if gh is not None and ga is not None:
+            h2h_rows.append((gh,ga))
+    if h2h_rows:
+        hh = np.mean([x[0] for x in h2h_rows[-5:]])
+        ha = np.mean([x[1] for x in h2h_rows[-5:]])
+        # h2h ordering follows fixture home/away, not necessarily current sides.
+        lh = .92*lh + .08*max(.2, hh)
+        la = .92*la + .08*max(.2, ha)
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_competitions(token):
-    api = FootballDataAPI(token)
-    data = api.get("/competitions")
-    return data.get("competitions", [])
+    # Injuries: penalize only when there is usable injury data.
+    def injury_factor(rows):
+        factor = 1.0
+        for x in rows:
+            reason = str(val(x,"player","type",default="")).lower()
+            # Injury/suspension data does not always contain player importance.
+            factor -= 0.025
+        return clamp(factor, .75, 1.0)
 
+    lh *= injury_factor(home_injuries)
+    la *= injury_factor(away_injuries)
 
-# ============================================================
-# INTERFACE
-# ============================================================
+    # Home advantage.
+    lh *= 1.07
+    la *= 0.96
 
-def get_token():
+    # Optional bookmaker anchor: low weight, never overrides model.
+    if home_odds and away_odds and home_odds > 1 and away_odds > 1:
+        qh, qa = 1/home_odds, 1/away_odds
+        s = qh + qa
+        qh, qa = qh/s, qa/s
+        # Shift expected goals slightly toward market direction.
+        total = lh + la
+        lh = .90*lh + .10*total*qh
+        la = .90*la + .10*total*qa
+
+    # Optional API prediction anchor.
+    if api_prediction:
+        p = api_prediction
+        ph = safe_float(val(p,"percent","home",default=0))/100
+        pa = safe_float(val(p,"percent","away",default=0))/100
+        if ph > 0 and pa > 0:
+            # Mild directional correction only.
+            if ph > pa:
+                lh *= 1.025
+                la *= .985
+            elif pa > ph:
+                la *= 1.025
+                lh *= .985
+
+    return clamp(lh, .15, 4.2), clamp(la, .15, 4.0)
+
+def half_time_matrix(lh, la):
+    # Empirical first-half share. Kept conservative to avoid fake precision.
+    return poisson_matrix(lh * .44, la * .44, 6)
+
+def confidence_from_data(data_quality, edge, dispersion):
+    # "confidence" is a model quality score, not a guarantee of winning.
+    score = 55 + 25*data_quality + 18*clamp(edge,0,.5) - 12*clamp(dispersion,0,.5)
+    return clamp(score/100, .50, .97)
+
+# ----------------------------- Odds -----------------------------
+def extract_1x2_odds(odds_response):
+    home = draw = away = None
+    for book in odds_response:
+        for bet in book.get("bookmakers", []):
+            for b in bet.get("bets", []):
+                name = str(b.get("name","")).lower()
+                if "match winner" not in name and name not in ("1x2","fulltime result"):
+                    continue
+                for v in b.get("values", []):
+                    vn = str(v.get("value","")).lower()
+                    odd = safe_float(v.get("odd"), None)
+                    if odd is None: continue
+                    if vn in ("home","1"): home = odd if home is None else min(home, odd)
+                    elif vn in ("draw","x"): draw = odd if draw is None else min(draw, odd)
+                    elif vn in ("away","2"): away = odd if away is None else min(away, odd)
+    return home, draw, away
+
+def fetch_odds(api, fixture_id):
     try:
-        token = st.secrets["football_data"]["token"]
-        if token:
-            return str(token)
+        return response_data(api.get("/odds", {"fixture": fixture_id}))
+    except Exception:
+        return []
+
+# ----------------------------- Player form -----------------------------
+def player_form_summary(api, team_id, fixtures, max_matches=3):
+    # Optional, deliberately capped because player stats are expensive API calls.
+    ratings = defaultdict(list)
+    names = {}
+    used = 0
+    for f in fixtures[:max_matches]:
+        fid = val(f,"fixture","id")
+        if not fid: continue
+        try:
+            rows = response_data(api.get("/fixtures/players", {"fixture": fid}))
+        except Exception:
+            continue
+        for team_block in rows:
+            if val(team_block,"team","id") != team_id:
+                continue
+            for p in team_block.get("players", []):
+                pid = val(p,"player","id")
+                if not pid: continue
+                rating = safe_float(val(p,"statistics",0,"rating"), None)
+                if rating is not None:
+                    ratings[pid].append(rating)
+                    names[pid] = val(p,"player","name",default=f"Player {pid}")
+        used += 1
+    result = []
+    for pid, rr in ratings.items():
+        if rr:
+            result.append((np.mean(rr), names.get(pid, str(pid)), len(rr)))
+    result.sort(reverse=True)
+    return result[:10], used
+
+# ----------------------------- Fixture lookup -----------------------------
+def find_teams(api, query):
+    try:
+        return response_data(api.get("/teams", {"search": query}))
+    except Exception:
+        return []
+
+def find_fixtures_by_date(api, d):
+    try:
+        return response_data(api.get("/fixtures", {
+            "date": d.isoformat(), "timezone": DEFAULT_TZ
+        }))
+    except Exception:
+        return []
+
+def get_fixture(api, fixture_id):
+    d = api.get("/fixtures", {"id": fixture_id})
+    r = response_data(d)
+    return r[0] if r else None
+
+# ----------------------------- Analysis -----------------------------
+def analyze_fixture(api, f, season, analyze_players=False):
+    home = val(f,"teams","home","name",default="Home")
+    away = val(f,"teams","away","name",default="Away")
+    hid = val(f,"teams","home","id")
+    aid = val(f,"teams","away","id")
+    league_id = val(f,"league","id")
+    fixture_id = val(f,"fixture","id")
+    league_name = val(f,"league","name",default="Unknown")
+    venue = val(f,"fixture","venue","name",default="Unknown")
+    city = val(f,"fixture","venue","city",default="")
+    kickoff = val(f,"fixture","date",default="")
+
+    hf = extract_form(recent_fixtures(api, hid, 10), hid)
+    af = extract_form(recent_fixtures(api, aid, 10), aid)
+    hform = weighted_form(hf)
+    aform = weighted_form(af)
+
+    hs = team_stats_basic(api, hid, league_id, season)
+    ass = team_stats_basic(api, aid, league_id, season)
+    h2h = get_h2h(api, hid, aid, 10)
+
+    hi = get_injuries(api, fixture_id=fixture_id)
+    # If fixture-specific injury data is unavailable, try team+league fallback.
+    if not hi:
+        hi = get_injuries(api, league_id=league_id, season=season, team_id=hid)
+    ai = []
+    if not hi:
+        ai = get_injuries(api, league_id=league_id, season=season, team_id=aid)
+    else:
+        # Split fixture injury response by team.
+        hi = [x for x in hi if val(x,"team","id") == hid]
+        ai = [x for x in get_injuries(api, fixture_id=fixture_id) if val(x,"team","id") == aid]
+
+    api_pred = None
+    try:
+        pr = response_data(api.get("/predictions", {"fixture": fixture_id}))
+        api_pred = pr[0] if pr else None
     except Exception:
         pass
 
-    try:
-        token = st.secrets["FOOTBALL_DATA_TOKEN"]
-        if token:
-            return str(token)
-    except Exception:
-        pass
+    odds = fetch_odds(api, fixture_id)
+    oh, od, oa = extract_1x2_odds(odds)
 
-    return ""
-
-
-st.title("⚽ Rodrigue Pro Football AI")
-st.caption(
-    "Analyse probabiliste basée sur les résultats disponibles via Football-Data.org. "
-    "Aucune garantie de gain."
-)
-
-token = get_token()
-
-if not token:
-    st.error(
-        "Clé API absente. Ajoute ta clé dans les Secrets Streamlit."
+    lh, la = infer_lambdas(
+        hs, ass, hform, aform, h2h, hi, ai,
+        api_prediction=api_pred,
+        home_odds=oh, away_odds=oa
     )
-    st.code(
-        '[football_data]\n'
-        'token = "TA_CLE_FOOTBALL_DATA"',
-        language="toml",
+    mat = poisson_matrix(lh, la)
+    markets = markets_from_matrix(mat)
+    htmat = half_time_matrix(lh, la)
+    htmarkets = markets_from_matrix(htmat)
+
+    scores = exact_scores(mat, 15)
+    ht_scores = exact_scores(htmat, 8)
+
+    # HT/FT matrix = product of HT outcome and 2nd-half outcome approximation.
+    second = poisson_matrix(lh*.56, la*.56)
+    hm = markets_from_matrix(htmat)
+    sm = markets_from_matrix(second)
+    htft = {
+        "1/1": hm["1"]*sm["1"], "1/X": hm["1"]*sm["X"], "1/2": hm["1"]*sm["2"],
+        "X/1": hm["X"]*sm["1"], "X/X": hm["X"]*sm["X"], "X/2": hm["X"]*sm["2"],
+        "2/1": hm["2"]*sm["1"], "2/X": hm["2"]*sm["X"], "2/2": hm["2"]*sm["2"],
+    }
+    htft = normalize_probs(htft)
+
+    # "HT draw then a winner in second half" combined probability.
+    draw_ht_winner_2h = hm["X"] * (sm["1"] + sm["2"])
+    ht_draw_home = hm["X"] * sm["1"]
+    ht_draw_away = hm["X"] * sm["2"]
+
+    # Data-quality score.
+    components = [
+        bool(hf), bool(af), bool(hs), bool(ass),
+        bool(h2h), bool(api_pred), bool(odds), bool(hi or ai)
+    ]
+    quality = sum(components) / len(components)
+    dispersion = abs(markets["1"] - markets["2"])
+    top = max(markets, key=markets.get)
+    confidence = confidence_from_data(quality, markets[top]-1/3, dispersion)
+
+    # Strong picks are selected by probability, with a floor to avoid fake 90%.
+    ranked = sorted(markets.items(), key=lambda kv: kv[1], reverse=True)
+    strong = [(k,v) for k,v in ranked if v >= .62][:10]
+
+    player_home = player_away = []
+    player_calls = 0
+    if analyze_players:
+        player_home, c1 = player_form_summary(api, hid, recent_fixtures(api,hid,5), 3)
+        player_away, c2 = player_form_summary(api, aid, recent_fixtures(api,aid,5), 3)
+        player_calls = c1 + c2
+
+    return {
+        "fixture_id": fixture_id, "home": home, "away": away,
+        "home_id": hid, "away_id": aid, "league_id": league_id,
+        "league": league_name, "venue": venue, "city": city,
+        "kickoff": kickoff, "lh": lh, "la": la,
+        "home_form": hform, "away_form": aform,
+        "home_form_rows": hf, "away_form_rows": af,
+        "home_stats": hs, "away_stats": ass,
+        "h2h": h2h, "home_injuries": hi, "away_injuries": ai,
+        "api_prediction": api_pred, "odds": (oh,od,oa),
+        "markets": markets, "htmarkets": htmarkets,
+        "scores": scores, "ht_scores": ht_scores,
+        "htft": htft,
+        "ht_draw_winner_2h": draw_ht_winner_2h,
+        "ht_draw_home": ht_draw_home, "ht_draw_away": ht_draw_away,
+        "quality": quality, "confidence": confidence,
+        "strong": strong, "player_home": player_home,
+        "player_away": player_away, "player_calls": player_calls
+    }
+
+# ----------------------------- UI -----------------------------
+st.markdown('<div class="big-title">⚽ RODRIGUE PRO FOOTBALL AI</div>', unsafe_allow_html=True)
+st.caption("Analyseur pré-match API-FOOTBALL V3 • Poisson + forme + H2H + blessures/absences + modèle API + cotes")
+
+with st.sidebar:
+    st.header("🔐 API")
+    env_key = os.getenv("API_FOOTBALL_KEY", "")
+    api_key = st.text_input(
+        "API-FOOTBALL API Key",
+        value=env_key,
+        type="password",
+        help="Colle ici la clé affichée dans ton dashboard API-FOOTBALL."
     )
-    st.info(
-        "Sur Streamlit Cloud : Settings → Secrets → colle le bloc ci-dessus."
+    st.markdown("**Limite Free actuelle : 100 requêtes/jour.**")
+    st.caption("Les données disponibles dépendent aussi de la couverture de chaque compétition.")
+    st.divider()
+    st.header("⚙️ Analyse")
+    season_default = datetime.now().year
+    season = st.number_input("Saison", min_value=2015, max_value=2035, value=season_default, step=1)
+    analyze_players = st.checkbox(
+        "Analyser la forme des joueurs",
+        value=False,
+        help="Consomme davantage de requêtes API."
     )
+
+if not api_key:
+    st.warning("Colle ta clé API-FOOTBALL dans la barre de gauche pour commencer.")
     st.stop()
 
-# Date du jour du serveur. L'utilisateur peut choisir une autre date.
-selected_date = st.date_input(
-    "📅 Date des matchs",
-    value=date.today(),
-)
+api = APIFootball(api_key)
 
-competition_names = st.multiselect(
-    "🏆 Compétitions",
-    options=list(COMPETITIONS.keys()),
-    default=[
-        "Premier League",
-        "La Liga",
-        "Bundesliga",
-        "Serie A",
-        "Ligue 1",
-    ],
-)
-
-if not competition_names:
-    st.warning("Sélectionne au moins une compétition.")
+# Test key + quota
+try:
+    status = api.get("/status")
+    st.sidebar.success("API connectée")
+    st.sidebar.caption(str(val(status, "response", "requests", default={})))
+except Exception as e:
+    st.error(f"Connexion API impossible : {e}")
     st.stop()
 
-competition_codes = [
-    COMPETITIONS[name] for name in competition_names
-]
+tab1, tab2 = st.tabs(["🔎 Analyser un match", "📅 Matchs par date"])
 
-col1, col2 = st.columns(2)
+with tab1:
+    c1, c2 = st.columns([1,1])
+    with c1:
+        fixture_id_text = st.text_input("ID du match (optionnel)", placeholder="Ex: 1234567")
+    with c2:
+        date_match = st.date_input("Date du match", value=date.today())
 
-with col1:
-    load_button = st.button(
-        "🔎 Charger les matchs",
-        type="primary",
-        use_container_width=True,
-    )
+    b1, b2 = st.columns([1,1])
+    with b1:
+        home_query = st.text_input("Équipe domicile", placeholder="Ex: Barcelona")
+    with b2:
+        away_query = st.text_input("Équipe extérieure", placeholder="Ex: Real Madrid")
 
-with col2:
-    analyze_button = st.button(
-        "🧠 Analyser les matchs",
-        use_container_width=True,
-    )
+    fixture = None
 
-if load_button or analyze_button:
-    date_from = selected_date.isoformat()
-    date_to = selected_date.isoformat()
+    if fixture_id_text.strip().isdigit():
+        try:
+            fixture = get_fixture(api, int(fixture_id_text.strip()))
+        except Exception as e:
+            st.error(str(e))
 
-    try:
-        with st.spinner("Récupération des vrais matchs..."):
-            matches = fetch_matches(
-                token,
-                date_from,
-                date_to,
-                competition_codes,
-            )
-
-        if not matches:
-            st.warning(
-                "Aucun match disponible dans les compétitions sélectionnées "
-                f"pour le {selected_date.strftime('%d/%m/%Y')}."
-            )
-            st.info(
-                "Cela signifie qu'aucun match n'est renvoyé par "
-                "Football-Data.org pour cette date/ces compétitions. "
-                "Ce n'est pas une erreur du modèle."
-            )
-            st.stop()
-
-        # Analyse uniquement si demandée.
-        if analyze_button:
-            history_from = (
-                selected_date - timedelta(days=90)
-            ).isoformat()
-
-            with st.spinner(
-                "Calcul de la forme récente et des probabilités..."
-            ):
-                history = fetch_recent_matches(
-                    token,
-                    history_from,
-                    date_from,
-                    competition_codes,
-                )
-
-                rows = []
-
-                for match in matches:
-                    home = match.get("homeTeam", {})
-                    away = match.get("awayTeam", {})
-
-                    home_form = recent_team_form(
-                        history,
-                        home.get("id"),
-                    )
-                    away_form = recent_team_form(
-                        history,
-                        away.get("id"),
-                    )
-
-                    prediction = model_prediction(
-                        match,
-                        home_form,
-                        away_form,
-                    )
-
-                    best_name, best_prob = prediction["best_market"]
-
-                    rows.append({
-                        "Match": (
-                            f"{home.get('name', '?')} "
-                            f"vs "
-                            f"{away.get('name', '?')}"
-                        ),
-                        "Compétition": (
-                            match.get("competition", {})
-                            .get("name", "")
-                        ),
-                        "Heure UTC": (
-                            match.get("utcDate", "")
-                            .replace("T", " ")
-                            .replace("Z", "")
-                        ),
-                        "Forme domicile": form_string(home_form),
-                        "Forme extérieur": form_string(away_form),
-                        "Buts attendus domicile": round(
-                            prediction["lambda_home"], 2
-                        ),
-                        "Buts attendus extérieur": round(
-                            prediction["lambda_away"], 2
-                        ),
-                        "Meilleure sélection": best_name,
-                        "Probabilité": round(
-                            best_prob * 100, 1
-                        ),
-                        "_prediction": prediction,
-                    })
-
-                # Tri par probabilité décroissante.
-                rows.sort(
-                    key=lambda x: x["Probabilité"],
-                    reverse=True,
-                )
-
-            display_rows = [
-                {k: v for k, v in row.items() if k != "_prediction"}
-                for row in rows
+    if fixture is None and home_query and away_query:
+        with st.spinner("Recherche du match..."):
+            fixtures = find_fixtures_by_date(api, date_match)
+        candidates = [
+            x for x in fixtures
+            if home_query.lower() in val(x,"teams","home","name",default="").lower()
+            and away_query.lower() in val(x,"teams","away","name",default="").lower()
+        ]
+        if not candidates:
+            candidates = [
+                x for x in fixtures
+                if (home_query.lower() in fixture_name(x).lower()
+                    and away_query.lower() in fixture_name(x).lower())
             ]
-
-            st.subheader(
-                f"📊 Analyses — {len(rows)} match(s)"
-            )
-
-            st.dataframe(
-                pd.DataFrame(display_rows),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-            st.subheader("🎯 Détail des prédictions")
-
-            for index, row in enumerate(rows):
-                match = matches[
-                    next(
-                        i for i, m in enumerate(matches)
-                        if (
-                            m.get("homeTeam", {}).get("id")
-                            == row["_prediction"]["home_id"]
-                            and
-                            m.get("awayTeam", {}).get("id")
-                            == row["_prediction"]["away_id"]
-                        )
-                    )
-                ]
-
-                prediction = row["_prediction"]
-
-                with st.expander(
-                    f"{index + 1}. {row['Match']} — "
-                    f"{row['Meilleure sélection']} "
-                    f"({row['Probabilité']:.1f}%)"
-                ):
-                    c1, c2, c3 = st.columns(3)
-
-                    with c1:
-                        st.metric(
-                            "Buts attendus domicile",
-                            f"{prediction['lambda_home']:.2f}",
-                        )
-
-                    with c2:
-                        st.metric(
-                            "Buts attendus extérieur",
-                            f"{prediction['lambda_away']:.2f}",
-                        )
-
-                    with c3:
-                        st.metric(
-                            "Meilleure sélection",
-                            f"{row['Meilleure sélection']}",
-                            f"{row['Probabilité']:.1f}%",
-                        )
-
-                    market_df = pd.DataFrame([
-                        {
-                            "Marché": name,
-                            "Probabilité": f"{prob * 100:.1f}%",
-                        }
-                        for name, prob in sorted(
-                            prediction["markets"].items(),
-                            key=lambda x: x[1],
-                            reverse=True,
-                        )
-                    ])
-
-                    st.write("**📈 Marchés principaux**")
-                    st.dataframe(
-                        market_df,
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
-                    score_df = pd.DataFrame([
-                        {
-                            "Score": score,
-                            "Probabilité": f"{prob * 100:.1f}%",
-                        }
-                        for score, prob
-                        in prediction["scores"][:10]
-                    ])
-
-                    st.write("**🎯 10 scores exacts les plus probables**")
-                    st.dataframe(
-                        score_df,
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
-                    htft_df = pd.DataFrame([
-                        {
-                            "HT/FT": name,
-                            "Probabilité": f"{prob * 100:.1f}%",
-                        }
-                        for name, prob in sorted(
-                            prediction["htft"].items(),
-                            key=lambda x: x[1],
-                            reverse=True,
-                        )[:9]
-                    ])
-
-                    st.write("**🕐 HT/FT**")
-                    st.dataframe(
-                        htft_df,
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
-                    st.caption(
-                        "Les probabilités sont celles du modèle Poisson "
-                        "à partir des résultats récents disponibles. "
-                        "Elles ne représentent pas une certitude."
-                    )
-
+        if candidates:
+            labels = [f"{fixture_name(x)} | ID {val(x,'fixture','id')} | {val(x,'league','name')}" for x in candidates]
+            choice = st.selectbox("Match trouvé", range(len(candidates)), format_func=lambda i: labels[i])
+            fixture = candidates[choice]
         else:
-            # Mode affichage simple.
-            simple_rows = []
+            st.info("Aucun match correspondant à cette date et à ces deux équipes.")
 
-            for match in matches:
-                simple_rows.append({
-                    "Heure UTC": (
-                        match.get("utcDate", "")
-                        .replace("T", " ")
-                        .replace("Z", "")
-                    ),
-                    "Compétition": (
-                        match.get("competition", {})
-                        .get("name", "")
-                    ),
-                    "Domicile": (
-                        match.get("homeTeam", {})
-                        .get("name", "")
-                    ),
-                    "Extérieur": (
-                        match.get("awayTeam", {})
-                        .get("name", "")
-                    ),
-                    "Statut": match.get("status", ""),
-                    "Stade": match.get("venue", ""),
-                })
+    if fixture is not None:
+        st.success(f"Match sélectionné : {fixture_name(fixture)}")
+        if st.button("🚀 LANCER L'ANALYSE COMPLÈTE", type="primary", use_container_width=True):
+            with st.spinner("Récupération des statistiques et calcul des marchés..."):
+                try:
+                    result = analyze_fixture(api, fixture, int(season), analyze_players)
+                    st.session_state["analysis"] = result
+                except Exception as e:
+                    st.error(f"Analyse impossible : {e}")
 
-            st.dataframe(
-                pd.DataFrame(simple_rows),
-                use_container_width=True,
-                hide_index=True,
+    result = st.session_state.get("analysis")
+
+    if result:
+        st.divider()
+        st.subheader(f"🎯 {result['home']} vs {result['away']}")
+        st.caption(
+            f"Compétition : {result['league']} • Stade : {result['venue']} {result['city']} • "
+            f"ID : {result['fixture_id']}"
+        )
+
+        m = result["markets"]
+        top_market = max(m, key=m.get)
+        top_prob = m[top_market]
+
+        a,b,c,d = st.columns(4)
+        a.metric("1", pct(m["1"]))
+        b.metric("Nul", pct(m["X"]))
+        c.metric("2", pct(m["2"]))
+        d.metric("Confiance modèle", pct(result["confidence"]))
+
+        st.info(
+            f"🏆 Sélection principale : **{top_market} — {pct(top_prob)}**. "
+            "La probabilité est statistique, pas une garantie."
+        )
+
+        st.subheader("📊 Marchés principaux")
+        market_rows = [
+            ("Victoire domicile (1)", m["1"]),
+            ("Match nul (X)", m["X"]),
+            ("Victoire extérieur (2)", m["2"]),
+            ("Double chance 1X", m["1X"]),
+            ("Double chance X2", m["X2"]),
+            ("Double chance 12", m["12"]),
+            ("BTTS Oui", m["BTTS Oui"]),
+            ("BTTS Non", m["BTTS Non"]),
+            ("Over 0.5", m["O0.5"]),
+            ("Under 0.5", m["U0.5"]),
+            ("Over 1.5", m["O1.5"]),
+            ("Under 1.5", m["U1.5"]),
+            ("Over 2.5", m["O2.5"]),
+            ("Under 2.5", m["U2.5"]),
+            ("Over 3.5", m["O3.5"]),
+            ("Under 3.5", m["U3.5"]),
+            ("Over 4.5", m["O4.5"]),
+            ("Under 4.5", m["U4.5"]),
+        ]
+        dfm = pd.DataFrame(market_rows, columns=["Marché","Probabilité"])
+        dfm["Probabilité"] = dfm["Probabilité"].map(pct)
+        st.dataframe(dfm, use_container_width=True, hide_index=True)
+
+        st.subheader("⚽ Scores exacts les plus probables")
+        score_rows = []
+        for p,h,a in result["scores"]:
+            score_rows.append({"Score": f"{h}-{a}", "Probabilité": pct(p)})
+        st.dataframe(pd.DataFrame(score_rows), use_container_width=True, hide_index=True)
+
+        st.subheader("⏱️ Mi-temps")
+        hm = result["htmarkets"]
+        hta, htb, htc = st.columns(3)
+        hta.metric("1 à la MT", pct(hm["1"]))
+        htb.metric("Nul à la MT", pct(hm["X"]))
+        htc.metric("2 à la MT", pct(hm["2"]))
+
+        st.markdown(
+            f"**Nul à la mi-temps → domicile gagne en 2e MT :** {pct(result['ht_draw_home'])}  \n"
+            f"**Nul à la mi-temps → extérieur gagne en 2e MT :** {pct(result['ht_draw_away'])}  \n"
+            f"**Nul à la mi-temps → une équipe gagne en 2e MT :** {pct(result['ht_draw_winner_2h'])}"
+        )
+
+        htft_rows = [{"HT/FT": k, "Probabilité": pct(v)} for k,v in
+                     sorted(result["htft"].items(), key=lambda x:x[1], reverse=True)]
+        st.subheader("🔄 HT/FT")
+        st.dataframe(pd.DataFrame(htft_rows), use_container_width=True, hide_index=True)
+
+        st.subheader("🔥 Forme récente")
+        f1,f2 = st.columns(2)
+        with f1:
+            st.markdown(f"**{result['home']}**")
+            st.write("Résultats :", " ".join(x["result"] for x in result["home_form_rows"][:10]) or "N/D")
+            st.write(f"Buts marqués pondérés : **{result['home_form']['gf']:.2f}**")
+            st.write(f"Buts encaissés pondérés : **{result['home_form']['ga']:.2f}**")
+        with f2:
+            st.markdown(f"**{result['away']}**")
+            st.write("Résultats :", " ".join(x["result"] for x in result["away_form_rows"][:10]) or "N/D")
+            st.write(f"Buts marqués pondérés : **{result['away_form']['gf']:.2f}**")
+            st.write(f"Buts encaissés pondérés : **{result['away_form']['ga']:.2f}**")
+
+        st.subheader("🚑 Blessés / absents")
+        i1,i2 = st.columns(2)
+        with i1:
+            st.markdown(f"**{result['home']} — {len(result['home_injuries'])} signalement(s)**")
+            for x in result["home_injuries"][:20]:
+                st.write(f"• {val(x,'player','name',default='Joueur')} — {val(x,'player','type',default='absence')}")
+        with i2:
+            st.markdown(f"**{result['away']} — {len(result['away_injuries'])} signalement(s)**")
+            for x in result["away_injuries"][:20]:
+                st.write(f"• {val(x,'player','name',default='Joueur')} — {val(x,'player','type',default='absence')}")
+
+        if analyze_players:
+            st.subheader("👤 Forme des joueurs")
+            p1,p2 = st.columns(2)
+            with p1:
+                st.markdown(f"**{result['home']}**")
+                st.dataframe(
+                    pd.DataFrame(result["player_home"], columns=["Note moyenne","Joueur","Matchs"]),
+                    use_container_width=True, hide_index=True
+                )
+            with p2:
+                st.markdown(f"**{result['away']}**")
+                st.dataframe(
+                    pd.DataFrame(result["player_away"], columns=["Note moyenne","Joueur","Matchs"]),
+                    use_container_width=True, hide_index=True
+                )
+            st.caption(f"Appels de statistiques joueurs utilisés : {result['player_calls']}")
+
+        st.subheader("🤝 Face-à-face")
+        h2h_rows = []
+        for x in result["h2h"][:10]:
+            gh,ga = fixture_score(x)
+            h2h_rows.append({
+                "Date": str(val(x,"fixture","date",default=""))[:10],
+                "Match": fixture_name(x),
+                "Score": f"{gh}-{ga}" if gh is not None else "N/D",
+                "Compétition": val(x,"league","name",default="")
+            })
+        if h2h_rows:
+            st.dataframe(pd.DataFrame(h2h_rows), use_container_width=True, hide_index=True)
+        else:
+            st.caption("Pas assez de H2H disponible.")
+
+        st.subheader("💰 Cotes 1X2 détectées")
+        oh,od,oa = result["odds"]
+        st.write({
+            "1": oh if oh else "N/D",
+            "X": od if od else "N/D",
+            "2": oa if oa else "N/D"
+        })
+
+        if result["api_prediction"]:
+            ap = result["api_prediction"]
+            st.subheader("🧠 Prévision API-FOOTBALL")
+            st.write(
+                f"Conseil API : **{val(ap,'advice',default='N/D')}** • "
+                f"Score estimé : **{val(ap,'goals','home',default='?')}-{val(ap,'goals','away',default='?')}**"
             )
 
-except RuntimeError as exc:
-    st.error(str(exc))
+        st.caption(
+            f"Qualité des données disponibles pour ce match : {pct(result['quality'])}. "
+            "Un pourcentage élevé ne signifie pas que le résultat est garanti."
+        )
 
-except Exception as exc:
-    st.error(
-        "Une erreur inattendue est survenue."
-    )
-    st.code(
-        str(exc),
-        language="text",
-    )
-
+with tab2:
+    d = st.date_input("Date à charger", value=date.today(), key="calendar_date")
+    if st.button("📅 Charger les matchs", use_container_width=True):
+        with st.spinner("Chargement..."):
+            try:
+                rows = find_fixtures_by_date(api, d)
+                rows = [
+                    x for x in rows
+                    if val(x,"fixture","status","short") not in ("CANC","PST","ABD")
+                ]
+                if not rows:
+                    st.warning("Aucun match disponible pour cette date avec cette API.")
+                else:
+                    data = []
+                    for x in rows:
+                        data.append({
+                            "ID": val(x,"fixture","id"),
+                            "Heure": str(val(x,"fixture","date","",default=""))[-14:-9],
+                            "Compétition": val(x,"league","name"),
+                            "Domicile": val(x,"teams","home","name"),
+                            "Extérieur": val(x,"teams","away","name"),
+                            "Statut": val(x,"fixture","status","short")
+                        })
+                    st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
+                    st.caption("Copie l'ID du match dans l'onglet « Analyser un match » pour lancer l'analyse détaillée.")
+            except Exception as e:
+                st.error(str(e))
 
 st.divider()
-
-st.markdown(
-    """
-### ℹ️ Données non disponibles avec l'API de base
-
-Football-Data.org fournit notamment les matchs, résultats et classements,
-mais les **blessures**, **cotes bookmakers**, **H2H détaillé** et plusieurs
-statistiques avancées ne sont pas inclus dans la couverture gratuite de base.
-
-L'application ne les invente pas : elle affiche uniquement les données
-réellement reçues de l'API.
-"""
-)
-
-st.caption(
-    "Rodrigue Pro Football AI • Probabilités statistiques, pas garantie de gain."
-)
+st.caption("Rodrigue Pro Football AI • Données fournies par API-FOOTBALL • Modèle probabiliste, sans garantie de résultat.")
