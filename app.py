@@ -113,7 +113,6 @@ class APIFootball:
             raise RuntimeError(f"HTTP {r.status_code}: {data}")
         errors = data.get("errors")
         if errors:
-            # API-FOOTBALL peut renvoyer une erreur sous forme de dict ou liste.
             raise RuntimeError(f"API-FOOTBALL: {errors}")
         return data
 
@@ -207,7 +206,6 @@ def weighted_form(form_rows):
     ga = sum(r["ga"] * w for r, w in zip(form_rows, weights))
     pts = sum((3 if r["result"]=="W" else 1 if r["result"]=="D" else 0) * w
               for r, w in zip(form_rows, weights))
-    # Base conversion around 1.35 goals per team per match.
     attack = clamp(gf / 1.35, .35, 2.2)
     defense = clamp(1.35 / max(.25, ga), .35, 2.2)
     return {"ppg": pts, "gf": gf, "ga": ga, "attack": attack, "def": defense}
@@ -230,7 +228,6 @@ def poisson_matrix(lh, la, max_goals=7):
     for h in range(max_goals+1):
         for a in range(max_goals+1):
             mat[h, a] = poisson_pmf(h, lh) * poisson_pmf(a, la)
-    # Tail above max_goals is tiny for normal football lambdas.
     return mat / mat.sum()
 
 def markets_from_matrix(mat):
@@ -266,27 +263,22 @@ def exact_scores(mat, topn=15):
 def infer_lambdas(home_stats, away_stats, home_form, away_form, h2h,
                   home_injuries, away_injuries, api_prediction=None,
                   home_odds=None, away_odds=None):
-    # Start with league/team scoring base.
     hg = stat_percent(home_stats, ["goals", "for", "average", "home"], 1.45)
     ag = stat_percent(away_stats, ["goals", "for", "average", "away"], 1.15)
     hga = stat_percent(home_stats, ["goals", "against", "average", "home"], 1.10)
     aga = stat_percent(away_stats, ["goals", "against", "average", "away"], 1.25)
 
-    # API stats sometimes use all instead of home/away.
     if hg <= .05: hg = stat_percent(home_stats, ["goals","for","average","all"], 1.45)
     if ag <= .05: ag = stat_percent(away_stats, ["goals","for","average","all"], 1.15)
     if hga <= .05: hga = stat_percent(home_stats, ["goals","against","average","all"], 1.10)
     if aga <= .05: aga = stat_percent(away_stats, ["goals","against","average","all"], 1.25)
 
-    # Form blend.
     lh = 0.52 * hg + 0.23 * home_form["gf"] + 0.25 * aga
     la = 0.52 * ag + 0.23 * away_form["gf"] + 0.25 * hga
 
-    # Defensive opponent adjustment.
     lh *= (0.82 + 0.18 * clamp(home_form["attack"], .5, 1.7))
     la *= (0.82 + 0.18 * clamp(away_form["attack"], .5, 1.7))
 
-    # H2H only gets a low weight; it must not dominate current form.
     h2h_rows = []
     for f in h2h:
         if val(f,"fixture","status","short") not in ("FT","AET","PEN"):
@@ -297,43 +289,34 @@ def infer_lambdas(home_stats, away_stats, home_form, away_form, h2h,
     if h2h_rows:
         hh = np.mean([x[0] for x in h2h_rows[-5:]])
         ha = np.mean([x[1] for x in h2h_rows[-5:]])
-        # h2h ordering follows fixture home/away, not necessarily current sides.
         lh = .92*lh + .08*max(.2, hh)
         la = .92*la + .08*max(.2, ha)
 
-    # Injuries: penalize only when there is usable injury data.
     def injury_factor(rows):
         factor = 1.0
         for x in rows:
-            reason = str(val(x,"player","type",default="")).lower()
-            # Injury/suspension data does not always contain player importance.
             factor -= 0.025
         return clamp(factor, .75, 1.0)
 
     lh *= injury_factor(home_injuries)
     la *= injury_factor(away_injuries)
 
-    # Home advantage.
     lh *= 1.07
     la *= 0.96
 
-    # Optional bookmaker anchor: low weight, never overrides model.
     if home_odds and away_odds and home_odds > 1 and away_odds > 1:
         qh, qa = 1/home_odds, 1/away_odds
         s = qh + qa
         qh, qa = qh/s, qa/s
-        # Shift expected goals slightly toward market direction.
         total = lh + la
         lh = .90*lh + .10*total*qh
         la = .90*la + .10*total*qa
 
-    # Optional API prediction anchor.
     if api_prediction:
         p = api_prediction
         ph = safe_float(val(p,"percent","home",default=0))/100
         pa = safe_float(val(p,"percent","away",default=0))/100
         if ph > 0 and pa > 0:
-            # Mild directional correction only.
             if ph > pa:
                 lh *= 1.025
                 la *= .985
@@ -344,11 +327,9 @@ def infer_lambdas(home_stats, away_stats, home_form, away_form, h2h,
     return clamp(lh, .15, 4.2), clamp(la, .15, 4.0)
 
 def half_time_matrix(lh, la):
-    # Empirical first-half share. Kept conservative to avoid fake precision.
     return poisson_matrix(lh * .44, la * .44, 6)
 
 def confidence_from_data(data_quality, edge, dispersion):
-    # "confidence" is a model quality score, not a guarantee of winning.
     score = 55 + 25*data_quality + 18*clamp(edge,0,.5) - 12*clamp(dispersion,0,.5)
     return clamp(score/100, .50, .97)
 
@@ -378,7 +359,6 @@ def fetch_odds(api, fixture_id):
 
 # ----------------------------- Player form -----------------------------
 def player_form_summary(api, team_id, fixtures, max_matches=3):
-    # Optional, deliberately capped because player stats are expensive API calls.
     ratings = defaultdict(list)
     names = {}
     used = 0
@@ -408,12 +388,6 @@ def player_form_summary(api, team_id, fixtures, max_matches=3):
     return result[:10], used
 
 # ----------------------------- Fixture lookup -----------------------------
-def find_teams(api, query):
-    try:
-        return response_data(api.get("/teams", {"search": query}))
-    except Exception:
-        return []
-
 def find_fixtures_by_date(api, d):
     try:
         return response_data(api.get("/fixtures", {
@@ -450,14 +424,12 @@ def analyze_fixture(api, f, season, analyze_players=False):
     h2h = get_h2h(api, hid, aid, 10)
 
     hi = get_injuries(api, fixture_id=fixture_id)
-    # If fixture-specific injury data is unavailable, try team+league fallback.
     if not hi:
         hi = get_injuries(api, league_id=league_id, season=season, team_id=hid)
     ai = []
     if not hi:
         ai = get_injuries(api, league_id=league_id, season=season, team_id=aid)
     else:
-        # Split fixture injury response by team.
         hi = [x for x in hi if val(x,"team","id") == hid]
         ai = [x for x in get_injuries(api, fixture_id=fixture_id) if val(x,"team","id") == aid]
 
@@ -484,7 +456,6 @@ def analyze_fixture(api, f, season, analyze_players=False):
     scores = exact_scores(mat, 15)
     ht_scores = exact_scores(htmat, 8)
 
-    # HT/FT matrix = product of HT outcome and 2nd-half outcome approximation.
     second = poisson_matrix(lh*.56, la*.56)
     hm = markets_from_matrix(htmat)
     sm = markets_from_matrix(second)
@@ -495,12 +466,10 @@ def analyze_fixture(api, f, season, analyze_players=False):
     }
     htft = normalize_probs(htft)
 
-    # "HT draw then a winner in second half" combined probability.
     draw_ht_winner_2h = hm["X"] * (sm["1"] + sm["2"])
     ht_draw_home = hm["X"] * sm["1"]
     ht_draw_away = hm["X"] * sm["2"]
 
-    # Data-quality score.
     components = [
         bool(hf), bool(af), bool(hs), bool(ass),
         bool(h2h), bool(api_pred), bool(odds), bool(hi or ai)
@@ -510,7 +479,6 @@ def analyze_fixture(api, f, season, analyze_players=False):
     top = max(markets, key=markets.get)
     confidence = confidence_from_data(quality, markets[top]-1/3, dispersion)
 
-    # Strong picks are selected by probability, with a floor to avoid fake 90%.
     ranked = sorted(markets.items(), key=lambda kv: kv[1], reverse=True)
     strong = [(k,v) for k,v in ranked if v >= .62][:10]
 
@@ -572,7 +540,6 @@ if not api_key:
 
 api = APIFootball(api_key)
 
-# Test key + quota
 try:
     status = api.get("/status")
     st.sidebar.success("API connectée")
@@ -586,47 +553,55 @@ tab1, tab2 = st.tabs(["🔎 Analyser un match", "📅 Matchs par date"])
 with tab1:
     c1, c2 = st.columns([1,1])
     with c1:
-        fixture_id_text = st.text_input("ID du match (optionnel)", placeholder="Ex: 1234567")
+        fixture_id_text = st.text_input("ID du match (optionnel - conseillé si le nom bloque)", placeholder="Ex: 1557381")
     with c2:
         date_match = st.date_input("Date du match", value=date.today())
 
     b1, b2 = st.columns([1,1])
     with b1:
-        home_query = st.text_input("Équipe domicile", placeholder="Ex: Barcelona")
+        home_query = st.text_input("Équipe domicile", placeholder="Ex: AC Milan ou Milan")
     with b2:
-        away_query = st.text_input("Équipe extérieure", placeholder="Ex: Real Madrid")
+        away_query = st.text_input("Équipe extérieure", placeholder="Ex: Venezia")
 
     fixture = None
 
+    # 1. Priorité absolue à l'ID si l'utilisateur le renseigne
     if fixture_id_text.strip().isdigit():
         try:
-            fixture = get_fixture(api, int(fixture_id_text.strip()))
+            with st.spinner("Récupération directe du match par son ID..."):
+                fixture = get_fixture(api, int(fixture_id_text.strip()))
         except Exception as e:
             st.error(str(e))
 
-    if fixture is None and home_query and away_query:
-        with st.spinner("Recherche du match..."):
+    # 2. Sinon, recherche automatique par date et filtrage intelligent (partiel / insensible à la casse)
+    if fixture is None and (home_query or away_query):
+        with st.spinner("Recherche du match dans l'API..."):
             fixtures = find_fixtures_by_date(api, date_match)
-        candidates = [
-            x for x in fixtures
-            if home_query.lower() in val(x,"teams","home","name",default="").lower()
-            and away_query.lower() in val(x,"teams","away","name",default="").lower()
-        ]
-        if not candidates:
-            candidates = [
-                x for x in fixtures
-                if (home_query.lower() in fixture_name(x).lower()
-                    and away_query.lower() in fixture_name(x).lower())
-            ]
-        if candidates:
-            labels = [f"{fixture_name(x)} | ID {val(x,'fixture','id')} | {val(x,'league','name')}" for x in candidates]
-            choice = st.selectbox("Match trouvé", range(len(candidates)), format_func=lambda i: labels[i])
-            fixture = candidates[choice]
-        else:
-            st.info("Aucun match correspondant à cette date et à ces deux équipes.")
+            
+            candidates = []
+            hq = home_query.lower().strip()
+            aq = away_query.lower().strip()
+            
+            for x in fixtures:
+                h_name = val(x,"teams","home","name",default="").lower()
+                a_name = val(x,"teams","away","name",default="").lower()
+                
+                # Vérifie si les morceaux saisis correspondent aux noms officiels
+                match_home = (hq in h_name) if hq else True
+                match_away = (aq in a_name) if aq else True
+                
+                if match_home and match_away and (hq or aq):
+                    candidates.append(x)
+
+            if candidates:
+                labels = [f"{fixture_name(x)} | ID {val(x,'fixture','id')} | {val(x,'league','name')}" for x in candidates]
+                choice = st.selectbox("Match trouvé (Sélectionne le bon)", range(len(candidates)), format_func=lambda i: labels[i])
+                fixture = candidates[choice]
+            else:
+                st.info("Aucun match trouvé avec ces critères exacts à cette date. Essaie de mettre l'ID direct ou vérifie l'orthographe.")
 
     if fixture is not None:
-        st.success(f"Match sélectionné : {fixture_name(fixture)}")
+        st.success(f"Match sélectionné : {fixture_name(fixture)} (ID: {val(fixture,'fixture','id')})")
         if st.button("🚀 LANCER L'ANALYSE COMPLÈTE", type="primary", use_container_width=True):
             with st.spinner("Récupération des statistiques et calcul des marchés..."):
                 try:
