@@ -111,14 +111,13 @@ def get_live_matches(competitions_list):
     if not competitions_list:
         return []
     today_str = datetime.now(TZ).date().isoformat()
-    comps_str = ",".join(competitions_list)
     try:
-        data = api_get("/matches", {"dateFrom": today_str, "dateTo": today_str, "competitions": comps_str})
+        data = api_get("/matches", {"dateFrom": today_str, "dateTo": today_str})
         matches = data.get("matches", [])
-        live_statuses = ["LIVE", "IN_PLAY", "PAUSED", "HT"]
-        return [m for m in matches if m.get("status") in live_statuses or m.get("score", {}).get("duration") == "REGULAR"]
+        filtered = [m for m in matches if m.get("competition", {}).get("code") in competitions_list]
+        live_statuses = ["LIVE", "IN_PLAY", "PAUSED", "HT", "SCHEDULED", "TIMED"]
+        return [m for m in filtered if m.get("status") in live_statuses]
     except Exception:
-        data = api_get("/matches", {"status": "SCHEDULED", "competitions": comps_str})
         return []
 
 
