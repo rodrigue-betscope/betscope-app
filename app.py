@@ -1716,7 +1716,7 @@ else:
     if not fixtures:
 
         st.warning(
-            "Aucun match trouvé (ou restriction de l'API par date). Utilise plutôt le Fixture ID dans la barre latérale."
+            "Aucun match trouvé."
         )
 
         st.stop()
