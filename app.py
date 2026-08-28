@@ -1088,6 +1088,8 @@ def build_prediction(
         else recent_a_ga
     )
 
+    # Pondération statistiques saison + forme récente.
+
     home_attack = (
         0.68 * home_attack
         + 0.32 * recent_h_gf
@@ -1107,6 +1109,8 @@ def build_prediction(
         0.68 * away_defence
         + 0.32 * recent_a_ga
     )
+
+    # Modèle attaque/défense.
 
     lambda_home = (
 
@@ -1134,9 +1138,13 @@ def build_prediction(
         0.25 * 1.10
     )
 
+    # Avantage terrain.
+
     lambda_home *= 1.06
 
     lambda_away *= 0.97
+
+    # H2H à faible pondération.
 
     h2h_home, h2h_away = (
         h2h_average(
@@ -1164,6 +1172,8 @@ def build_prediction(
             + 0.08 * h2h_away
         )
 
+    # Blessures / suspensions.
+
     home_penalty = injury_penalty(
         home_injuries
     )
@@ -1179,6 +1189,8 @@ def build_prediction(
     lambda_away *= (
         1 - away_penalty
     )
+
+    # Limites de sécurité.
 
     lambda_home = clamp(
         lambda_home,
@@ -1205,6 +1217,7 @@ def build_prediction(
         0.46
     )
 
+    # Qualité des données.
     quality_points = 0
     total_points = 10
 
@@ -1590,7 +1603,7 @@ with st.sidebar:
 
     fixture_id = st.text_input(
         "Fixture ID",
-        placeholder="Exemple : 1035012"
+        placeholder="Exemple : 1234567"
     )
 
     match_date = st.date_input(
@@ -1621,10 +1634,11 @@ if not api_key:
 
 
 # ============================================================
-# CHOIX DU MATCH (SÉCURISÉ & ROBUSTE)
+# CHOIX DU MATCH
 # ============================================================
 
 selected_fixture = None
+
 
 if fixture_id.strip():
 
@@ -1644,10 +1658,6 @@ if fixture_id.strip():
         )
 
         st.stop()
-
-    except RuntimeError as e:
-
-        st.warning(f"Impossible de récupérer ce match via l'ID : {e}")
 
 else:
 
@@ -1706,68 +1716,70 @@ else:
     if not fixtures:
 
         st.warning(
-            "⚠️ Aucun match trouvé pour cette date via l'API. "
-            "Entre un **Fixture ID** valide dans la barre latérale pour charger un match directement."
+            "Aucun match trouvé (ou restriction de l'API par date). Utilise plutôt le Fixture ID dans la barre latérale."
         )
 
         st.stop()
 
-    if fixtures and not selected_fixture:
-        choices = []
+    choices = []
 
-        for f in fixtures:
+    for f in fixtures:
 
-            teams = f.get(
-                "teams",
-                {}
-            )
-
-            league = f.get(
-                "league",
-                {}
-            )
-
-            home = teams.get(
-                "home",
-                {}
-            ).get(
-                "name",
-                "?"
-            )
-
-            away = teams.get(
-                "away",
-                {}
-            ).get(
-                "name",
-                "?"
-            )
-
-            choices.append(
-                f'{f.get("fixture", {}).get("id")} | '
-                f'{home} vs {away} | '
-                f'{league.get("name", "")}'
-            )
-
-        choice = st.selectbox(
-            "Match réel",
-            choices
+        teams = f.get(
+            "teams",
+            {}
         )
 
-        selected_id = int(
-            choice.split(
-                " | ",
-                1
-            )[0]
+        league = f.get(
+            "league",
+            {}
         )
 
-        selected_fixture = get_fixture(
-            api_key,
-            selected_id
+        home = teams.get(
+            "home",
+            {}
+        ).get(
+            "name",
+            "?"
         )
+
+        away = teams.get(
+            "away",
+            {}
+        ).get(
+            "name",
+            "?"
+        )
+
+        choices.append(
+            f'{f.get("fixture", {}).get("id")} | '
+            f'{home} vs {away} | '
+            f'{league.get("name", "")}'
+        )
+
+    choice = st.selectbox(
+        "Match réel",
+        choices
+    )
+
+    selected_id = int(
+        choice.split(
+            " | ",
+            1
+        )[0]
+    )
+
+    selected_fixture = get_fixture(
+        api_key,
+        selected_id
+    )
 
 
 if not selected_fixture:
+
+    st.error(
+        "Match introuvable."
+    )
 
     st.stop()
 
@@ -2008,6 +2020,10 @@ if st.button(
             )
 
 
+        # ====================================================
+        # RÉSULTAT PRINCIPAL
+        # ====================================================
+
         st.success(
             "✅ Analyse terminée"
         )
@@ -2065,6 +2081,10 @@ if st.button(
         )
 
 
+        # ====================================================
+        # MEILLEURS MARCHÉS
+        # ====================================================
+
         st.markdown(
             "## ⭐ MARCHÉS LES PLUS PROBABLES"
         )
@@ -2096,6 +2116,10 @@ if st.button(
             use_container_width=True
         )
 
+
+        # ====================================================
+        # DOUBLE CHANCE
+        # ====================================================
 
         st.markdown(
             "## 🛡️ DOUBLE CHANCE"
@@ -2142,6 +2166,10 @@ if st.button(
         )
 
 
+        # ====================================================
+        # OVER UNDER
+        # ====================================================
+
         st.markdown(
             "## ⚽ OVER / UNDER"
         )
@@ -2184,6 +2212,10 @@ if st.button(
         )
 
 
+        # ====================================================
+        # BTTS
+        # ====================================================
+
         st.markdown(
             "## 🥅 BTTS"
         )
@@ -2222,6 +2254,10 @@ if st.button(
             )
         )
 
+
+        # ====================================================
+        # MI-TEMPS
+        # ====================================================
 
         st.markdown(
             "## ⏱️ MI-TEMPS"
@@ -2273,6 +2309,10 @@ if st.button(
         )
 
 
+        # ====================================================
+        # HT / FT
+        # ====================================================
+
         st.markdown(
             "## 🔥 HT / FT"
         )
@@ -2313,6 +2353,10 @@ if st.button(
         )
 
 
+        # ====================================================
+        # SCORES EXACTS
+        # ====================================================
+
         st.markdown(
             "## 🎯 SCORES EXACTS"
         )
@@ -2350,6 +2394,10 @@ if st.button(
             f"{percent(exact[0][1])}**"
         )
 
+
+        # ====================================================
+        # FORME
+        # ====================================================
 
         st.markdown(
             "## 📈 FORME RÉCENTE"
@@ -2409,6 +2457,10 @@ if st.button(
                     use_container_width=True
                 )
 
+
+        # ====================================================
+        # ABSENCES
+        # ====================================================
 
         st.markdown(
             "## 🚑 BLESSURES / ABSENCES"
@@ -2507,6 +2559,10 @@ if st.button(
                 )
 
 
+        # ====================================================
+        # H2H
+        # ====================================================
+
         st.markdown(
             "## 🤝 H2H"
         )
@@ -2576,6 +2632,10 @@ if st.button(
             )
 
 
+        # ====================================================
+        # PRÉDICTION API
+        # ====================================================
+
         if api_prediction:
 
             st.markdown(
@@ -2633,6 +2693,7 @@ if st.button(
                     advice
                 )
 
+
             under_over = (
                 api_prediction
                 .get(
@@ -2647,6 +2708,10 @@ if st.button(
                     under_over
                 )
 
+
+        # ====================================================
+        # COTES
+        # ====================================================
 
         if odds:
 
@@ -2715,12 +2780,18 @@ if st.button(
                 )
 
 
+        # ====================================================
+        # SYNTHÈSE
+        # ====================================================
+
         st.markdown(
             "## 🧠 SYNTHÈSE FINALE"
         )
 
         best_market = ranked[0]
+
         best_exact = exact[0]
+
         best_htft = htft[0]
 
         st.info(
