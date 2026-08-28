@@ -1603,7 +1603,7 @@ with st.sidebar:
 
     fixture_id = st.text_input(
         "Fixture ID",
-        placeholder="Exemple : 1234567"
+        placeholder="Exemple : 1035012"
     )
 
     match_date = st.date_input(
@@ -1634,7 +1634,7 @@ if not api_key:
 
 
 # ============================================================
-# CHOIX DU MATCH (SÉCURISÉ AVEC CONTOURNEMENT FIXTURE ID)
+# CHOIX DU MATCH (SÉCURISÉ & CONTOURNEMENT AUTOMATIQUE)
 # ============================================================
 
 selected_fixture = None
@@ -1714,72 +1714,82 @@ else:
 
     if not fixtures:
 
+        # Secours automatique pour éviter le blocage total si l'API ne renvoie rien pour la date
         st.warning(
-            "⚠️ Aucun match trouvé pour cette date par l'API. "
-            "Entre directement un **Fixture ID** dans la barre latérale à gauche "
-            "pour charger le match instantanément."
+            "⚠️ Aucun match trouvé pour cette date via l'API (assure-toi d'utiliser une clé valide sur **API-Football / API-Sports** et non football-data.org). "
+            "Tu peux entrer directement un **Fixture ID** valide ci-contre (ex: 592874) ou changer la date."
+        )
+        
+        # Champ de secours direct dans la page principale pour forcer un ID si besoin
+        fallback_id = st.text_input("Ou entre un Fixture ID de secours ici pour continuer :", value="")
+        if fallback_id.strip():
+            try:
+                selected_fixture = get_fixture(api_key, int(fallback_id.strip()))
+            except Exception:
+                pass
+
+        if not selected_fixture:
+            st.stop()
+
+    if fixtures and not selected_fixture:
+        choices = []
+
+        for f in fixtures:
+
+            teams = f.get(
+                "teams",
+                {}
+            )
+
+            league = f.get(
+                "league",
+                {}
+            )
+
+            home = teams.get(
+                "home",
+                {}
+            ).get(
+                "name",
+                "?"
+            )
+
+            away = teams.get(
+                "away",
+                {}
+            ).get(
+                "name",
+                "?"
+            )
+
+            choices.append(
+                f'{f.get("fixture", {}).get("id")} | '
+                f'{home} vs {away} | '
+                f'{league.get("name", "")}'
+            )
+
+        choice = st.selectbox(
+            "Match réel",
+            choices
         )
 
-        st.stop()
-
-    choices = []
-
-    for f in fixtures:
-
-        teams = f.get(
-            "teams",
-            {}
+        selected_id = int(
+            choice.split(
+                " | ",
+                1
+            )[0]
         )
 
-        league = f.get(
-            "league",
-            {}
+        selected_fixture = get_fixture(
+            api_key,
+            selected_id
         )
-
-        home = teams.get(
-            "home",
-            {}
-        ).get(
-            "name",
-            "?"
-        )
-
-        away = teams.get(
-            "away",
-            {}
-        ).get(
-            "name",
-            "?"
-        )
-
-        choices.append(
-            f'{f.get("fixture", {}).get("id")} | '
-            f'{home} vs {away} | '
-            f'{league.get("name", "")}'
-        )
-
-    choice = st.selectbox(
-        "Match réel",
-        choices
-    )
-
-    selected_id = int(
-        choice.split(
-            " | ",
-            1
-        )[0]
-    )
-
-    selected_fixture = get_fixture(
-        api_key,
-        selected_id
-    )
 
 
 if not selected_fixture:
 
     st.error(
-        "Match introuvable. Vérifie ton Fixture ID."
+        "Match introuvable. Vérifie ton Fixture ID ou ta clé API-Football."
     )
 
     st.stop()
