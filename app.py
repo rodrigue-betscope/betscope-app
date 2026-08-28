@@ -1634,11 +1634,10 @@ if not api_key:
 
 
 # ============================================================
-# CHOIX DU MATCH
+# CHOIX DU MATCH (SÉCURISÉ AVEC CONTOURNEMENT FIXTURE ID)
 # ============================================================
 
 selected_fixture = None
-
 
 if fixture_id.strip():
 
@@ -1716,7 +1715,9 @@ else:
     if not fixtures:
 
         st.warning(
-            "Aucun match trouvé."
+            "⚠️ Aucun match trouvé pour cette date par l'API. "
+            "Entre directement un **Fixture ID** dans la barre latérale à gauche "
+            "pour charger le match instantanément."
         )
 
         st.stop()
@@ -1778,7 +1779,7 @@ else:
 if not selected_fixture:
 
     st.error(
-        "Match introuvable."
+        "Match introuvable. Vérifie ton Fixture ID."
     )
 
     st.stop()
