@@ -50,6 +50,13 @@ st.markdown("""
 .pred {font-size: 1.45rem; font-weight: 800;}
 .good {font-weight: 800;}
 .small {font-size: .86rem;}
+.match-card {
+    background-color: #1e2530;
+    border: 1px solid #2d3748;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -565,7 +572,6 @@ with tab1:
 
     fixture = None
 
-    # 1. Priorité absolue à l'ID si l'utilisateur le renseigne
     if fixture_id_text.strip().isdigit():
         try:
             with st.spinner("Récupération directe du match par son ID..."):
@@ -573,7 +579,6 @@ with tab1:
         except Exception as e:
             st.error(str(e))
 
-    # 2. Sinon, recherche automatique par date et filtrage intelligent (partiel / insensible à la casse)
     if fixture is None and (home_query or away_query):
         with st.spinner("Recherche du match dans l'API..."):
             fixtures = find_fixtures_by_date(api, date_match)
@@ -586,7 +591,6 @@ with tab1:
                 h_name = val(x,"teams","home","name",default="").lower()
                 a_name = val(x,"teams","away","name",default="").lower()
                 
-                # Vérifie si les morceaux saisis correspondent aux noms officiels
                 match_home = (hq in h_name) if hq else True
                 match_away = (aq in a_name) if aq else True
                 
@@ -757,7 +761,7 @@ with tab1:
             )
 
         st.caption(
-            f"Qualité des données disponibles pour ce match : {pct(result['quality'])}. "
+            f"Qualité des données disponibles pour este match : {pct(result['quality'])}. "
             "Un pourcentage élevé ne signifie pas que le résultat est garanti."
         )
 
@@ -774,18 +778,25 @@ with tab2:
                 if not rows:
                     st.warning("Aucun match disponible pour cette date avec cette API.")
                 else:
-                    data = []
+                    st.success(f"{len(rows)} match(s) trouvé(s).")
                     for x in rows:
-                        data.append({
-                            "ID": val(x,"fixture","id"),
-                            "Heure": str(val(x,"fixture","date","",default=""))[-14:-9],
-                            "Compétition": val(x,"league","name"),
-                            "Domicile": val(x,"teams","home","name"),
-                            "Extérieur": val(x,"teams","away","name"),
-                            "Statut": val(x,"fixture","status","short")
-                        })
-                    st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
-                    st.caption("Copie l'ID du match dans l'onglet « Analyser un match » pour lancer l'analyse détaillée.")
+                        fixture_id = val(x, "fixture", "id")
+                        time_str = str(val(x, "fixture", "date", default=""))[-14:-9]
+                        league = val(x, "league", "name", default="Compétition")
+                        home = val(x, "teams", "home", "name", default="Domicile")
+                        away = val(x, "teams", "away", "name", default="Extérieur")
+                        status_short = val(x, "fixture", "status", "short", default="")
+
+                        # Affichage sous forme de carte propre et verticale sur mobile
+                        st.markdown(f"""
+                        <div class="match-card">
+                            <b>🏆 {league}</b> ({time_str} • Statut: {status_short})<br>
+                            🏠 <b>{home}</b> vs ✈️ <b>{away}</b><br>
+                            🆔 <b>ID du match : <code>{fixture_id}</code></b>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                    st.caption("Copie l'ID du match ci-dessus et colle-le dans l'onglet « Analyser un match ».")
             except Exception as e:
                 st.error(str(e))
 
