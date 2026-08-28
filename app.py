@@ -93,7 +93,11 @@ def api_get(endpoint, params=None, retry=True):
 def get_matches_for_period(start_date, end_date, competitions_list, status_filter=None):
     if not competitions_list:
         return []
-    comps_str = ",".join(competitions_list)
+    cleaned_comps = [c for c in competitions_list if c != "CLI_ASIA"]
+    if not cleaned_comps:
+        cleaned_comps = ["PL", "BL1", "SA", "PD"]
+        
+    comps_str = ",".join(cleaned_comps)
     params = {
         "dateFrom": start_date,
         "dateTo": end_date,
