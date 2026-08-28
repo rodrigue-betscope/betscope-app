@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI (Version Blindée)
+# RODRIGUE PRO FOOTBALL AI (Version Blindée & Recherche Corrigée)
 # ============================================================
 
 import os
@@ -635,7 +635,7 @@ with st.sidebar:
     st.header("🎯 MATCH")
     fixture_id = st.text_input("Fixture ID", placeholder="Exemple : 1234567")
     match_date = st.date_input("Date du match", value=datetime.now().date())
-    team_search = st.text_input("Ou recherche par équipe", placeholder="Exemple : Real Madrid")
+    team_search = st.text_input("Ou recherche par équipe", placeholder="Exemple : Santander ou Elche")
     score_count = st.slider("Scores exacts affichés", 5, 20, 10)
 
 if not api_key:
@@ -655,15 +655,23 @@ else:
         fixtures = search_matches(api_key, match_date.isoformat())
 
     if team_search.strip() and isinstance(fixtures, list):
-        query = team_search.strip().lower()
+        raw_query = team_search.strip().lower()
+        query_parts = [q.strip() for q in raw_query.replace(" vs ", "v").split("v")]
+        
         filtered = []
         for f in fixtures:
             if not isinstance(f, dict):
                 continue
             teams = f.get("teams", {})
-            home = teams.get("home", {}).get("name", "")
-            away = teams.get("away", {}).get("name", "")
-            if query in home.lower() or query in away.lower():
+            home = teams.get("home", {}).get("name", "").lower()
+            away = teams.get("away", {}).get("name", "").lower()
+            
+            match_found = False
+            for part in query_parts:
+                if part and (part in home or part in away):
+                    match_found = True
+                    break
+            if match_found or raw_query in home or raw_query in away:
                 filtered.append(f)
         fixtures = filtered
 
