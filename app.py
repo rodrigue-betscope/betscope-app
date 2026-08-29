@@ -1,9 +1,8 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - FOOTBALL-DATA.ORG V5
+# RODRIGUE PRO FOOTBALL AI - FOOTBALL-DATA.ORG V4 (FIXED)
 # ============================================================
 
 import math
-import time
 from datetime import date, timedelta
 
 import numpy as np
@@ -36,29 +35,6 @@ COMPETITIONS = {
 }
 
 OUTCOMES = ("1", "X", "2")
-
-EVENT_CATALOG = [
-    "Accélération", "Duel aérien", "Assister", "Ball out", "Autorisation",
-    "Corner", "Contre-attaque", "Récupération par contrepoids", "Coéquipier de couverture",
-    "Croix", "Croix profonde achevée", "Complétion profonde", "Duel défensif",
-    "Positionnement défensif", "Dribble", "Dribbler devant", "Duel", "Fair-play",
-    "Faute", "Faute subie", "Coup franc", "Centre de coup de franc", "Interruption du jeu",
-    "But", "But encaissé", "Coup de pied de but", "Le gardien de but quitte la ligne",
-    "Handball", "Passe de main", "Passe de tête", "Interception", "Carte d'accès",
-    "Faute de carton en fin de match", "Jeu en réseau", "Long col", "Duel de balle libre",
-    "Perte", "Balle manquée", "Non-ball", "Mouvements sans ballon", "Duel offensif",
-    "Hors-jeu", "Opportunité", "Faute hors jeu", "But contre son camp", "Passer",
-    "Passage dans le dernier tiers", "Passe dans la surface de réparation", "Faute de pénalité",
-    "Penalty", "Duel pressant", "Passage progressif", "Course progressive",
-    "Protestation déloyale", "Récupération", "Carton rouge", "Les réflexes sauvent",
-    "Sauvegarder", "Deuxième passe décisive", "Coups de pied arrêtés", "Passage court/moyen",
-    "Tir", "Tir après corner", "Tir contré (Tentative d'arrêt)", "Passe décisive",
-    "Simulation ratée", "Palan coulissant", "Passe intelligente", "Troisième passe décisive",
-    "Passage", "Ajouter", "Temps perdu", "Touche", "Toucher dans la boîte", "Transition",
-    "Violent et immonde", "Carton jaune",
-]
-METRIC_CATALOG = ["Progression de la balle", "Intensité du défi", "Métriques au niveau du match", "PPDA", "Métriques physiques", "Statistiques des joueurs", "Index Wyscout"]
-CONCEPT_CATALOG = ["Attaque", "Possession du ballon", "Minutes jouées", "Coordonnées de terrain", "Rapports des joueurs", "Ajusté en fonction de la possession", "xG"]
 
 def _num(v):
     if v is None or isinstance(v, bool): return None
@@ -133,7 +109,7 @@ class FootballDataAPI:
         if r.status_code == 403:
             raise RuntimeError("Accès refusé : cette ressource ou compétition n'est pas comprise dans ton plan.")
         if r.status_code == 429:
-            raise RuntimeError("Limite API atteinte. Attends une minute avant de relancer.")
+            raise RuntimeError("Limite API atteinte (10 requêtes/minute). Attends une minute.")
         if not r.ok:
             try:
                 detail = r.json()
@@ -172,48 +148,23 @@ def fetch_matches(token, date_from, date_to, competition_codes):
     return data.get("matches", [])
 
 
-@st.cache_data(ttl=900, show_spinner=False)
-def fetch_finished_history(token, date_from_str, date_to_str, competition_codes):
-    api = FootballDataAPI(token)
-    d_from = date.fromisoformat(date_from_str)
-    d_to = date.fromisoformat(date_to_str)
-    
-    all_matches = []
-    current_to = d_to
-    
-    while current_to > d_from:
-        current_from = max(d_from, current_to - timedelta(days=9))
-        data = api.get(
-            "/matches",
-            params={
-                "dateFrom": current_from.isoformat(),
-                "dateTo": current_to.isoformat(),
-                "competitions": ",".join(competition_codes),
-                "status": "FINISHED",
-                "limit": 100,
-            },
-        )
-        all_matches.extend(data.get("matches", []))
-        current_to = current_from - timedelta(days=1)
-        time.sleep(0.4)
-        
-    return all_matches
-
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_team_matches(token, team_id, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    data = api.get(
-        f"/teams/{int(team_id)}/matches",
-        params={
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "competitions": ",".join(competition_codes),
-            "status": "FINISHED",
-            "limit": 100,
-        },
-    )
-    return data.get("matches", [])
+    try:
+        data = api.get(
+            f"/teams/{int(team_id)}/matches",
+            params={
+                "dateFrom": date_from,
+                "dateTo": date_to,
+                "competitions": ",".join(competition_codes),
+                "status": "FINISHED",
+                "limit": 20,
+            },
+        )
+        return data.get("matches", [])
+    except Exception:
+        return []
 
 
 def match_is_finished(match):
@@ -342,23 +293,13 @@ def calculate_markets(lambda_home, lambda_away):
         "12": p1 + p2,
         "BTTS Oui": pbtts,
         "BTTS Non": 1 - pbtts,
-        "Over 0.5": over(0.5),
-        "Under 0.5": under(0.5),
         "Over 1.5": over(1.5),
         "Under 1.5": under(1.5),
         "Over 2.5": over(2.5),
         "Under 2.5": under(2.5),
         "Over 3.5": over(3.5),
         "Under 3.5": under(3.5),
-        "Over 4.5": over(4.5),
-        "Under 4.5": under(4.5),
-        "BTTS + Over 2.5": sum(float(matrix[h, a]) for h in range(matrix.shape[0]) for a in range(matrix.shape[1]) if h >= 1 and a >= 1 and h + a >= 3),
-        "BTTS + Under 2.5": sum(float(matrix[h, a]) for h in range(matrix.shape[0]) for a in range(matrix.shape[1]) if h >= 1 and a >= 1 and h + a <= 2),
     }
-
-    markets["Over 4.0"] = over(4.0)
-    markets["Under 4.0"] = under(4.0)
-    markets["Exactement 4 buts"] = totals.get(4, 0.0)
 
     scores.sort(key=lambda x: x[1], reverse=True)
     return markets, scores
@@ -430,8 +371,6 @@ def model_prediction(match, home_form, away_form):
         return {
             "status": "INSUFFICIENT",
             "quality": quality,
-            "home_id": match["homeTeam"]["id"],
-            "away_id": match["awayTeam"]["id"],
             "lambda_home": None,
             "lambda_away": None,
             "markets": {},
@@ -446,8 +385,6 @@ def model_prediction(match, home_form, away_form):
     return {
         "status": "OK",
         "quality": quality,
-        "home_id": match["homeTeam"]["id"],
-        "away_id": match["awayTeam"]["id"],
         "lambda_home": lambda_home,
         "lambda_away": lambda_away,
         "markets": markets,
@@ -482,8 +419,7 @@ if not competition_names:
     st.stop()
 
 competition_codes = [COMPETITIONS[name] for name in competition_names]
-
-history_days = st.slider("📊 Historique utilisé", min_value=30, max_value=180, value=120, step=15)
+history_days = st.slider("📊 Historique utilisé (jours)", min_value=30, max_value=180, value=120, step=15)
 
 col1, col2 = st.columns(2)
 with col1:
@@ -524,10 +460,9 @@ if load_button or analyze_button:
             st.stop()
 
         history_from = (selected_date - timedelta(days=history_days)).isoformat()
+        history_to = selected_date.isoformat()
 
-        with st.spinner("Récupération de l'historique et calcul du modèle Poisson..."):
-            history = fetch_finished_history(token, history_from, selected_date.isoformat(), competition_codes)
-
+        with st.spinner("Récupération ciblée de l'historique des équipes et calcul Poisson..."):
             rows = []
             for match in matches:
                 home = match.get("homeTeam", {}) or {}
@@ -535,23 +470,11 @@ if load_button or analyze_button:
                 home_id = home.get("id")
                 away_id = away.get("id")
 
-                home_form = recent_team_form(history, home_id, limit=10)
-                away_form = recent_team_form(history, away_id, limit=10)
+                home_matches = fetch_team_matches(token, home_id, history_from, history_to, competition_codes) if home_id else []
+                away_matches = fetch_team_matches(token, away_id, history_from, history_to, competition_codes) if away_id else []
 
-                # Si l'historique global est insuffisant, on va chercher directement l'équipe
-                if len(home_form) < 3 and home_id:
-                    try:
-                        h_matchs = fetch_team_matches(token, home_id, history_from, selected_date.isoformat(), competition_codes)
-                        home_form = recent_team_form(h_matchs, home_id, limit=10)
-                    except Exception:
-                        pass
-
-                if len(away_form) < 3 and away_id:
-                    try:
-                        a_matchs = fetch_team_matches(token, away_id, history_from, selected_date.isoformat(), competition_codes)
-                        away_form = recent_team_form(a_matchs, away_id, limit=10)
-                    except Exception:
-                        pass
+                home_form = recent_team_form(home_matches, home_id, limit=10) if home_id else []
+                away_form = recent_team_form(away_matches, away_id, limit=10) if away_id else []
 
                 prediction = model_prediction(match, home_form, away_form)
 
@@ -565,8 +488,8 @@ if load_button or analyze_button:
                         "Compétition": match.get("competition", {}).get("name", ""),
                         "Forme domicile": form_string(home_form),
                         "Forme extérieur": form_string(away_form),
-                        "N domicile": len(home_form),
-                        "N extérieur": len(away_form),
+                        "N dom": len(home_form),
+                        "N ext": len(away_form),
                         "xG dom": round(prediction["lambda_home"], 2),
                         "xG ext": round(prediction["lambda_away"], 2),
                         "Sélection principale": best_name,
@@ -576,9 +499,6 @@ if load_button or analyze_button:
                         "HT/FT": best_htft,
                         "P(HT/FT)": round(best_htft_prob * 100, 1),
                         "_prediction": prediction,
-                        "_match": match,
-                        "_home_form": home_form,
-                        "_away_form": away_form,
                     })
                 else:
                     rows.append({
@@ -586,8 +506,8 @@ if load_button or analyze_button:
                         "Compétition": match.get("competition", {}).get("name", ""),
                         "Forme domicile": form_string(home_form),
                         "Forme extérieur": form_string(away_form),
-                        "N domicile": len(home_form),
-                        "N extérieur": len(away_form),
+                        "N dom": len(home_form),
+                        "N ext": len(away_form),
                         "xG dom": "N/D",
                         "xG ext": "N/D",
                         "Sélection principale": "N/D",
@@ -597,9 +517,6 @@ if load_button or analyze_button:
                         "HT/FT": "N/D",
                         "P(HT/FT)": 0.0,
                         "_prediction": prediction,
-                        "_match": match,
-                        "_home_form": home_form,
-                        "_away_form": away_form,
                     })
 
         display_rows = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
