@@ -200,18 +200,37 @@ def get_token():
 # API DATA
 # ============================================================
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_matches(token, date_from, date_to, competition_codes):
+
+import time
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_finished_history(token, date_from_str, date_to_str, competition_codes):
     api = FootballDataAPI(token)
-    data = api.get(
-        "/matches",
-        params={
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "competitions": ",".join(competition_codes),
-        },
-    )
-    return data.get("matches", [])
+    d_from = date.fromisoformat(date_from_str)
+    d_to = date.fromisoformat(date_to_str)
+    
+    all_matches = []
+    current_to = d_to
+    
+    while current_to > d_from:
+        current_from = max(d_from, current_to - timedelta(days=9))
+        data = api.get(
+            "/matches",
+            params={
+                "dateFrom": current_from.isoformat(),
+                "dateTo": current_to.isoformat(),
+                "competitions": ",".join(competition_codes),
+                "status": "FINISHED",
+                "limit": 100,
+            },
+        )
+        all_matches.extend(data.get("matches", []))
+        current_to = current_from - timedelta(days=1)
+        
+        # Pause pour éviter de saturer la limite de l'API gratuite
+        time.sleep(0.6)
+        
+    return all_matches
 
 
 @st.cache_data(ttl=900, show_spinner=False)
