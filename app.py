@@ -281,7 +281,6 @@ if not matches:
 
 st.success(f"{len(matches)} match(s) disponible(s).")
 
-# Menu déroulant pour cibler un et un seul match précis
 match_options = {
     f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')} ({m.get('competition', {}).get('name', '')})": m
     for m in matches
@@ -345,4 +344,4 @@ if st.button("🧠 Lancer l'analyse détaillée de ce match", type="primary", us
                 st.dataframe(htft_df, use_container_width=True, hide_index=True)
 
         except Exception as e:
-                st.error(fErreur lors de l'analyse : {e})
+            st.error(f"Erreur lors de l'analyse : {e}")
