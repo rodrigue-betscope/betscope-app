@@ -1,22 +1,6 @@
-
 # ============================================================
 # RODRIGUE PRO FOOTBALL AI - FOOTBALL-DATA.ORG V5
 # ============================================================
-# API: Football-Data.org V4
-#
-# Secrets Streamlit:
-# [football_data]
-# token = "TA_CLE"
-#
-# IMPORTANT:
-# - No invented team statistics.
-# - No fixed 1.20/1.35 defaults when history is missing.
-# - Probabilities are model probabilities, not guarantees.
-# - Football-Data.org does not provide all bookmaker/injury/player
-#   information on every plan/competition, so unavailable data is
-#   explicitly marked N/D.
-# ============================================================
-
 import math
 from datetime import date, timedelta
 
@@ -88,7 +72,7 @@ class FootballDataAPI:
             )
         if r.status_code == 429:
             raise RuntimeError(
-                "Limite API atteinte. Attends avant de relancer."
+                "Limite API atteinte. Attends une minute avant de relancer."
             )
         if not r.ok:
             try:
@@ -103,7 +87,6 @@ class FootballDataAPI:
 
 
 def get_token():
-    # Streamlit Cloud: Secrets > [football_data] token = "..."
     try:
         token = st.secrets["football_data"]["token"]
         if token:
@@ -111,7 +94,6 @@ def get_token():
     except Exception:
         pass
 
-    # Alternative: Secrets > FOOTBALL_DATA_TOKEN = "..."
     try:
         token = st.secrets["FOOTBALL_DATA_TOKEN"]
         if token:
@@ -129,68 +111,47 @@ def get_token():
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_matches(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    data = api.get(
-        "/matches",
-        params={
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "competitions": ",".join(competition_codes),
-        },
-    )
+    params = {
+        "dateFrom": date_from,
+        "dateTo": date_to,
+    }
+    if competition_codes:
+        params["competitions"] = ",".join(competition_codes)
+
+    data = api.get("/matches", params=params)
     return data.get("matches", [])
 
 
 @st.cache_data(ttl=900, show_spinner=False)
 def fetch_finished_history(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    data = api.get(
-        "/matches",
-        params={
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "competitions": ",".join(competition_codes),
-            "status": "FINISHED",
-            "limit": 100,
-        },
-    )
+    params = {
+        "dateFrom": date_from,
+        "dateTo": date_to,
+        "status": "FINISHED",
+        "limit": 100,
+    }
+    if competition_codes:
+        params["competitions"] = ",".join(competition_codes)
+
+    data = api.get("/matches", params=params)
     return data.get("matches", [])
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_team_matches(
-    token,
-    team_id,
-    date_from,
-    date_to,
-    competition_codes,
-):
-    """Fallback/precision source: only this team's matches."""
+def fetch_team_matches(token, team_id, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    data = api.get(
-        f"/teams/{int(team_id)}/matches",
-        params={
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "competitions": ",".join(competition_codes),
-            "status": "FINISHED",
-            "limit": 100,
-        },
-    )
+    params = {
+        "dateFrom": date_from,
+        "dateTo": date_to,
+        "status": "FINISHED",
+        "limit": 100,
+    }
+    if competition_codes:
+        params["competitions"] = ",".join(competition_codes)
+
+    data = api.get(f"/teams/{int(team_id)}/matches", params=params)
     return data.get("matches", [])
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_standings(token, competition_code, season_year=None):
-    api = FootballDataAPI(token)
-    params = {}
-    if season_year:
-        params["season"] = int(season_year)
-
-    data = api.get(
-        f"/competitions/{competition_code}/standings",
-        params=params,
-    )
-    return data.get("standings", [])
 
 
 # ============================================================
@@ -234,11 +195,9 @@ def team_result(match, team_id):
 
 def recent_team_form(all_matches, team_id, limit=10):
     rows = []
-
     for match in all_matches:
         if not match_is_finished(match):
             continue
-
         item = team_result(match, team_id)
         if item:
             rows.append(item)
@@ -250,9 +209,7 @@ def recent_team_form(all_matches, team_id, limit=10):
 def weighted_average(rows, key):
     if not rows:
         return None
-
     values = np.array([float(x[key]) for x in rows], dtype=float)
-    # Recent matches have slightly more weight.
     weights = np.exp(-0.12 * np.arange(len(values)))
     return float(np.average(values, weights=weights))
 
@@ -353,34 +310,13 @@ def calculate_markets(lambda_home, lambda_away):
         "Under 2.5": under(2.5),
         "Over 3.5": over(3.5),
         "Under 3.5": under(3.5),
-        "Over 4.5": over(4.5),
-        "Under 4.5": under(4.5),
-        "BTTS + Over 2.5": sum(
-            float(matrix[h, a])
-            for h in range(matrix.shape[0])
-            for a in range(matrix.shape[1])
-            if h >= 1 and a >= 1 and h + a >= 3
-        ),
-        "BTTS + Under 2.5": sum(
-            float(matrix[h, a])
-            for h in range(matrix.shape[0])
-            for a in range(matrix.shape[1])
-            if h >= 1 and a >= 1 and h + a <= 2
-        ),
     }
 
-    # Asian total 4.0: probabilities of win / push / loss.
-    markets["Over 4.0"] = over(4.0)
-    markets["Under 4.0"] = under(4.0)
-    markets["Exactement 4 buts"] = totals.get(4, 0.0)
-
     scores.sort(key=lambda x: x[1], reverse=True)
-
     return markets, scores
 
 
 def calculate_htft(lambda_home, lambda_away):
-    # Approximation of goal distribution by half.
     ht_home = max(0.01, lambda_home * 0.46)
     ht_away = max(0.01, lambda_away * 0.46)
     second_home = max(0.01, lambda_home - ht_home)
@@ -418,12 +354,6 @@ def calculate_htft(lambda_home, lambda_away):
 # ============================================================
 
 def build_lambdas(home_form, away_form):
-    """
-    No fixed fake defaults.
-
-    If data is missing, return None rather than pretending we know
-    the team's scoring rate.
-    """
     if not home_form or not away_form:
         return None, None, "Données insuffisantes"
 
@@ -435,7 +365,6 @@ def build_lambdas(home_form, away_form):
     if None in (home_gf, home_ga, away_gf, away_ga):
         return None, None, "Données insuffisantes"
 
-    # Home/away recent history is preferred when enough observations exist.
     home_home = average_for_venue(home_form, "HOME")
     away_away = average_for_venue(away_form, "AWAY")
 
@@ -453,7 +382,6 @@ def build_lambdas(home_form, away_form):
         away_attack = away_gf
         away_defence = away_ga
 
-    # Blended attack/defence expectation with a modest home advantage.
     lambda_home = (0.58 * home_attack + 0.42 * away_defence) * 1.06
     lambda_away = (0.58 * away_attack + 0.42 * home_defence) * 0.97
 
@@ -464,9 +392,7 @@ def build_lambdas(home_form, away_form):
 
 
 def model_prediction(match, home_form, away_form):
-    lambda_home, lambda_away, quality = build_lambdas(
-        home_form, away_form
-    )
+    lambda_home, lambda_away, quality = build_lambdas(home_form, away_form)
 
     if lambda_home is None or lambda_away is None:
         return {
@@ -481,10 +407,7 @@ def model_prediction(match, home_form, away_form):
             "htft": {},
         }
 
-    markets, scores = calculate_markets(
-        lambda_home,
-        lambda_away,
-    )
+    markets, scores = calculate_markets(lambda_home, lambda_away)
     htft = calculate_htft(lambda_home, lambda_away)
     best_market = max(markets.items(), key=lambda x: x[1])
 
@@ -507,137 +430,69 @@ def model_prediction(match, home_form, away_form):
 # ============================================================
 
 st.title("⚽ Rodrigue Pro Football AI")
-st.caption(
-    "Football-Data.org V4 • statistiques réelles disponibles • "
-    "modèle Poisson • aucune statistique inventée"
-)
+st.caption("Football-Data.org V4 • Modèle Poisson")
 
 token = get_token()
 
 if not token:
     st.error("Clé API Football-Data.org absente.")
-    st.code(
-        '[football_data]\n'
-        'token = "TA_CLE_FOOTBALL_DATA"',
-        language="toml",
-    )
-    st.info(
-        "Dans Streamlit Cloud : Settings → Secrets → ajoute le bloc ci-dessus."
-    )
     st.stop()
 
-# Correction : on fixe une date de test par défaut dans le passé (ex: 15 mai 2024) 
-# pour que l'API renvoie bien les matchs et débloque l'affichage.
-selected_date = st.date_input(
-    "📅 Date des matchs",
-    value=date(2024, 5, 15),
-)
+# Formulaire pour éviter que la page recharche à chaque changement de date
+with st.form("search_form"):
+    selected_date = st.date_input("📅 Date des matchs", value=date.today())
 
-competition_names = st.multiselect(
-    "🏆 Compétitions",
-    options=list(COMPETITIONS.keys()),
-    default=[
-        "Premier League",
-        "La Liga",
-        "Bundesliga",
-        "Serie A",
-        "Ligue 1",
-    ],
-)
-
-if not competition_names:
-    st.warning("Sélectionne au moins une compétition.")
-    st.stop()
-
-competition_codes = [
-    COMPETITIONS[name] for name in competition_names
-]
-
-history_days = st.slider(
-    "📊 Historique utilisé",
-    min_value=30,
-    max_value=180,
-    value=120,
-    step=15,
-)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    load_button = st.button(
-        "🔎 Charger les matchs",
-        type="primary",
-        use_container_width=True,
+    competition_names = st.multiselect(
+        "🏆 Compétitions",
+        options=list(COMPETITIONS.keys()),
+        default=["Premier League", "La Liga", "Ligue 1"],
     )
 
-with col2:
-    analyze_button = st.button(
-        "🧠 Analyser les matchs",
-        use_container_width=True,
+    history_days = st.slider(
+        "📊 Historique utilisé (jours)",
+        min_value=30,
+        max_value=180,
+        value=120,
+        step=15,
     )
 
-if load_button or analyze_button:
+    col1, col2 = st.form_submit_button("🔎 Charger les matchs"), st.form_submit_button("🧠 Analyser les matchs")
+
+if col1 or col2:
+    competition_codes = [COMPETITIONS[name] for name in competition_names] if competition_names else []
+
+    # Recherche sur une fenêtre de 3 jours pour trouver les matchs récents/à venir proches
     date_from = selected_date.isoformat()
-    date_to = selected_date.isoformat()
+    date_to = (selected_date + timedelta(days=2)).isoformat()
 
     try:
-        with st.spinner("Récupération des matchs Football-Data.org..."):
-            matches = fetch_matches(
-                token,
-                date_from,
-                date_to,
-                competition_codes,
-            )
+        with st.spinner("Récupération des matchs..."):
+            matches = fetch_matches(token, date_from, date_to, competition_codes)
 
         if not matches:
-            st.warning(
-                "Aucun match renvoyé par Football-Data.org pour cette "
-                "date et ces compétitions."
-            )
+            st.warning("Aucun match renvoyé pour cette date ou ces compétitions.")
             st.stop()
 
         st.success(f"{len(matches)} match(s) trouvé(s).")
 
-        if not analyze_button:
+        if col1 and not col2:
             simple_rows = []
             for match in matches:
                 simple_rows.append({
-                    "Match": (
-                        f"{match.get('homeTeam', {}).get('name', '?')} "
-                        f"vs "
-                        f"{match.get('awayTeam', {}).get('name', '?')}"
-                    ),
-                    "Compétition": match.get(
-                        "competition", {}
-                    ).get("name", ""),
+                    "Match": f"{match.get('homeTeam', {}).get('name', '?')} vs {match.get('awayTeam', {}).get('name', '?')}",
+                    "Compétition": match.get("competition", {}).get("name", ""),
                     "Date": match.get("utcDate", ""),
-                    "Stade": match.get("venue") or "N/D",
                     "Statut": match.get("status", ""),
                 })
-
-            st.dataframe(
-                pd.DataFrame(simple_rows),
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.dataframe(pd.DataFrame(simple_rows), use_container_width=True, hide_index=True)
             st.stop()
 
-        history_from = (
-            selected_date - timedelta(days=history_days)
-        ).isoformat()
+        history_from = (selected_date - timedelta(days=history_days)).isoformat()
 
-        with st.spinner(
-            "Calcul des formes réelles et du modèle Poisson..."
-        ):
-            history = fetch_finished_history(
-                token,
-                history_from,
-                date_from,
-                competition_codes,
-            )
+        with st.spinner("Calcul des formes réelles et analyse Poisson..."):
+            history = fetch_finished_history(token, history_from, date_from, competition_codes)
 
             rows = []
-
             for match in matches:
                 home = match.get("homeTeam", {}) or {}
                 away = match.get("awayTeam", {}) or {}
@@ -645,273 +500,56 @@ if load_button or analyze_button:
                 home_id = home.get("id")
                 away_id = away.get("id")
 
-                home_form = recent_team_form(
-                    history,
-                    home_id,
-                    limit=10,
-                )
-                away_form = recent_team_form(
-                    history,
-                    away_id,
-                    limit=10,
-                )
+                home_form = recent_team_form(history, home_id, limit=10)
+                away_form = recent_team_form(history, away_id, limit=10)
 
-                # If the broad history did not contain enough data,
-                # query only that team. This avoids fake defaults.
                 if len(home_form) < 5 and home_id:
                     try:
-                        home_history = fetch_team_matches(
-                            token,
-                            home_id,
-                            history_from,
-                            date_from,
-                            competition_codes,
-                        )
-                        home_form = recent_team_form(
-                            home_history,
-                            home_id,
-                            limit=10,
-                        )
+                        home_history = fetch_team_matches(token, home_id, history_from, date_from, competition_codes)
+                        home_form = recent_team_form(home_history, home_id, limit=10)
                     except RuntimeError:
                         pass
 
                 if len(away_form) < 5 and away_id:
                     try:
-                        away_history = fetch_team_matches(
-                            token,
-                            away_id,
-                            history_from,
-                            date_from,
-                            competition_codes,
-                        )
-                        away_form = recent_team_form(
-                            away_history,
-                            away_id,
-                            limit=10,
-                        )
+                        away_history = fetch_team_matches(token, away_id, history_from, date_from, competition_codes)
+                        away_form = recent_team_form(away_history, away_id, limit=10)
                     except RuntimeError:
                         pass
 
-                prediction = model_prediction(
-                    match,
-                    home_form,
-                    away_form,
-                )
+                prediction = model_prediction(match, home_form, away_form)
 
                 if prediction["status"] == "OK":
                     best_name, best_prob = prediction["best_market"]
                     best_score, best_score_prob = prediction["scores"][0]
-                    best_htft, best_htft_prob = max(
-                        prediction["htft"].items(),
-                        key=lambda x: x[1],
-                    )
-
                     rows.append({
-                        "Match": (
-                            f"{home.get('name', '?')} vs "
-                            f"{away.get('name', '?')}"
-                        ),
-                        "Compétition": match.get(
-                            "competition", {}
-                        ).get("name", ""),
-                        "Forme domicile": form_string(home_form),
-                        "Forme extérieur": form_string(away_form),
-                        "N matchs domicile": len(home_form),
-                        "N matchs extérieur": len(away_form),
-                        "xG modèle domicile": round(
-                            prediction["lambda_home"], 2
-                        ),
-                        "xG modèle extérieur": round(
-                            prediction["lambda_away"], 2
-                        ),
-                        "Sélection principale": best_name,
-                        "Probabilité": round(
-                            best_prob * 100, 1
-                        ),
-                        "Score exact modèle": best_score,
-                        "P(score)": round(
-                            best_score_prob * 100, 1
-                        ),
-                        "HT/FT modèle": best_htft,
-                        "P(HT/FT)": round(
-                            best_htft_prob * 100, 1
-                        ),
-                        "_prediction": prediction,
-                        "_match": match,
-                        "_home_form": home_form,
-                        "_away_form": away_form,
+                        "Match": f"{home.get('name', '?')} vs {away.get('name', '?')}",
+                        "Compétition": match.get("competition", {}).get("name", ""),
+                        "Forme Domicile": form_string(home_form),
+                        "Forme Extérieur": form_string(away_form),
+                        "xG Domicile": round(prediction["lambda_home"], 2),
+                        "xG Extérieur": round(prediction["lambda_away"], 2),
+                        "Prédiction": best_name,
+                        "Probabilité": f"{best_prob * 100:.1f}%",
+                        "Score Exact": best_score,
                     })
                 else:
                     rows.append({
-                        "Match": (
-                            f"{home.get('name', '?')} vs "
-                            f"{away.get('name', '?')}"
-                        ),
-                        "Compétition": match.get(
-                            "competition", {}
-                        ).get("name", ""),
-                        "Forme domicile": form_string(home_form),
-                        "Forme extérieur": form_string(away_form),
-                        "N matchs domicile": len(home_form),
-                        "N matchs extérieur": len(away_form),
-                        "xG modèle domicile": "N/D",
-                        "xG modèle extérieur": "N/D",
-                        "Sélection principale": "N/D",
-                        "Probabilité": None,
-                        "Score exact modèle": "N/D",
-                        "P(score)": None,
-                        "HT/FT modèle": "N/D",
-                        "P(HT/FT)": None,
-                        "_prediction": prediction,
-                        "_match": match,
-                        "_home_form": home_form,
-                        "_away_form": away_form,
+                        "Match": f"{home.get('name', '?')} vs {away.get('name', '?')}",
+                        "Compétition": match.get("competition", {}).get("name", ""),
+                        "Forme Domicile": form_string(home_form),
+                        "Forme Extérieur": form_string(away_form),
+                        "xG Domicile": "N/D",
+                        "xG Extérieur": "N/D",
+                        "Prédiction": "Données insuffisantes",
+                        "Probabilité": "N/D",
+                        "Score Exact": "N/D",
                     })
 
-        # Sort only valid numerical probabilities first.
-        rows.sort(
-            key=lambda r: (
-                r["Probabilité"]
-                if isinstance(r["Probabilité"], (int, float))
-                else -1
-            ),
-            reverse=True,
-        )
-
-        display_rows = []
-        for row in rows:
-            clean = {
-                k: v
-                for k, v in row.items()
-                if not k.startswith("_")
-            }
-            display_rows.append(clean)
-
-        st.subheader(f"📊 Analyse — {len(rows)} match(s)")
-        st.dataframe(
-            pd.DataFrame(display_rows),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        st.subheader("🎯 Détail des analyses")
-
-        for index, row in enumerate(rows):
-            prediction = row["_prediction"]
-            home_form = row["_home_form"]
-            away_form = row["_away_form"]
-
-            with st.expander(
-                f"{index + 1}. {row['Match']}"
-            ):
-                if prediction["status"] != "OK":
-                    st.warning(
-                        "Données insuffisantes pour calculer un modèle "
-                        "fiable pour ce match. Le programme ne fabrique "
-                        "pas de pourcentage."
-                    )
-                    st.write(
-                        f"Matchs historiques trouvés : "
-                        f"{len(home_form)} domicile / "
-                        f"{len(away_form)} extérieur."
-                    )
-                    continue
-
-                c1, c2, c3 = st.columns(3)
-
-                with c1:
-                    st.metric(
-                        "Buts attendus domicile",
-                        f"{prediction['lambda_home']:.2f}",
-                    )
-
-                with c2:
-                    st.metric(
-                        "Buts attendus extérieur",
-                        f"{prediction['lambda_away']:.2f}",
-                    )
-
-                with c3:
-                    st.metric(
-                        "Sélection principale",
-                        prediction["best_market"][0],
-                        f"{prediction['best_market'][1] * 100:.1f}%",
-                    )
-
-                st.write(
-                    f"**Forme récente :** "
-                    f"{form_string(home_form)} — "
-                    f"{form_string(away_form)}"
-                )
-
-                market_df = pd.DataFrame([
-                    {
-                        "Marché": name,
-                        "Probabilité": f"{prob * 100:.1f}%",
-                    }
-                    for name, prob in sorted(
-                        prediction["markets"].items(),
-                        key=lambda x: x[1],
-                        reverse=True,
-                    )
-                ])
-
-                st.write("**📈 Marchés**")
-                st.dataframe(
-                    market_df,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                score_df = pd.DataFrame([
-                    {
-                        "Score": score,
-                        "Probabilité": f"{prob * 100:.1f}%",
-                    }
-                    for score, prob in prediction["scores"][:10]
-                ])
-
-                st.write("**🎯 Scores exacts les plus probables**")
-                st.dataframe(
-                    score_df,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                htft_df = pd.DataFrame([
-                    {
-                        "HT/FT": name,
-                        "Probabilité": f"{prob * 100:.1f}%",
-                    }
-                    for name, prob in sorted(
-                        prediction["htft"].items(),
-                        key=lambda x: x[1],
-                        reverse=True,
-                    )
-                ])
-
-                st.write("**🕐 HT/FT**")
-                st.dataframe(
-                    htft_df,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                st.caption(
-                    "Les probabilités sont calculées par le modèle "
-                    "à partir des données réellement disponibles. "
-                    "Elles ne constituent pas une garantie de résultat."
-                )
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     except RuntimeError as exc:
         st.error(str(exc))
     except Exception as exc:
         st.error("Erreur inattendue.")
         st.exception(exc)
-
-
-st.divider()
-st.caption(
-    "Rodrigue Pro Football AI • Football-Data.org V4 • "
-    "Pas de statistiques inventées."
-)
