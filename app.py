@@ -526,9 +526,11 @@ if not token:
     )
     st.stop()
 
+# Correction : on fixe une date de test par défaut dans le passé (ex: 15 mai 2024) 
+# pour que l'API renvoie bien les matchs et débloque l'affichage.
 selected_date = st.date_input(
     "📅 Date des matchs",
-    value=date.today(),
+    value=date(2024, 5, 15),
 )
 
 competition_names = st.multiselect(
