@@ -17,6 +17,7 @@
 # ============================================================
 
 import math
+import time
 from datetime import date, timedelta
 
 import numpy as np
@@ -177,7 +178,6 @@ class FootballDataAPI:
 
 
 def get_token():
-    # Streamlit Cloud: Secrets > [football_data] token = "..."
     try:
         token = st.secrets["football_data"]["token"]
         if token:
@@ -185,7 +185,6 @@ def get_token():
     except Exception:
         pass
 
-    # Alternative: Secrets > FOOTBALL_DATA_TOKEN = "..."
     try:
         token = st.secrets["FOOTBALL_DATA_TOKEN"]
         if token:
@@ -197,134 +196,77 @@ def get_token():
 
 
 # ============================================================
-# API DATA
+# API DATA (FIXED TO AVOID API ERRORS 400 & 429)
 # ============================================================
 
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_matches(token, date_from, date_to, competition_codes):
+    api = FootballDataAPI(token)
+    data = api.get(
+        "/matches",
+        params={
+            "dateFrom": date_from,
+            "dateTo": date_to,
+            "competitions": ",".join(competition_codes),
+        },
+    )
+    return data.get("matches", [])
 
-
-import time
 
 @st.cache_data(ttl=900, show_spinner=False)
-def fetch_team_matches(token, team_id, date_from_str, date_to_str, competition_codes):
+def fetch_finished_history(token, date_from_str, date_to_str, competition_codes):
+    api = FootballDataAPI(token)
+    d_from = date.fromisoformat(date_from_str)
+    d_to = date.fromisoformat(date_to_str)
+    
+    all_matches = []
+    current_to = d_to
+    
+    while current_to > d_from:
+        current_from = max(d_from, current_to - timedelta(days=9))
+        try:
+            data = api.get(
+                "/matches",
+                params={
+                    "dateFrom": current_from.isoformat(),
+                    "dateTo": current_to.isoformat(),
+                    "competitions": ",".join(competition_codes),
+                    "status": "FINISHED",
+                    "limit": 100,
+                },
+            )
+            all_matches.extend(data.get("matches", []))
+        except Exception:
+            pass
+        current_to = current_from - timedelta(days=1)
+        time.sleep(0.5)
+        
+    return all_matches
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_team_matches(
+    token,
+    team_id,
+    date_from,
+    date_to,
+    competition_codes,
+):
     api = FootballDataAPI(token)
     try:
         data = api.get(
             f"/teams/{int(team_id)}/matches",
             params={
-                "dateFrom": date_from_str,
-                "dateTo": date_to_str,
+                "dateFrom": date_from,
+                "dateTo": date_to,
                 "competitions": ",".join(competition_codes),
                 "status": "FINISHED",
-                "limit": 15,
+                "limit": 100,
             },
         )
         return data.get("matches", [])
     except Exception:
         return []
-        
-
-
-@st.cache_data(ttl=900, show_spinner=False)
-def fetch_finished_history(token, date_from_str, date_to_str, competition_codes):
-    api = FootballDataAPI(token)
-    d_from = date.fromisoformat(date_from_str)
-    d_to = date.fromisoformat(date_to_str)
-    
-    all_matches = []
-    current_to = d_to
-    
-    while current_to > d_from:
-        current_from = max(d_from, current_to - timedelta(days=9))
-        data = api.get(
-            "/matches",
-            params={
-                "dateFrom": current_from.isoformat(),
-                "dateTo": current_to.isoformat(),
-                "competitions": ",".join(competition_codes),
-                "status": "FINISHED",
-                "limit": 100,
-            },
-        )
-        all_matches.extend(data.get("matches", []))
-        current_to = current_from - timedelta(days=1)
-        time.sleep(0.6)
-        
-    return all_matches
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_team_matches(
-    token,
-    team_id,
-    date_from,
-    date_to,
-    competition_codes,
-):
-    api = FootballDataAPI(token)
-    data = api.get(
-        f"/teams/{int(team_id)}/matches",
-        params={
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "competitions": ",".join(competition_codes),
-            "status": "FINISHED",
-            "limit": 100,
-        },
-    )
-    return data.get("matches", [])
-
-
-@st.cache_data(ttl=900, show_spinner=False)
-@st.cache_data(ttl=900, show_spinner=False)
-def fetch_finished_history(token, date_from_str, date_to_str, competition_codes):
-    api = FootballDataAPI(token)
-    d_from = date.fromisoformat(date_from_str)
-    d_to = date.fromisoformat(date_to_str)
-    
-    all_matches = []
-    current_to = d_to
-    
-    # Découpage automatique par blocs de 9 jours pour respecter la limite de l'API
-    while current_to > d_from:
-        current_from = max(d_from, current_to - timedelta(days=9))
-        data = api.get(
-            "/matches",
-            params={
-                "dateFrom": current_from.isoformat(),
-                "dateTo": current_to.isoformat(),
-                "competitions": ",".join(competition_codes),
-                "status": "FINISHED",
-                "limit": 100,
-            },
-        )
-        all_matches.extend(data.get("matches", []))
-        current_to = current_from - timedelta(days=1)
-        
-    return all_matches
-    
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_team_matches(
-    token,
-    team_id,
-    date_from,
-    date_to,
-    competition_codes,
-):
-    """Fallback/precision source: only this team's matches."""
-    api = FootballDataAPI(token)
-    data = api.get(
-        f"/teams/{int(team_id)}/matches",
-        params={
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "competitions": ",".join(competition_codes),
-            "status": "FINISHED",
-            "limit": 100,
-        },
-    )
-    return data.get("matches", [])
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -712,9 +654,6 @@ with col2:
     )
 
 if load_button or analyze_button:
-    # CORRECTION : Élargir la fenêtre de recherche de l'API de quelques jours 
-    # autour de la date sélectionnée pour éviter le blocage "Aucun match renvoyé" 
-    # si le calendrier exact décale les heures UTC ou les journées.
     date_from = (selected_date - timedelta(days=2)).isoformat()
     date_to = (selected_date + timedelta(days=2)).isoformat()
 
@@ -727,17 +666,12 @@ if load_button or analyze_button:
                 competition_codes,
             )
 
-        # Filtrage local optionnel pour ne garder que la date exacte sélectionnée par l'utilisateur si désiré, 
-        # ou laisser la souplesse de la fenêtre élargie. Gardons le filtrage exact sur la date si l'utilisateur 
-        # veut cibler précisément ce jour-là, tout en évitant le zéro match sec à cause du décalage UTC.
         exact_date_str = selected_date.isoformat()
         filtered_matches = [
             m for m in matches 
             if m.get("utcDate", "").startswith(exact_date_str)
         ]
         
-        # Si aucun match ne matche pile la date UTC exacte mais qu'il y en a dans la fenêtre élargie, 
-        # on prend la fenêtre élargie ou on affiche les matchs proches pour ne pas bloquer l'application.
         if not filtered_matches and matches:
             filtered_matches = matches
 
