@@ -52,107 +52,63 @@ class FootballDataAPI:
     def get(self, endpoint: str, params=None):
         if not self.token:
             raise RuntimeError("Clé Football-Data.org absente.")
-
         try:
-            r = self.session.get(
-                API_BASE + endpoint,
-                params=params or {},
-                timeout=30,
-            )
+            r = self.session.get(API_BASE + endpoint, params=params or {}, timeout=30)
         except requests.RequestException as exc:
             raise RuntimeError(f"Erreur réseau API : {exc}") from exc
 
         if r.status_code == 401:
             raise RuntimeError("Clé Football-Data.org invalide.")
         if r.status_code == 403:
-            raise RuntimeError(
-                "Accès refusé par Football-Data.org : plan gratuit restreint."
-            )
+            raise RuntimeError("Accès refusé : plan gratuit restreint.")
         if r.status_code == 429:
-            raise RuntimeError(
-                "Limite API atteinte. Attends une minute."
-            )
+            raise RuntimeError("Limite API atteinte. Attends un instant.")
         if not r.ok:
-            try:
-                detail = r.json()
-            except Exception:
-                detail = r.text
-            raise RuntimeError(
-                f"Football-Data.org HTTP {r.status_code}: {detail}"
-            )
-
+            raise RuntimeError(f"Football-Data.org HTTP {r.status_code}")
         return r.json()
 
 
 def get_token():
     try:
-        token = st.secrets["football_data"]["token"]
-        if token:
-            return str(token)
+        return str(st.secrets["football_data"]["token"])
     except Exception:
         pass
     try:
-        token = st.secrets["FOOTBALL_DATA_TOKEN"]
-        if token:
-            return str(token)
+        return str(st.secrets["FOOTBALL_DATA_TOKEN"])
     except Exception:
         pass
     return ""
 
 
-# ============================================================
-# API DATA (Optimisé pour respecter la limite de 10 jours de l'API)
-# ============================================================
-
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_matches(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    params = {
-        "dateFrom": date_from,
-        "dateTo": date_to,
-    }
+    params = {"dateFrom": date_from, "dateTo": date_to}
     if competition_codes:
         params["competitions"] = ",".join(competition_codes)
-
-    data = api.get("/matches", params=params)
-    return data.get("matches", [])
+    return api.get("/matches", params=params).get("matches", [])
 
 
 @st.cache_data(ttl=900, show_spinner=False)
 def fetch_finished_history(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    # L'API gratuite limite strictement la période à 10 jours maximum par requête
-    params = {
-        "dateFrom": date_from,
-        "dateTo": date_to,
-        "status": "FINISHED",
-        "limit": 100,
-    }
+    params = {"dateFrom": date_from, "dateTo": date_to, "status": "FINISHED", "limit": 100}
     if competition_codes:
         params["competitions"] = ",".join(competition_codes)
-
-    data = api.get("/matches", params=params)
-    return data.get("matches", [])
+    return api.get("/matches", params=params).get("matches", [])
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_team_matches(token, team_id, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    params = {
-        "dateFrom": date_from,
-        "dateTo": date_to,
-        "status": "FINISHED",
-        "limit": 50,
-    }
+    params = {"dateFrom": date_from, "dateTo": date_to, "status": "FINISHED", "limit": 50}
     if competition_codes:
         params["competitions"] = ",".join(competition_codes)
-
-    data = api.get(f"/teams/{int(team_id)}/matches", params=params)
-    return data.get("matches", [])
+    return api.get(f"/teams/{int(team_id)}/matches", params=params).get("matches", [])
 
 
 # ============================================================
-# MATCH / FORM / POISSON
+# FORM & POISSON MODEL
 # ============================================================
 
 def match_is_finished(match):
@@ -164,41 +120,21 @@ def team_result(match, team_id):
     away = match.get("awayTeam", {}) or {}
     score = match.get("score", {}) or {}
     full = score.get("fullTime", {}) or {}
-
-    hg = full.get("home")
-    ag = full.get("away")
-
+    hg, ag = full.get("home"), full.get("away")
     if hg is None or ag is None:
         return None
-
     if home.get("id") == team_id:
-        gf, ga = float(hg), float(ag)
-        venue = "HOME"
+        gf, ga, venue = float(hg), float(ag), "HOME"
     elif away.get("id") == team_id:
-        gf, ga = float(ag), float(hg)
-        venue = "AWAY"
+        gf, ga, venue = float(ag), float(hg), "AWAY"
     else:
         return None
-
-    result = "W" if gf > ga else "D" if gf == ga else "L"
-    return {
-        "gf": gf,
-        "ga": ga,
-        "result": result,
-        "venue": venue,
-        "date": match.get("utcDate", ""),
-    }
+    return {"gf": gf, "ga": ga, "result": "W" if gf > ga else "D" if gf == ga else "L", "venue": venue, "date": match.get("utcDate", "")}
 
 
 def recent_team_form(all_matches, team_id, limit=10):
-    rows = []
-    for match in all_matches:
-        if not match_is_finished(match):
-            continue
-        item = team_result(match, team_id)
-        if item:
-            rows.append(item)
-
+    rows = [team_result(m, team_id) for m in all_matches if match_is_finished(m)]
+    rows = [r for r in rows if r is not None]
     rows.sort(key=lambda x: x["date"], reverse=True)
     return rows[:limit]
 
@@ -209,17 +145,6 @@ def weighted_average(rows, key):
     values = np.array([float(x[key]) for x in rows], dtype=float)
     weights = np.exp(-0.12 * np.arange(len(values)))
     return float(np.average(values, weights=weights))
-
-
-def average_for_venue(rows, venue):
-    selected = [x for x in rows if x["venue"] == venue]
-    if not selected:
-        return None
-    return {
-        "gf": weighted_average(selected, "gf"),
-        "ga": weighted_average(selected, "ga"),
-        "n": len(selected),
-    }
 
 
 def form_string(rows):
@@ -237,9 +162,7 @@ def probability_matrix(lambda_home, lambda_away, max_goals=10):
         for a in range(max_goals + 1):
             matrix[h, a] = poisson_probability(h, lambda_home) * poisson_probability(a, lambda_away)
     total = matrix.sum()
-    if total <= 0:
-        raise RuntimeError("Erreur modèle Poisson.")
-    return matrix / total
+    return matrix / total if total > 0 else matrix
 
 
 def calculate_markets(lambda_home, lambda_away):
@@ -253,180 +176,173 @@ def calculate_markets(lambda_home, lambda_away):
             p = float(matrix[h, a])
             goals = h + a
             totals[goals] = totals.get(goals, 0.0) + p
-
-            if h > a:
-                p1 += p
-            elif h == a:
-                px += p
-            else:
-                p2 += p
-
-            if h >= 1 and a >= 1:
-                pbtts += p
-
+            if h > a: p1 += p
+            elif h == a: px += p
+            else: p2 += p
+            if h >= 1 and a >= 1: pbtts += p
             scores.append((f"{h}-{a}", p))
 
     def over(line):
         return sum(p for g, p in totals.items() if g > line)
 
     markets = {
-        "1": p1,
-        "X": px,
-        "2": p2,
+        "1 (Domicile)": p1,
+        "X (Nul)": px,
+        "2 (Extérieur)": p2,
         "1X": p1 + px,
         "X2": px + p2,
         "12": p1 + p2,
-        "BTTS Oui": pbtts,
+        "BTTS (Les deux marquent) Oui": pbtts,
         "BTTS Non": 1 - pbtts,
-        "Over 1.5": over(1.5),
-        "Under 1.5": 1 - over(1.5),
-        "Over 2.5": over(2.5),
-        "Under 2.5": 1 - over(2.5),
+        "Over 1.5 buts": over(1.5),
+        "Under 1.5 buts": 1 - over(1.5),
+        "Over 2.5 buts": over(2.5),
+        "Under 2.5 buts": 1 - over(2.5),
+        "Over 3.5 buts": over(3.5),
     }
-
     scores.sort(key=lambda x: x[1], reverse=True)
     return markets, scores
 
 
+def calculate_htft(lambda_home, lambda_away):
+    ht_h = max(0.01, lambda_home * 0.46)
+    ht_a = max(0.01, lambda_away * 0.46)
+    s_h = max(0.01, lambda_home - ht_h)
+    s_a = max(0.01, lambda_away - ht_a)
+
+    result = {f"{ht}/{ft}": 0.0 for ht in OUTCOMES for ft in OUTCOMES}
+    for h1 in range(6):
+        for a1 in range(6):
+            p_ht = poisson_probability(h1, ht_h) * poisson_probability(a1, ht_a)
+            ht_res = "1" if h1 > a1 else ("2" if h1 < a1 else "X")
+            for h2 in range(6):
+                for a2 in range(6):
+                    p = p_ht * poisson_probability(h2, s_h) * poisson_probability(a2, s_a)
+                    tot_h, tot_a = h1 + h2, a1 + a2
+                    ft_res = "1" if tot_h > tot_a else ("2" if tot_h < tot_a else "X")
+                    result[f"{ht_res}/{ft_res}"] += p
+
+    total = sum(result.values())
+    if total > 0:
+        result = {k: v / total for k, v in result.items()}
+    return result
+
+
 def build_lambdas(home_form, away_form):
     if not home_form or not away_form:
-        return None, None, "Données insuffisantes"
-
-    home_gf = weighted_average(home_form, "gf")
-    home_ga = weighted_average(home_form, "ga")
-    away_gf = weighted_average(away_form, "gf")
-    away_ga = weighted_average(away_form, "ga")
-
-    if None in (home_gf, home_ga, away_gf, away_ga):
-        return None, None, "Données insuffisantes"
-
-    lambda_home = (0.58 * home_gf + 0.42 * away_ga) * 1.06
-    lambda_away = (0.58 * away_gf + 0.42 * home_ga) * 0.97
-
-    return float(np.clip(lambda_home, 0.10, 5.00)), float(np.clip(lambda_away, 0.10, 5.00)), "OK"
-
-
-def model_prediction(match, home_form, away_form):
-    lambda_home, lambda_away, quality = build_lambdas(home_form, away_form)
-    if lambda_home is None:
-        return {"status": "INSUFFICIENT"}
-
-    markets, scores = calculate_markets(lambda_home, lambda_away)
-    best_market = max(markets.items(), key=lambda x: x[1])
-
-    return {
-        "status": "OK",
-        "lambda_home": lambda_home,
-        "lambda_away": lambda_away,
-        "markets": markets,
-        "scores": scores,
-        "best_market": best_market,
-    }
+        return None, None
+    h_gf, h_ga = weighted_average(home_form, "gf"), weighted_average(home_form, "ga")
+    a_gf, a_ga = weighted_average(away_form, "gf"), weighted_average(away_form, "ga")
+    if None in (h_gf, h_ga, a_gf, a_ga):
+        return None, None
+    lam_h = (0.58 * h_gf + 0.42 * a_ga) * 1.06
+    lam_a = (0.58 * a_gf + 0.42 * h_ga) * 0.97
+    return float(np.clip(lam_h, 0.10, 5.00)), float(np.clip(lam_a, 0.10, 5.00))
 
 
 # ============================================================
-# UI
+# UI APPLICATION
 # ============================================================
 
 st.title("⚽ Rodrigue Pro Football AI")
-st.caption("Football-Data.org V4 • Modèle Poisson")
+st.caption("Sélectionne un match pour voir son analyse détaillée complète.")
 
 token = get_token()
 if not token:
-    st.error("Clé API absente.")
+    st.error("Clé API absente dans les secrets Streamlit.")
     st.stop()
 
-with st.form("search_form"):
+with st.form("match_form"):
     selected_date = st.date_input("📅 Date des matchs", value=date.today())
     competition_names = st.multiselect(
         "🏆 Compétitions",
         options=list(COMPETITIONS.keys()),
         default=["Premier League", "La Liga", "Ligue 1"],
     )
-    col1, col2 = st.form_submit_button("🔎 Charger les matchs"), st.form_submit_button("🧠 Analyser les matchs")
+    load_submitted = st.form_submit_button("🔎 Charger les matchs du jour", type="primary")
 
-if col1 or col2:
-    competition_codes = [COMPETITIONS[name] for name in competition_names] if competition_names else []
+competition_codes = [COMPETITIONS[name] for name in competition_names] if competition_names else []
+date_from = selected_date.isoformat()
+date_to = (selected_date + timedelta(days=1)).isoformat()
 
-    date_from = selected_date.isoformat()
-    date_to = (selected_date + timedelta(days=1)).isoformat()
-
+if load_submitted or "matches_cache" not in st.session_state:
     try:
-        with st.spinner("Chargement..."):
-            matches = fetch_matches(token, date_from, date_to, competition_codes)
+        with st.spinner("Récupération des matchs..."):
+            st.session_state["matches_cache"] = fetch_matches(token, date_from, date_to, competition_codes)
+    except Exception as e:
+        st.error(f"Erreur : {e}")
+        st.session_state["matches_cache"] = []
 
-        if not matches:
-            st.warning("Aucun match trouvé pour cette date.")
-            st.stop()
+matches = st.session_state.get("matches_cache", [])
 
-        st.success(f"{len(matches)} match(s) trouvé(s).")
+if not matches:
+    st.warning("Aucun match trouvé pour cette date et ces compétitions.")
+    st.stop()
 
-        if col1 and not col2:
-            simple_rows = [{
-                "Match": f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')}",
-                "Compétition": m.get("competition", {}).get("name", ""),
-                "Heure": m.get("utcDate", ""),
-            } for m in matches]
-            st.dataframe(pd.DataFrame(simple_rows), use_container_width=True, hide_index=True)
-            st.stop()
+st.success(f"{len(matches)} match(s) disponible(s).")
 
-        # Correction majeure : on limite strictement l'historique aux 10 derniers jours pour ne pas dépasser l'API gratuite
-        history_from = (selected_date - timedelta(days=10)).isoformat()
+# Menu déroulant pour cibler un et un seul match précis
+match_options = {
+    f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')} ({m.get('competition', {}).get('name', '')})": m
+    for m in matches
+}
 
-        with st.spinner("Analyse Poisson en cours..."):
+selected_match_label = st.selectbox("🎯 Choisis un match précis à analyser", list(match_options.keys()))
+selected_match = match_options[selected_match_label]
+
+if st.button("🧠 Lancer l'analyse détaillée de ce match", type="primary", use_container_width=True):
+    home = selected_match.get("homeTeam", {}) or {}
+    away = selected_match.get("awayTeam", {}) or {}
+    home_id, away_id = home.get("id"), away.get("id")
+
+    history_from = (selected_date - timedelta(days=10)).isoformat()
+
+    with st.spinner("Calcul des formes et du modèle Poisson..."):
+        try:
             history = fetch_finished_history(token, history_from, date_from, competition_codes)
+            home_form = recent_team_form(history, home_id, limit=5)
+            away_form = recent_team_form(history, away_id, limit=5)
 
-            rows = []
-            for match in matches:
-                home = match.get("homeTeam", {}) or {}
-                away = match.get("awayTeam", {}) or {}
-                home_id, away_id = home.get("id"), away.get("id")
+            if len(home_form) < 2 and home_id:
+                h_hist = fetch_team_matches(token, home_id, (selected_date - timedelta(days=30)).isoformat(), date_from, competition_codes)
+                home_form = recent_team_form(h_hist, home_id, limit=5)
+            if len(away_form) < 2 and away_id:
+                a_hist = fetch_team_matches(token, away_id, (selected_date - timedelta(days=30)).isoformat(), date_from, competition_codes)
+                away_form = recent_team_form(a_hist, away_id, limit=5)
 
-                home_form = recent_team_form(history, home_id, limit=5)
-                away_form = recent_team_form(history, away_id, limit=5)
+            lam_h, lam_a = build_lambdas(home_form, away_form)
 
-                # Si l'historique global est vide, on cherche spécifiquement l'équipe sur 30 jours max
-                if len(home_form) < 2 and home_id:
-                    try:
-                        h_hist = fetch_team_matches(token, home_id, (selected_date - timedelta(days=30)).isoformat(), date_from, competition_codes)
-                        home_form = recent_team_form(h_hist, home_id, limit=5)
-                    except: pass
+            if lam_h is None:
+                st.warning("Données insuffisantes pour calculer les statistiques de ce match.")
+            else:
+                markets, scores = calculate_markets(lam_h, lam_a)
+                htft = calculate_htft(lam_h, lam_a)
+                best_market = max(markets.items(), key=lambda x: x[1])
 
-                if len(away_form) < 2 and away_id:
-                    try:
-                        a_hist = fetch_team_matches(token, away_id, (selected_date - timedelta(days=30)).isoformat(), date_from, competition_codes)
-                        away_form = recent_team_form(a_hist, away_id, limit=5)
-                    except: pass
+                st.divider()
+                st.subheader(f"📊 Analyse : {home.get('name')} vs {away.get('name')}")
 
-                pred = model_prediction(match, home_form, away_form)
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.metric("xG Domicile", f"{lam_h:.2f}")
+                    st.write(f"**Forme :** {form_string(home_form)}")
+                with c2:
+                    st.metric("xG Extérieur", f"{lam_a:.2f}")
+                    st.write(f"**Forme :** {form_string(away_form)}")
 
-                if pred["status"] == "OK":
-                    best_name, best_prob = pred["best_market"]
-                    best_score, _ = pred["scores"][0]
-                    rows.append({
-                        "Match": f"{home.get('name', '?')} vs {away.get('name', '?')}",
-                        "Compétition": match.get("competition", {}).get("name", ""),
-                        "xG Domicile": round(pred["lambda_home"], 2),
-                        "xG Extérieur": round(pred["lambda_away"], 2),
-                        "Prédiction": best_name,
-                        "Probabilité": f"{best_prob * 100:.1f}%",
-                        "Score Exact": best_score,
-                    })
-                else:
-                    rows.append({
-                        "Match": f"{home.get('name', '?')} vs {away.get('name', '?')}",
-                        "Compétition": match.get("competition", {}).get("name", ""),
-                        "xG Domicile": "N/D",
-                        "xG Extérieur": "N/D",
-                        "Prédiction": "En attente de stats",
-                        "Probabilité": "N/D",
-                        "Score Exact": "N/D",
-                    })
+                st.info(f"🔥 **Recommandation principale :** {best_market[0]} ({best_market[1]*100:.1f}%)")
 
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                st.markdown("### 📈 Tous les Marchés & Probabilités")
+                market_df = pd.DataFrame([{"Marché": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(markets.items(), key=lambda x: x[1], reverse=True)])
+                st.dataframe(market_df, use_container_width=True, hide_index=True)
 
-    except RuntimeError as exc:
-        st.error(str(exc))
-    except Exception as exc:
-        st.error("Erreur inattendue.")
-        st.exception(exc)
+                st.markdown("### 🎯 Scores Exacts les plus probables")
+                score_df = pd.DataFrame([{"Score": s, "Probabilité": f"{p*100:.1f}%"} for s, p in scores[:6]])
+                st.dataframe(score_df, use_container_width=True, hide_index=True)
+
+                st.markdown("### ⏱️ Mi-temps / Fin de match (HT/FT)")
+                htft_df = pd.DataFrame([{"HT/FT": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(htft.items(), key=lambda x: x[1], reverse=True)[:6]])
+                st.dataframe(htft_df, use_container_width=True, hide_index=True)
+
+        except Exception as e:
+                st.error(fErreur lors de l'analyse : {e})
