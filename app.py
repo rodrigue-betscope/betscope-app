@@ -204,18 +204,24 @@ def get_token():
 
 import time
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_matches(token, date_from, date_to, competition_codes):
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_team_matches(token, team_id, date_from_str, date_to_str, competition_codes):
     api = FootballDataAPI(token)
-    data = api.get(
-        "/matches",
-        params={
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "competitions": ",".join(competition_codes),
-        },
-    )
-    return data.get("matches", [])
+    try:
+        data = api.get(
+            f"/teams/{int(team_id)}/matches",
+            params={
+                "dateFrom": date_from_str,
+                "dateTo": date_to_str,
+                "competitions": ",".join(competition_codes),
+                "status": "FINISHED",
+                "limit": 15,
+            },
+        )
+        return data.get("matches", [])
+    except Exception:
+        return []
+        
 
 
 @st.cache_data(ttl=900, show_spinner=False)
