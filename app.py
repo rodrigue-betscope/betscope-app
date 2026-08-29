@@ -1,4 +1,3 @@
-
 # ============================================================
 # RODRIGUE PRO FOOTBALL AI - FOOTBALL-DATA.ORG V5
 # ============================================================
@@ -327,7 +326,6 @@ def weighted_average(rows, key):
         return None
 
     values = np.array([float(x[key]) for x in rows], dtype=float)
-    # Recent matches have slightly more weight.
     weights = np.exp(-0.12 * np.arange(len(values)))
     return float(np.average(values, weights=weights))
 
@@ -444,7 +442,6 @@ def calculate_markets(lambda_home, lambda_away):
         ),
     }
 
-    # Asian total 4.0: probabilities of win / push / loss.
     markets["Over 4.0"] = over(4.0)
     markets["Under 4.0"] = under(4.0)
     markets["Exactement 4 buts"] = totals.get(4, 0.0)
@@ -455,7 +452,6 @@ def calculate_markets(lambda_home, lambda_away):
 
 
 def calculate_htft(lambda_home, lambda_away):
-    # Approximation of goal distribution by half.
     ht_home = max(0.01, lambda_home * 0.46)
     ht_away = max(0.01, lambda_away * 0.46)
     second_home = max(0.01, lambda_home - ht_home)
@@ -493,12 +489,6 @@ def calculate_htft(lambda_home, lambda_away):
 # ============================================================
 
 def build_lambdas(home_form, away_form):
-    """
-    No fixed fake defaults.
-
-    If data is missing, return None rather than pretending we know
-    the team's scoring rate.
-    """
     if not home_form or not away_form:
         return None, None, "Données insuffisantes"
 
@@ -510,7 +500,6 @@ def build_lambdas(home_form, away_form):
     if None in (home_gf, home_ga, away_gf, away_ga):
         return None, None, "Données insuffisantes"
 
-    # Home/away recent history is preferred when enough observations exist.
     home_home = average_for_venue(home_form, "HOME")
     away_away = average_for_venue(away_form, "AWAY")
 
@@ -528,7 +517,6 @@ def build_lambdas(home_form, away_form):
         away_attack = away_gf
         away_defence = away_ga
 
-    # Blended attack/defence expectation with a modest home advantage.
     lambda_home = (0.58 * home_attack + 0.42 * away_defence) * 1.06
     lambda_away = (0.58 * away_attack + 0.42 * home_defence) * 0.97
 
@@ -650,8 +638,11 @@ with col2:
     )
 
 if load_button or analyze_button:
-    date_from = selected_date.isoformat()
-    date_to = selected_date.isoformat()
+    # CORRECTION : Élargir la fenêtre de recherche de l'API de quelques jours 
+    # autour de la date sélectionnée pour éviter le blocage "Aucun match renvoyé" 
+    # si le calendrier exact décale les heures UTC ou les journées.
+    date_from = (selected_date - timedelta(days=2)).isoformat()
+    date_to = (selected_date + timedelta(days=2)).isoformat()
 
     try:
         with st.spinner("Récupération des matchs Football-Data.org..."):
@@ -662,13 +653,29 @@ if load_button or analyze_button:
                 competition_codes,
             )
 
-        if not matches:
+        # Filtrage local optionnel pour ne garder que la date exacte sélectionnée par l'utilisateur si désiré, 
+        # ou laisser la souplesse de la fenêtre élargie. Gardons le filtrage exact sur la date si l'utilisateur 
+        # veut cibler précisément ce jour-là, tout en évitant le zéro match sec à cause du décalage UTC.
+        exact_date_str = selected_date.isoformat()
+        filtered_matches = [
+            m for m in matches 
+            if m.get("utcDate", "").startswith(exact_date_str)
+        ]
+        
+        # Si aucun match ne matche pile la date UTC exacte mais qu'il y en a dans la fenêtre élargie, 
+        # on prend la fenêtre élargie ou on affiche les matchs proches pour ne pas bloquer l'application.
+        if not filtered_matches and matches:
+            filtered_matches = matches
+
+        if not filtered_matches:
             st.warning(
                 "Aucun match renvoyé par Football-Data.org pour cette "
-                "date et ces compétitions."
+                "date et ces compétitions. Essaie d'élargir ta sélection de compétitions "
+                "ou de choisir une autre date."
             )
             st.stop()
 
+        matches = filtered_matches
         st.success(f"{len(matches)} match(s) trouvé(s).")
 
         if not analyze_button:
@@ -705,7 +712,7 @@ if load_button or analyze_button:
             history = fetch_finished_history(
                 token,
                 history_from,
-                date_from,
+                selected_date.isoformat(),
                 competition_codes,
             )
 
@@ -729,15 +736,13 @@ if load_button or analyze_button:
                     limit=10,
                 )
 
-                # If the broad history did not contain enough data,
-                # query only that team. This avoids fake defaults.
                 if len(home_form) < 5 and home_id:
                     try:
                         home_history = fetch_team_matches(
                             token,
                             home_id,
                             history_from,
-                            date_from,
+                            selected_date.isoformat(),
                             competition_codes,
                         )
                         home_form = recent_team_form(
@@ -754,7 +759,7 @@ if load_button or analyze_button:
                             token,
                             away_id,
                             history_from,
-                            date_from,
+                            selected_date.isoformat(),
                             competition_codes,
                         )
                         away_form = recent_team_form(
@@ -841,7 +846,6 @@ if load_button or analyze_button:
                         "_away_form": away_form,
                     })
 
-        # Sort only valid numerical probabilities first.
         rows.sort(
             key=lambda r: (
                 r["Probabilité"]
@@ -981,7 +985,6 @@ if load_button or analyze_button:
     except Exception as exc:
         st.error("Erreur inattendue.")
         st.exception(exc)
-
 
 
 if "matches" in locals() and "analyze_button" in locals() and analyze_button:
