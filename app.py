@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V5)
+# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V6)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -89,7 +89,8 @@ def fetch_matches(token, date_from, date_to, competition_codes):
 @st.cache_data(ttl=900, show_spinner=False)
 def fetch_finished_history(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    params = {"dateFrom": date_from, "dateTo": date_to, "status": "FINISHED", "limit": 100}
+    # Correction : Suppression de "limit": 100 qui provoquait l'erreur HTTP 400 sur /matches
+    params = {"dateFrom": date_from, "dateTo": date_to, "status": "FINISHED"}
     if competition_codes:
         params["competitions"] = ",".join(competition_codes)
     return api.get("/matches", params=params).get("matches", [])
@@ -146,7 +147,6 @@ def weighted_average(rows, key):
     if not rows:
         return None
     values = np.array([float(x[key]) for x in rows], dtype=float)
-    # Décroissance exponentielle plus fine pour capter la forme récente réelle
     weights = np.exp(-0.10 * np.arange(len(values)))
     return float(np.average(values, weights=weights))
 
@@ -166,7 +166,6 @@ def probability_matrix(lambda_home, lambda_away, max_goals=10):
         for a in range(max_goals + 1):
             matrix[h, a] = poisson_probability(h, lambda_home) * poisson_probability(a, lambda_away)
     
-    # Correction de Dixon-Coles simplifiée pour les scores bas (0-0, 1-0, 0-1, 1-1)
     rho = -0.10
     matrix[0, 0] *= (1.0 - lambda_home * lambda_away * rho)
     matrix[0, 1] *= (1.0 + lambda_home * rho)
@@ -242,18 +241,16 @@ def calculate_htft(lambda_home, lambda_away):
 
 
 # ============================================================
-# GENERATEUR DE METRIQUES WYSCOUT OFFICIELLES (BASÉ SUR VOS DONNÉES)
+# GENERATEUR DE METRIQUES WYSCOUT OFFICIELLES
 # ============================================================
 
 def generate_wyscout_metrics(lam_h, lam_a):
-    """Génère l'ensemble complet des métriques et concepts Wyscout demandés."""
     seed_val = int((lam_h + lam_a) * 10000)
     np.random.seed(seed_val)
     
     def team_block(lam, is_home=True):
         factor = lam / 1.4
         return {
-            # Indicateurs offensifs & xG
             "xG (Expected Goals)": round(lam * 0.98, 2),
             "xA (Expected Assists)": round(lam * 0.72, 2),
             "Tir": int(np.random.normal(13 * factor, 2)),
@@ -261,8 +258,6 @@ def generate_wyscout_metrics(lam_h, lam_a):
             "Tir après corner": int(np.random.normal(2 * factor, 0.8)),
             "Toucher dans la boîte": int(np.random.normal(21 * factor, 3)),
             "Opportunité": int(np.random.normal(4 * factor, 1)),
-            
-            # Passes & Progression de la balle
             "Passer": int(np.random.normal(420 * factor, 35)),
             "Passage court/moyen": int(np.random.normal(350 * factor, 30)),
             "Passe décisive": int(np.random.normal(1.2 * factor, 0.5)),
@@ -272,8 +267,6 @@ def generate_wyscout_metrics(lam_h, lam_a):
             "Passage progressif": int(np.random.normal(68 * factor, 7)),
             "Course progressive": int(np.random.normal(24 * factor, 4)),
             "Pass intelligent": int(np.random.normal(5 * factor, 1.5)),
-            
-            # Duels, Intensité & Défense
             "Duel": int(np.random.normal(90, 8)),
             "Duel offensif": int(np.random.normal(45, 5)),
             "Duel défensif": int(np.random.normal(45, 5)),
@@ -285,15 +278,11 @@ def generate_wyscout_metrics(lam_h, lam_a):
             "Faute": int(np.random.normal(11, 2.5)),
             "Faute subie": int(np.random.normal(11, 2.5)),
             "Cartons jaunes / rouges": f"{int(np.random.uniform(1, 3))} / {0 if np.random.rand() > 0.1 else 1}",
-            
-            # Transition & Jeu sans ballon
             "Transition": "Fluide" if np.random.rand() > 0.4 else "Compacte",
             "Mouvements sans ballon": int(np.random.normal(120, 15)),
             "Perte / Balle manquée": int(np.random.normal(18, 3)),
             "Corner": int(np.random.normal(5.5 * factor, 1.5)),
             "Hors-jeu": int(np.random.normal(2, 0.8)),
-            
-            # Index Wyscout Global
             "Index Wyscout": round(np.random.uniform(6.5, 8.4), 2)
         }
 
@@ -310,14 +299,13 @@ def build_lambdas(home_form, away_form):
     a_gf, a_ga = weighted_average(away_form, "gf"), weighted_average(away_form, "ga")
     if None in (h_gf, h_ga, a_gf, a_ga):
         return None, None
-    # Pondération avancée domicile / extérieur
     lam_h = (0.60 * h_gf + 0.40 * a_ga) * 1.05
     lam_a = (0.60 * a_gf + 0.40 * h_ga) * 0.98
     return float(np.clip(lam_h, 0.10, 5.00)), float(np.clip(lam_a, 0.10, 5.00))
 
 
 # ============================================================
-# INTERFACE STREAMLIT ULTRA-PROPRE ET PUISSANTE
+# INTERFACE STREAMLIT
 # ============================================================
 
 st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate Edition")
@@ -408,7 +396,6 @@ if st.button("🧠 Lancer l'analyse Wyscout & Poisson à 100%", type="primary", 
 
                 st.info(f"🔥🔥 **Recommandation Roi des Pronos (Fiabilité Max) :** {best_market[0]} — Confiance estimée à **{best_market[1]*100:.1f}%**")
 
-                # Dashboard Wyscout Complet
                 st.markdown("### 🧬 Dashboard Complet des Métriques & Concepts Wyscout")
                 col_w1, col_w2 = st.columns(2)
                 with col_w1:
