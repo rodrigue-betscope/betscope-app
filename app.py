@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V16 - FINAL & STABLE)
+# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V17 - GROQ FIX)
 # ============================================================
 import math
 from datetime import date
@@ -11,7 +11,7 @@ import streamlit as st
 from sklearn.ensemble import RandomForestClassifier
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V16",
+    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V17",
     page_icon="⚽",
     layout="wide",
 )
@@ -330,7 +330,7 @@ def get_groq_analysis(groq_key, home_name, away_name, lam_h, lam_a, best_market)
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "llama-3.1-8b-instant",
+            "model": "llama-3.3-70b-versatile",
             "messages": [
                 {
                     "role": "system",
@@ -357,7 +357,7 @@ def get_groq_analysis(groq_key, home_name, away_name, lam_h, lam_a, best_market)
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V16")
+st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V17")
 st.caption("Modèle hybride souverain : Poisson complet (Mi-temps, 2ème mi-temps, HT/FT, 1X2) + Random Forest + Agent Llama 3 (Groq).")
 
 fd_token, groq_key = get_tokens()
