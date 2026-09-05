@@ -99,9 +99,12 @@ def fetch_matches(token, date_from, date_to, competition_codes):
     
     for code in codes:
         try:
-            res = api.get(f"/competitions/{code}/matches", params={"dateFrom": date_from, "dateTo": date_to})
+            res = api.get(f"/competitions/{code}/matches")
             matches = res.get("matches", [])
-            all_matches.extend(matches)
+            for m in matches:
+                utc_date = m.get("utcDate", "")
+                if utc_date.startswith(date_from):
+                    all_matches.append(m)
         except Exception:
             continue
             
