@@ -1,7 +1,8 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V19 - GEMINI)
+# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V20 - GEMINI STABLE)
 # ============================================================
 import math
+import time
 from datetime import date
 
 import numpy as np
@@ -12,7 +13,7 @@ from sklearn.ensemble import RandomForestClassifier
 from google import genai
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V19",
+    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V20",
     page_icon="⚽",
     layout="wide",
 )
@@ -92,7 +93,6 @@ class FootballDataAPI:
 
 def get_tokens():
     fd_token = "fea0e13729748c28ace5bed90100a0c"
-    # Remplace ici par ta nouvelle clé Gemini (AI Studio)
     gemini_key = "AQ.Ab8RN6LJA3r-LMcbSf70jFhS_4uxO29F4NERts1sSGPvjQULug"
     return fd_token, gemini_key
 
@@ -305,36 +305,44 @@ def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
 
 
 # ============================================================
-# AGENT GEMINI (GOOGLE-GENAI)
+# AGENT GEMINI STABLE (AVEC RETRY 503)
 # ============================================================
 
 def get_gemini_analysis(gemini_key, home_name, away_name, lam_h, lam_a, best_market):
     if not gemini_key:
         return "Analyse IA non disponible (Clé Gemini absente)."
-    try:
-        client = genai.Client(api_key=gemini_key)
-        prompt = (
-            f"Tu es un expert statisticien et analyste tactique Wyscout pour le football professionnel. "
-            f"Analyse la rencontre entre {home_name} (Domicile) et {away_name} (Extérieur). "
-            f"xG Domicile : {lam_h:.2f}, xG Extérieur : {lam_a:.2f}. "
-            f"Recommandation principale : {best_market[0]} ({best_market[1]*100:.1f}%). "
-            f"Rédige une synthèse tactique percutante pour parieurs pros (150 mots max)."
-        )
-        response = client.models.generate_content(
-            model='gemini-3.7-flash',
-            contents=prompt,
-        )
-        return response.text
-    except Exception as e:
-        return f"Erreur lors de la génération Gemini : {e}"
+    
+    client = genai.Client(api_key=gemini_key)
+    prompt = (
+        f"Tu es un expert statisticien et analyste tactique Wyscout pour le football professionnel. "
+        f"Analyse la rencontre entre {home_name} (Domicile) et {away_name} (Extérieur). "
+        f"xG Domicile : {lam_h:.2f}, xG Extérieur : {lam_a:.2f}. "
+        f"Recommandation principale : {best_market[0]} ({best_market[1]*100:.1f}%). "
+        f"Rédige une synthèse tactique percutante pour parieurs pros (150 mots max)."
+    )
+
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+            )
+            return response.text
+        except Exception as e:
+            if "503" in str(e) and attempt < 2:
+                time.sleep(2)
+                continue
+            return f"Erreur lors de la génération Gemini : {e}"
+    
+    return "Service temporairement surchargé. Réessaie dans un instant."
 
 
 # ============================================================
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V19 (Gemini)")
-st.caption("Modèle hybride souverain : Poisson complet + Random Forest + Agent Gemini.")
+st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V20")
+st.caption("Modèle hybride souverain : Poisson complet + Random Forest + Agent Gemini Stable.")
 
 fd_token, gemini_key = get_tokens()
 
