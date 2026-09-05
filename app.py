@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V13 - GROQ / LLAMA 3)
+# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V14 - COMPLETE MARKETS + GROQ)
 # ============================================================
 import math
 from datetime import date
@@ -11,7 +11,7 @@ import streamlit as st
 from sklearn.ensemble import RandomForestClassifier
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V13",
+    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V14",
     page_icon="⚽",
     layout="wide",
 )
@@ -222,6 +222,42 @@ def probability_matrix(lambda_home, lambda_away, max_goals=10):
 def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
     matrix = probability_matrix(lam_h, lam_a)
     
+    # Calcul Mi-temps et 2ème Période via sous-modèles Poisson proportionnels
+    matrix_ht = probability_matrix(lam_h * 0.44, lam_a * 0.44, max_goals=5)
+    matrix_2nd = probability_matrix(lam_h * 0.56, lam_a * 0.56, max_goals=5)
+
+    ht_1 = ht_x = ht_2 = 0.0
+    for h in range(matrix_ht.shape[0]):
+        for a in range(matrix_ht.shape[1]):
+            p = float(matrix_ht[h, a])
+            if h > a: ht_1 += p
+            elif h == a: ht_x += p
+            else: ht_2 += p
+
+    nd_1 = nd_x = nd_2 = 0.0
+    for h in range(matrix_2nd.shape[0]):
+        for a in range(matrix_2nd.shape[1]):
+            p = float(matrix_2nd[h, a])
+            if h > a: nd_1 += p
+            elif h == a: nd_x += p
+            else: nd_2 += p
+
+    htft_probs = {}
+    for h1 in range(matrix_ht.shape[0]):
+        for a1 in range(matrix_ht.shape[1]):
+            p_ht = float(matrix_ht[h1, a1])
+            if p_ht == 0: continue
+            res_ht = "1" if h1 > a1 else ("X" if h1 == a1 else "2")
+            for h2 in range(matrix_2nd.shape[0]):
+                for a2 in range(matrix_2nd.shape[1]):
+                    p_2nd = float(matrix_2nd[h2, a2])
+                    if p_2nd == 0: continue
+                    tot_h = h1 + h2
+                    tot_a = a1 + a2
+                    res_ft = "1" if tot_h > tot_a else ("X" if tot_h == tot_a else "2")
+                    key = f"Mi-temps / Fin : {res_ht} / {res_ft}"
+                    htft_probs[key] = htft_probs.get(key, 0.0) + (p_ht * p_2nd)
+
     latest_features = np.array([[weighted_average(home_form, "gf"), weighted_average(home_form, "ga"),
                                  weighted_average(away_form, "gf"), weighted_average(away_form, "ga")]])
     ml_probs = ml_model.predict_proba(latest_features)[0]
@@ -256,12 +292,18 @@ def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
         return sum(p for g, p in totals.items() if g > line)
 
     markets = {
-        "1 (Domicile)": final_p1,
-        "X (Nul)": final_px,
-        "2 (Extérieur)": final_p2,
-        "1X": final_p1 + final_px,
-        "X2": final_px + final_p2,
-        "12": final_p1 + final_p2,
+        "1 (Domicile - Fin de match)": final_p1,
+        "X (Nul - Fin de match)": final_px,
+        "2 (Extérieur - Fin de match)": final_p2,
+        "1X (Fin de match)": final_p1 + final_px,
+        "X2 (Fin de match)": final_px + final_p2,
+        "12 (Fin de match)": final_p1 + final_p2,
+        "1 (Mi-temps)": ht_1,
+        "X (Mi-temps)": ht_x,
+        "2 (Mi-temps)": ht_2,
+        "1 (2ème Période)": nd_1,
+        "X (2ème Période)": nd_x,
+        "2 (2ème Période)": nd_2,
         "BTTS (Les deux marquent) Oui": pbtts,
         "BTTS Non": 1 - pbtts,
         "Over 1.5 buts": over(1.5),
@@ -270,6 +312,7 @@ def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
         "Under 2.5 buts": 1 - over(2.5),
         "Over 3.5 buts": over(3.5),
     }
+    markets.update(htft_probs)
     scores.sort(key=lambda x: x[1], reverse=True)
     return markets, scores
 
@@ -287,7 +330,7 @@ def get_groq_analysis(groq_key, home_name, away_name, lam_h, lam_a, best_market)
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "llama-3.3-70b-versatile",
+            "model": "llama-3.1-8b-instant",
             "messages": [
                 {
                     "role": "system",
@@ -314,8 +357,8 @@ def get_groq_analysis(groq_key, home_name, away_name, lam_h, lam_a, best_market)
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V13")
-st.caption("Modèle hybride souverain : Poisson + Random Forest + Agent Llama 3 (Groq).")
+st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V14")
+st.caption("Modèle hybride souverain : Poisson complet (Mi-temps, 2ème mi-temps, HT/FT, 1X2) + Random Forest + Agent Llama 3 (Groq).")
 
 fd_token, groq_key = get_tokens()
 if not fd_token:
@@ -333,7 +376,7 @@ match_options = {
 selected_match_label = st.selectbox("🎯 Choisis un match précis à analyser", list(match_options.keys()))
 selected_match = match_options[selected_match_label]
 
-if st.button("🧠 Lancer l'analyse IA Hybride", type="primary", use_container_width=True):
+if st.button("🧠 Lancer l'analyse IA Hybride Complète", type="primary", use_container_width=True):
     home = selected_match.get("homeTeam", {}) or {}
     away = selected_match.get("awayTeam", {}) or {}
     home_id, away_id = home.get("id"), away.get("id")
@@ -371,7 +414,7 @@ if st.button("🧠 Lancer l'analyse IA Hybride", type="primary", use_container_w
             st.markdown("### 🤖 Synthèse Narrative de l'Agent Llama 3 (Groq)")
             st.success(ai_narrative)
 
-            st.markdown("### 📈 Tous les Marchés & Probabilités Statistiques")
+            st.markdown("### 📈 Tous les Marchés & Probabilités Statistiques (Mi-temps, 2ème Période, HT/FT, 1X2)")
             market_df = pd.DataFrame([{"Marché": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(markets.items(), key=lambda x: x[1], reverse=True)])
             st.dataframe(market_df, use_container_width=True, hide_index=True)
 
