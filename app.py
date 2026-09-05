@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V14 - COMPLETE MARKETS + GROQ)
+# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V15 - COMPLETE & FINAL)
 # ============================================================
 import math
 from datetime import date
@@ -11,7 +11,7 @@ import streamlit as st
 from sklearn.ensemble import RandomForestClassifier
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V14",
+    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V15",
     page_icon="⚽",
     layout="wide",
 )
@@ -222,7 +222,7 @@ def probability_matrix(lambda_home, lambda_away, max_goals=10):
 def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
     matrix = probability_matrix(lam_h, lam_a)
     
-    # Calcul Mi-temps et 2ème Période via sous-modèles Poisson proportionnels
+    # Calcul Mi-temps et 2ème Période
     matrix_ht = probability_matrix(lam_h * 0.44, lam_a * 0.44, max_goals=5)
     matrix_2nd = probability_matrix(lam_h * 0.56, lam_a * 0.56, max_goals=5)
 
@@ -318,7 +318,7 @@ def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
 
 
 # ============================================================
-# AGENT ALTERNATIF : GROQ (LLAMA 3)
+# AGENT GROQ (LLAMA 3)
 # ============================================================
 
 def get_groq_analysis(groq_key, home_name, away_name, lam_h, lam_a, best_market):
@@ -330,7 +330,7 @@ def get_groq_analysis(groq_key, home_name, away_name, lam_h, lam_a, best_market)
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "llama-3.1-8b-instant",
+            "model": "llama3-8b-8192",
             "messages": [
                 {
                     "role": "system",
@@ -357,7 +357,7 @@ def get_groq_analysis(groq_key, home_name, away_name, lam_h, lam_a, best_market)
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V14")
+st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V15")
 st.caption("Modèle hybride souverain : Poisson complet (Mi-temps, 2ème mi-temps, HT/FT, 1X2) + Random Forest + Agent Llama 3 (Groq).")
 
 fd_token, groq_key = get_tokens()
