@@ -94,15 +94,26 @@ def get_tokens():
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_matches(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    try:
-        res = api.get("/matches", params={"dateFrom": date_from, "dateTo": date_to})
-        matches = res.get("matches", [])
-        if competition_codes:
-            matches = [m for m in matches if m.get("competition", {}).get("code") in competition_codes]
-        return matches
-    except Exception as e:
-        st.error(f"Erreur détaillée API : {e}")
-        return []
+    all_matches = []
+    codes = competition_codes if competition_codes else ["PL", "PD", "FL1", "SA", "BL1"]
+    
+    for code in codes:
+        try:
+            res = api.get(f"/competitions/{code}/matches", params={"dateFrom": date_from, "dateTo": date_to})
+            matches = res.get("matches", [])
+            all_matches.extend(matches)
+        except Exception:
+            continue
+            
+    seen = set()
+    unique_matches = []
+    for m in all_matches:
+        mid = m.get("id")
+        if mid not in seen:
+            seen.add(mid)
+            unique_matches.append(m)
+            
+    return unique_matches
 
 
 @st.cache_data(ttl=900, show_spinner=False)
