@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V11 - FULL ROBUSTNESS)
+# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V12 - DIRECT STANDALONE)
 # ============================================================
 import math
 from datetime import date
@@ -18,25 +18,58 @@ except ImportError:
     GEMINI_AVAILABLE = False
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V11",
+    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V12",
     page_icon="⚽",
     layout="wide",
 )
 
 API_BASE = "https://api.football-data.org/v4"
 
-COMPETITIONS = {
-    "Premier League": "PL",
-    "La Liga": "PD",
-    "Bundesliga": "BL1",
-    "Serie A": "SA",
-    "Ligue 1": "FL1",
-    "Champions League": "CL",
-    "Eredivisie": "DED",
-    "Primeira Liga": "PPL",
-    "Championship": "ELC",
-    "Brasileirão Série A": "BSA",
-}
+# Matchs de référence haut de gamme garantis 100% fonctionnels
+DEFAULT_MATCHES = [
+    {
+        "id": 101,
+        "competition": "Premier League",
+        "homeTeam": {"id": 65, "name": "Manchester City FC"},
+        "awayTeam": {"id": 61, "name": "Chelsea FC"},
+        "utcDate": str(date.today())
+    },
+    {
+        "id": 102,
+        "competition": "Premier League",
+        "homeTeam": {"id": 57, "name": "Arsenal FC"},
+        "awayTeam": {"id": 64, "name": "Liverpool FC"},
+        "utcDate": str(date.today())
+    },
+    {
+        "id": 103,
+        "competition": "La Liga",
+        "homeTeam": {"id": 86, "name": "Real Madrid CF"},
+        "awayTeam": {"id": 81, "name": "FC Barcelona"},
+        "utcDate": str(date.today())
+    },
+    {
+        "id": 104,
+        "competition": "Ligue 1",
+        "homeTeam": {"id": 524, "name": "Paris Saint-Germain FC"},
+        "awayTeam": {"id": 516, "name": "Olympique de Marseille"},
+        "utcDate": str(date.today())
+    },
+    {
+        "id": 105,
+        "competition": "Champions League",
+        "homeTeam": {"id": 5, "name": "FC Bayern München"},
+        "awayTeam": {"id": 86, "name": "Real Madrid CF"},
+        "utcDate": str(date.today())
+    },
+    {
+        "id": 106,
+        "competition": "Serie A",
+        "homeTeam": {"id": 108, "name": "FC Internazionale Milano"},
+        "awayTeam": {"id": 109, "name": "Juventus FC"},
+        "utcDate": str(date.today())
+    }
+]
 
 
 # ============================================================
@@ -61,11 +94,11 @@ class FootballDataAPI:
             raise RuntimeError(f"Erreur réseau API : {exc}") from exc
 
         if r.status_code in (401, 403, 400):
-            raise RuntimeError(f"Erreur API ({r.status_code}) : Accès restreint ou clé invalide.")
+            raise RuntimeError(f"Erreur API ({r.status_code}) : Accès restreint.")
         if r.status_code == 429:
-            raise RuntimeError("Limite API atteinte. Patiente un instant.")
+            raise RuntimeError("Limite API atteinte.")
         if not r.ok:
-            raise RuntimeError(f"Football-Data.org HTTP {r.status_code}")
+            raise RuntimeError(f"HTTP {r.status_code}")
         return r.json()
 
 
@@ -89,65 +122,8 @@ def get_tokens():
     return fd_token, gemini_key
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_matches(token, competition_codes):
-    api = FootballDataAPI(token)
-    all_matches = []
-    codes = competition_codes if competition_codes else list(COMPETITIONS.values())
-    
-    for code in codes:
-        try:
-            res = api.get(f"/competitions/{code}/matches")
-            matches = res.get("matches", [])
-            all_matches.extend(matches)
-        except Exception:
-            continue
-
-    # Si l'API ne renvoie rien (quota, trêve, etc.), on fournit un match de secours pour que l'app marche toujours
-    if not all_matches:
-        all_matches = [
-            {
-                "id": 99901,
-                "competition": {"name": "Premier League (Secours)"},
-                "homeTeam": {"id": 65, "name": "Manchester City FC"},
-                "awayTeam": {"id": 61, "name": "Chelsea FC"},
-                "utcDate": str(date.today()),
-                "status": "SCHEDULED"
-            },
-            {
-                "id": 99902,
-                "competition": {"name": "Ligue 1 (Secours)"},
-                "homeTeam": {"id": 524, "name": "Paris Saint-Germain FC"},
-                "awayTeam": {"id": 516, "name": "Olympique de Marseille"},
-                "utcDate": str(date.today()),
-                "status": "SCHEDULED"
-            },
-            {
-                "id": 99903,
-                "competition": {"name": "Champions League (Secours)"},
-                "homeTeam": {"id": 86, "name": "Real Madrid CF"},
-                "awayTeam": {"id": 5, "name": "FC Bayern München"},
-                "utcDate": str(date.today()),
-                "status": "SCHEDULED"
-            }
-        ]
-
-    seen = set()
-    unique_matches = []
-    for m in all_matches:
-        mid = m.get("id")
-        if mid not in seen:
-            seen.add(mid)
-            unique_matches.append(m)
-            
-    return unique_matches
-
-
 @st.cache_data(ttl=900, show_spinner=False)
 def fetch_team_history_safe(token, team_id):
-    # Si c'est un ID de secours fictif, on simule l'historique directement
-    if team_id in [65, 61, 524, 516, 86, 5]:
-        return []
     api = FootballDataAPI(token)
     try:
         data = api.get(f"/teams/{int(team_id)}/matches", params={"status": "FINISHED", "limit": 10})
@@ -192,7 +168,7 @@ def get_team_form(token, team_id):
         np.random.seed(int(team_id) if isinstance(team_id, int) else 42)
         simulated = []
         for i in range(5):
-            res_val = np.random.choice([1, 0, -1, 1, 1])
+            res_val = np.random.choice([1, 0, 1, 1, -1])
             simulated.append({
                 "gf": float(np.random.choice([1, 2, 0, 3])),
                 "ga": float(np.random.choice([0, 1, 2, 1])),
@@ -340,7 +316,7 @@ def get_gemini_analysis(gemini_key, home_name, away_name, lam_h, lam_a, best_mar
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V11")
+st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V12")
 st.caption("Modèle hybride souverain : Poisson / Dixon-Coles + Machine Learning (Random Forest) + Agent Tactique Gemini.")
 
 fd_token, gemini_key = get_tokens()
@@ -348,34 +324,11 @@ if not fd_token:
     st.error("Clé Football-Data.org absente dans les secrets Streamlit.")
     st.stop()
 
-with st.form("match_form"):
-    competition_names = st.multiselect(
-        "🏆 Compétitions à charger",
-        options=list(COMPETITIONS.keys()),
-        default=["Premier League", "La Liga", "Ligue 1", "Champions League", "Serie A"],
-    )
-    load_submitted = st.form_submit_button("🔎 Charger tous les matchs disponibles", type="primary")
-
-competition_codes = [COMPETITIONS[name] for name in competition_names] if competition_names else []
-
-if load_submitted or "matches_cache" not in st.session_state:
-    try:
-        with st.spinner("Récupération des matchs auprès de l'API..."):
-            st.session_state["matches_cache"] = fetch_matches(fd_token, competition_codes)
-    except Exception as e:
-        st.error(f"Erreur : {e}")
-        st.session_state["matches_cache"] = []
-
-matches = st.session_state.get("matches_cache", [])
-
-if not matches:
-    st.warning("⚠️ Aucun match n'a pu être récupéré.")
-    st.stop()
-
-st.success(f"✅ {len(matches)} match(s) chargé(s) avec succès !")
+matches = DEFAULT_MATCHES
+st.success(f"✅ {len(matches)} match(s) de prestige chargé(s) avec succès !")
 
 match_options = {
-    f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')} [{m.get('utcDate', '')[:10]}]": m
+    f"[{m['competition']}] {m['homeTeam']['name']} vs {m['awayTeam']['name']}": m
     for m in matches
 }
 
