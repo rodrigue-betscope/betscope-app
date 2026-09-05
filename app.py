@@ -81,28 +81,48 @@ def get_token():
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_matches(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    params = {"dateFrom": date_from, "dateTo": date_to}
-    if competition_codes:
-        params["competitions"] = ",".join(competition_codes)
-    return api.get("/matches", params=params).get("matches", [])
+    all_matches = []
+    codes_to_fetch = competition_codes if competition_codes else list(COMPETITIONS.values())
+    
+    for code in codes_to_fetch:
+        try:
+            endpoint = f"/competitions/{code}/matches"
+            params = {"dateFrom": date_from, "dateTo": date_to}
+            data = api.get(endpoint, params=params)
+            if "matches" in data:
+                all_matches.extend(data["matches"])
+        except Exception:
+            continue
+    return all_matches
 
 
 @st.cache_data(ttl=900, show_spinner=False)
 def fetch_finished_history(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    params = {"dateFrom": date_from, "dateTo": date_to, "status": "FINISHED", "limit": 100}
-    if competition_codes:
-        params["competitions"] = ",".join(competition_codes)
-    return api.get("/matches", params=params).get("matches", [])
+    all_matches = []
+    codes_to_fetch = competition_codes if competition_codes else list(COMPETITIONS.values())
+    
+    for code in codes_to_fetch:
+        try:
+            endpoint = f"/competitions/{code}/matches"
+            params = {"dateFrom": date_from, "dateTo": date_to, "status": "FINISHED"}
+            data = api.get(endpoint, params=params)
+            if "matches" in data:
+                all_matches.extend(data["matches"])
+        except Exception:
+            continue
+    return all_matches
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_team_matches(token, team_id, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
     params = {"dateFrom": date_from, "dateTo": date_to, "status": "FINISHED", "limit": 50}
-    if competition_codes:
-        params["competitions"] = ",".join(competition_codes)
-    return api.get(f"/teams/{int(team_id)}/matches", params=params).get("matches", [])
+    try:
+        data = api.get(f"/teams/{int(team_id)}/matches", params=params)
+        return data.get("matches", [])
+    except Exception:
+        return []
 
 
 # ============================================================
@@ -227,7 +247,6 @@ def calculate_htft(lambda_home, lambda_away):
 
 
 def generate_wyscout_metrics(lam_h, lam_a):
-    """Génère des indicateurs avancés inspirés de la nomenclature Wyscout."""
     np.random.seed(int((lam_h + lam_a) * 1000))
     return {
         "Home": {
@@ -359,7 +378,6 @@ if st.button("🧠 Lancer l'analyse Wyscout & Poisson", type="primary", use_cont
 
                 st.info(f"🔥 **Recommandation principale :** {best_market[0]} ({best_market[1]*100:.1f}%)")
 
-                # Panneau Wyscout
                 st.markdown("### 🧬 Dashboard Métriques & Concepts Wyscout")
                 col_w1, col_w2 = st.columns(2)
                 with col_w1:
