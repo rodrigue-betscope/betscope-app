@@ -94,14 +94,15 @@ def get_tokens():
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_matches(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    matches = []
-    for code in (competition_codes or ["PL"]):
-        try:
-            res = api.get(f"/competitions/{code}/matches", params={"dateFrom": date_from, "dateTo": date_to})
-            matches.extend(res.get("matches", []))
-        except Exception:
-            pass
-    return matches
+    try:
+        res = api.get("/matches", params={"dateFrom": date_from, "dateTo": date_to})
+        matches = res.get("matches", [])
+        if competition_codes:
+            matches = [m for m in matches if m.get("competition", {}).get("code") in competition_codes]
+        return matches
+    except Exception as e:
+        st.error(f"Erreur détaillée API : {e}")
+        return []
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -157,7 +158,7 @@ def get_team_form(token, team_id):
                 "result": res_val,
                 "char_res": "W" if res_val == 1 else ("D" if res_val == 0 else "L"),
                 "venue": "HOME" if i % 2 == 0 else "AWAY",
-                "date": f"2026-08-{25-i:02d}"
+                "date": f"2026-09-{5-i:02d}"
             })
         return simulated
     return rows[:8]
@@ -172,12 +173,10 @@ def weighted_average(rows, key):
 
 
 def train_ml_predictor(home_form, away_form):
-    """Entraîne un modèle Random Forest ultra-rapide sur l'historique des formes"""
     X_train, y_train = [], []
     for h in home_form:
         for a in away_form:
             X_train.append([h["gf"], h["ga"], a["gf"], a["ga"]])
-            # 1 = Home win, 0 = Draw, 2 = Away win
             if h["gf"] > a["gf"]:
                 y_train.append(1)
             elif h["gf"] == a["gf"]:
@@ -185,7 +184,6 @@ def train_ml_predictor(home_form, away_form):
             else:
                 y_train.append(2)
                 
-    # Sécurité si pas assez de données
     if len(X_train) < 5:
         X_train = [[1.5, 1.0, 1.0, 1.2], [2.0, 0.8, 0.5, 1.5], [0.8, 1.5, 1.2, 1.0], [1.2, 1.2, 1.1, 1.1]]
         y_train = [1, 1, 2, 0]
@@ -220,17 +218,15 @@ def probability_matrix(lambda_home, lambda_away, max_goals=10):
 def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
     matrix = probability_matrix(lam_h, lam_a)
     
-    # Prédiction ML
     latest_features = np.array([[weighted_average(home_form, "gf"), weighted_average(home_form, "ga"),
                                  weighted_average(away_form, "gf"), weighted_average(away_form, "ga")]])
-    ml_probs = ml_model.predict_proba(latest_features)[0] # [P(1), P(X), P(2)] format selon classes
+    ml_probs = ml_model.predict_proba(latest_features)[0]
     classes = ml_model.classes_
     
     ml_p1 = ml_probs[np.where(classes == 1)[0][0]] if 1 in classes else 0.33
     ml_px = ml_probs[np.where(classes == 0)[0][0]] if 0 in classes else 0.33
     ml_p2 = ml_probs[np.where(classes == 2)[0][0]] if 2 in classes else 0.33
 
-    # Calcul Poisson pur
     pois_p1 = px = p2 = pbtts = 0.0
     totals, scores = {}, []
 
@@ -245,12 +241,10 @@ def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
             if h >= 1 and a >= 1: pbtts += p
             scores.append((f"{h}-{a}", p))
 
-    # Fusion Hybride (60% Poisson / Dixon-Coles + 40% Machine Learning)
     final_p1 = 0.60 * pois_p1 + 0.40 * ml_p1
     final_px = 0.60 * px + 0.40 * ml_px
     final_p2 = 0.60 * p2 + 0.40 * ml_p2
     
-    # Normalisation
     norm = final_p1 + final_px + final_p2
     final_p1, final_px, final_p2 = final_p1/norm, final_px/norm, final_p2/norm
 
@@ -337,7 +331,7 @@ if load_submitted or "matches_cache" not in st.session_state:
 matches = st.session_state.get("matches_cache", [])
 
 if not matches:
-    st.warning("Aucun match trouvé pour cette date et ces compétitions.")
+    st.warning("Aucun match trouvé pour cette date et ces compétitions. (Note : Si c'est une période de trêve internationale, essaie de modifier la date ou de sélectionner d'autres ligues).")
     st.stop()
 
 st.success(f"{len(matches)} match(s) disponible(s).")
@@ -365,14 +359,11 @@ if st.button("🧠 Lancer l'analyse IA Hybride à 98% de précision", type="prim
             lam_h = float(np.clip((0.60 * h_gf + 0.40 * a_ga) * 1.05, 0.10, 5.00))
             lam_a = float(np.clip((0.60 * a_gf + 0.40 * h_ga) * 0.98, 0.10, 5.00))
 
-            # Entraînement du modèle ML
             ml_model = train_ml_predictor(home_form, away_form)
 
-            # Calcul des marchés hybrides
             markets, scores = calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form)
             best_market = max(markets.items(), key=lambda x: x[1])
 
-            # Appel Agent Gemini
             ai_narrative = get_gemini_analysis(gemini_key, home.get('name'), away.get('name'), lam_h, lam_a, best_market)
 
             st.divider()
