@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble RandomForestClassifier
 
 # Import sécurisé de l'API Gemini
 try:
@@ -94,29 +94,18 @@ def get_tokens():
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_matches(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    all_matches = []
-    codes = competition_codes if competition_codes else ["PL", "PD", "FL1", "SA", "BL1"]
-    
-    for code in codes:
-        try:
-            res = api.get(f"/competitions/{code}/matches")
-            matches = res.get("matches", [])
-            for m in matches:
-                utc_date = m.get("utcDate", "")
-                if utc_date.startswith(date_from):
-                    all_matches.append(m)
-        except Exception:
-            continue
-            
-    seen = set()
-    unique_matches = []
-    for m in all_matches:
-        mid = m.get("id")
-        if mid not in seen:
-            seen.add(mid)
-            unique_matches.append(m)
-            
-    return unique_matches
+    try:
+        # Interrogation directe de l'endpoint global pour récupérer tous les matchs de la date
+        res = api.get("/matches", params={"dateFrom": date_from, "dateTo": date_to})
+        matches = res.get("matches", [])
+        
+        if competition_codes:
+            filtered = [m for m in matches if m.get("competition", {}).get("code") in competition_codes]
+            # Si le filtre par ligue est vide (ex: trêve internationale), on retourne tous les matchs dispos du jour
+            return filtered if filtered else matches
+        return matches
+    except Exception:
+        return []
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -345,7 +334,7 @@ if load_submitted or "matches_cache" not in st.session_state:
 matches = st.session_state.get("matches_cache", [])
 
 if not matches:
-    st.warning("Aucun match trouvé pour cette date et ces compétitions. (Note : Si c'est une période de trêve internationale, essaie de modifier la date ou de sélectionner d'autres ligues).")
+    st.warning("Aucun match trouvé pour cette date et ces compétitions. Essaie d'élargir les compétitions sélectionnées.")
     st.stop()
 
 st.success(f"{len(matches)} match(s) disponible(s).")
