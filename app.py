@@ -1,17 +1,18 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V18 - DIRECT CONFIG)
+# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V19 - GEMINI)
 # ============================================================
 import math
 from datetime import date
 
 import numpy as np
 import pandas as pd
-import requests
+requests = __import__("requests")
 import streamlit as st
 from sklearn.ensemble import RandomForestClassifier
+from google import genai
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V18",
+    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V19",
     page_icon="⚽",
     layout="wide",
 )
@@ -91,8 +92,9 @@ class FootballDataAPI:
 
 def get_tokens():
     fd_token = "fea0e13729748c28ace5bed90100a0c"
-    groq_key = "Gsk_iZFqFf5Y3jZaFrUcrRmmWGdyb3FYnLpGCqzMxfBIrVGxpuldisiy"
-    return fd_token, groq_key
+    # Remplace ici par ta nouvelle clé Gemini (AI Studio)
+    gemini_key = "AQ.Ab8RN6LJA3r-LMcbSf70jFhS_4uxO29F4NERts1sSGPvjQULug"
+    return fd_token, gemini_key
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -303,49 +305,38 @@ def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
 
 
 # ============================================================
-# AGENT GROQ (LLAMA 3)
+# AGENT GEMINI (GOOGLE-GENAI)
 # ============================================================
 
-def get_groq_analysis(groq_key, home_name, away_name, lam_h, lam_a, best_market):
-    if not groq_key:
-        return "Analyse IA non disponible (Clé Groq absente)."
+def get_gemini_analysis(gemini_key, home_name, away_name, lam_h, lam_a, best_market):
+    if not gemini_key:
+        return "Analyse IA non disponible (Clé Gemini absente)."
     try:
-        headers = {
-            "Authorization": f"Bearer {groq_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "llama-3.3-70b-versatile",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "Tu es un expert statisticien et analyste tactique Wyscout pour le football professionnel."
-                },
-                {
-                    "role": "user",
-                    "content": f"Analyse la rencontre entre {home_name} (Domicile) et {away_name} (Extérieur). xG Domicile : {lam_h:.2f}, xG Extérieur : {lam_a:.2f}. Recommandation principale : {best_market[0]} ({best_market[1]*100:.1f}%). Rédige une synthèse tactique percutante pour parieurs pros (150 mots max)."
-                }
-            ],
-            "temperature": 0.7
-        }
-        response = requests.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers, timeout=20)
-        if response.ok:
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-        else:
-            return f"Erreur API Groq ({response.status_code}) : {response.text}"
+        client = genai.Client(api_key=gemini_key)
+        prompt = (
+            f"Tu es un expert statisticien et analyste tactique Wyscout pour le football professionnel. "
+            f"Analyse la rencontre entre {home_name} (Domicile) et {away_name} (Extérieur). "
+            f"xG Domicile : {lam_h:.2f}, xG Extérieur : {lam_a:.2f}. "
+            f"Recommandation principale : {best_market[0]} ({best_market[1]*100:.1f}%). "
+            f"Rédige une synthèse tactique percutante pour parieurs pros (150 mots max)."
+        )
+        response = client.models.generate_content(
+            model='gemini-3.7-flash',
+            contents=prompt,
+        )
+        return response.text
     except Exception as e:
-        return f"Erreur lors de la génération Groq : {e}"
+        return f"Erreur lors de la génération Gemini : {e}"
 
 
 # ============================================================
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V18")
-st.caption("Modèle hybride souverain : Poisson complet (Mi-temps, 2ème mi-temps, HT/FT, 1X2) + Random Forest + Agent Llama 3 (Groq).")
+st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V19 (Gemini)")
+st.caption("Modèle hybride souverain : Poisson complet + Random Forest + Agent Gemini.")
 
-fd_token, groq_key = get_tokens()
+fd_token, gemini_key = get_tokens()
 
 matches = DEFAULT_MATCHES
 st.success(f"✅ {len(matches)} match(s) de prestige chargé(s) avec succès !")
@@ -363,7 +354,7 @@ if st.button("🧠 Lancer l'analyse IA Hybride Complète", type="primary", use_c
     away = selected_match.get("awayTeam", {}) or {}
     home_id, away_id = home.get("id"), away.get("id")
 
-    with st.spinner("Exécution des algorithmes et génération Llama 3..."):
+    with st.spinner("Exécution des algorithmes et génération Gemini..."):
         try:
             home_form = get_team_form(fd_token, home_id) if home_id else []
             away_form = get_team_form(fd_token, away_id) if away_id else []
@@ -378,7 +369,7 @@ if st.button("🧠 Lancer l'analyse IA Hybride Complète", type="primary", use_c
             markets, scores = calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form)
             best_market = max(markets.items(), key=lambda x: x[1])
 
-            ai_narrative = get_groq_analysis(groq_key, home.get('name'), away.get('name'), lam_h, lam_a, best_market)
+            ai_narrative = get_gemini_analysis(gemini_key, home.get('name'), away.get('name'), lam_h, lam_a, best_market)
 
             st.divider()
             st.subheader(f"📊 Analyse Tactique Ultime : {home.get('name')} vs {away.get('name')}")
@@ -393,10 +384,10 @@ if st.button("🧠 Lancer l'analyse IA Hybride Complète", type="primary", use_c
 
             st.info(f"🔥🔥 **Recommandation Roi des Pronos :** {best_market[0]} — Confiance estimée à **{best_market[1]*100:.1f}%**")
 
-            st.markdown("### 🤖 Synthèse Narrative de l'Agent Llama 3 (Groq)")
+            st.markdown("### 🤖 Synthèse Narrative de l'Agent Gemini")
             st.success(ai_narrative)
 
-            st.markdown("### 📈 Tous les Marchés & Probabilités Statistiques (Mi-temps, 2ème Période, HT/FT, 1X2)")
+            st.markdown("### 📈 Tous les Marchés & Probabilités Statistiques")
             market_df = pd.DataFrame([{"Marché": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(markets.items(), key=lambda x: x[1], reverse=True)])
             st.dataframe(market_df, use_container_width=True, hide_index=True)
 
