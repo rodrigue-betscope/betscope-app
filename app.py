@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V17 - GROQ FIX)
+# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V18 - DIRECT CONFIG)
 # ============================================================
 import math
 from datetime import date
@@ -11,7 +11,7 @@ import streamlit as st
 from sklearn.ensemble import RandomForestClassifier
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V17",
+    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V18",
     page_icon="⚽",
     layout="wide",
 )
@@ -65,7 +65,7 @@ DEFAULT_MATCHES = [
 
 
 # ============================================================
-# CLIENTS API & SECRETS
+# CLIENTS API & CONFIGURATION DIRECTE
 # ============================================================
 
 class FootballDataAPI:
@@ -90,22 +90,8 @@ class FootballDataAPI:
 
 
 def get_tokens():
-    fd_token, groq_key = "", ""
-    try:
-        fd_token = str(st.secrets["football_data"]["token"])
-    except Exception:
-        try:
-            fd_token = str(st.secrets["FOOTBALL_DATA_TOKEN"])
-        except Exception:
-            pass
-
-    try:
-        groq_key = str(st.secrets["groq"]["api_key"])
-    except Exception:
-        try:
-            groq_key = str(st.secrets["GROQ_API_KEY"])
-        except Exception:
-            pass
+    fd_token = "fea0e13729748c28ace5bed90100a0c"
+    groq_key = "Gsk_iZFqFf5Y3jZaFrUcrRmmWGdyb3FYnLpGCqzMxfBIrVGxpuldisiy"
     return fd_token, groq_key
 
 
@@ -222,7 +208,6 @@ def probability_matrix(lambda_home, lambda_away, max_goals=10):
 def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
     matrix = probability_matrix(lam_h, lam_a)
     
-    # Calcul Mi-temps et 2ème Période
     matrix_ht = probability_matrix(lam_h * 0.44, lam_a * 0.44, max_goals=5)
     matrix_2nd = probability_matrix(lam_h * 0.56, lam_a * 0.56, max_goals=5)
 
@@ -323,7 +308,7 @@ def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
 
 def get_groq_analysis(groq_key, home_name, away_name, lam_h, lam_a, best_market):
     if not groq_key:
-        return "Analyse IA non disponible (Clé Groq absente dans les secrets)."
+        return "Analyse IA non disponible (Clé Groq absente)."
     try:
         headers = {
             "Authorization": f"Bearer {groq_key}",
@@ -357,13 +342,10 @@ def get_groq_analysis(groq_key, home_name, away_name, lam_h, lam_a, best_market)
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V17")
+st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V18")
 st.caption("Modèle hybride souverain : Poisson complet (Mi-temps, 2ème mi-temps, HT/FT, 1X2) + Random Forest + Agent Llama 3 (Groq).")
 
 fd_token, groq_key = get_tokens()
-if not fd_token:
-    st.error("Clé Football-Data.org absente dans les secrets Streamlit.")
-    st.stop()
 
 matches = DEFAULT_MATCHES
 st.success(f"✅ {len(matches)} match(s) de prestige chargé(s) avec succès !")
