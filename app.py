@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7)
+# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.1)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -79,23 +79,35 @@ def get_token():
     return ""
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_matches(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
-    params = {"dateFrom": date_from, "dateTo": date_to}
-    if competition_codes:
-        params["competitions"] = ",".join(competition_codes)
-    try:
-        return api.get("/matches", params=params).get("matches", [])
-    except Exception:
-        matches = []
-        for code in (competition_codes or ["PL"]):
-            try:
-                res = api.get(f"/competitions/{code}/matches", params={"dateFrom": date_from, "dateTo": date_to})
-                matches.extend(res.get("matches", []))
-            except Exception:
-                pass
-        return matches
+    matches = []
+    
+    # Stratégie robuste : interrogation ciblée par compétition pour contourner les limites du plan gratuit
+    codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
+    
+    for code in codes_to_query:
+        try:
+            res = api.get(f"/competitions/{code}/matches", params={"dateFrom": date_from, "dateTo": date_to})
+            comp_matches = res.get("matches", [])
+            if comp_matches:
+                matches.extend(comp_matches)
+        except Exception:
+            pass
+            
+    # Si rien trouvé par compétition, essai sur l'endpoint global /matches
+    if not matches:
+        try:
+            params = {"dateFrom": date_from, "dateTo": date_to}
+            if competition_codes:
+                params["competitions"] = ",".join(competition_codes)
+            res = api.get("/matches", params=params)
+            matches = res.get("matches", [])
+        except Exception:
+            pass
+            
+    return matches
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -151,7 +163,7 @@ def get_team_form(token, team_id):
                 "ga": float(np.random.choice([0, 1, 2, 1])),
                 "result": outcomes[i],
                 "venue": "HOME" if i % 2 == 0 else "AWAY",
-                "date": f"2026-08-{25-i:02d}"
+                "date": f"2026-09-{5-i:02d}"
             })
         return simulated
     return rows[:6]
