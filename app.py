@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V21 - GEMINI 3.6)
+# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V22 - LIVE API & PROGNOSTICS)
 # ============================================================
 import math
 import time
@@ -13,61 +13,16 @@ from sklearn.ensemble import RandomForestClassifier
 from google import genai
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI — Wyscout Ultimate V21",
+    page_title="Rodrigue Pro Football AI — Wyscout Ultimate V22",
     page_icon="⚽",
     layout="wide",
 )
 
 API_BASE = "https://api.football-data.org/v4"
 
-DEFAULT_MATCHES = [
-    {
-        "id": 101,
-        "competition": "Premier League",
-        "homeTeam": {"id": 65, "name": "Manchester City FC"},
-        "awayTeam": {"id": 61, "name": "Chelsea FC"},
-        "utcDate": str(date.today())
-    },
-    {
-        "id": 102,
-        "competition": "Premier League",
-        "homeTeam": {"id": 57, "name": "Arsenal FC"},
-        "awayTeam": {"id": 64, "name": "Liverpool FC"},
-        "utcDate": str(date.today())
-    },
-    {
-        "id": 103,
-        "competition": "La Liga",
-        "homeTeam": {"id": 86, "name": "Real Madrid CF"},
-        "awayTeam": {"id": 81, "name": "FC Barcelona"},
-        "utcDate": str(date.today())
-    },
-    {
-        "id": 104,
-        "competition": "Ligue 1",
-        "homeTeam": {"id": 524, "name": "Paris Saint-Germain FC"},
-        "awayTeam": {"id": 516, "name": "Olympique de Marseille"},
-        "utcDate": str(date.today())
-    },
-    {
-        "id": 105,
-        "competition": "Champions League",
-        "homeTeam": {"id": 5, "name": "FC Bayern München"},
-        "awayTeam": {"id": 86, "name": "Real Madrid CF"},
-        "utcDate": str(date.today())
-    },
-    {
-        "id": 106,
-        "competition": "Serie A",
-        "homeTeam": {"id": 108, "name": "FC Internazionale Milano"},
-        "awayTeam": {"id": 109, "name": "Juventus FC"},
-        "utcDate": str(date.today())
-    }
-]
-
 
 # ============================================================
-# CLIENTS API & CONFIGURATION DIRECTE
+# CLIENTS API & RÉCUPÉRATION DES VRAIS MATCHS DU JOUR
 # ============================================================
 
 class FootballDataAPI:
@@ -87,7 +42,7 @@ class FootballDataAPI:
         except requests.RequestException as exc:
             raise RuntimeError(f"Erreur réseau API : {exc}") from exc
         if not r.ok:
-            raise RuntimeError(f"HTTP {r.status_code}")
+            raise RuntimeError(f"HTTP {r.status_code} - Impossible de récupérer le calendrier.")
         return r.json()
 
 
@@ -95,6 +50,23 @@ def get_tokens():
     fd_token = "fea0e13729748c28ace5bed90100a0c"
     gemini_key = "AQ.Ab8RN6LJA3r-LMcbSf70jFhS_4uxO29F4NERts1sSGPvjQULug"
     return fd_token, gemini_key
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_live_matches_calendar(token):
+    api = FootballDataAPI(token)
+    today_str = str(date.today())
+    try:
+        # Récupère les matchs du jour (ou planifiés autour d'aujourd'hui)
+        data = api.get("/matches", params={"dateFrom": today_str, "dateTo": today_str})
+        matches = data.get("matches", [])
+        if not matches:
+            # Si aucun match pile aujourd'hui, élargit sur 3 jours pour avoir du contenu réel
+            data = api.get("/matches", params={"dateFrom": today_str, "dateTo": str(date.fromordinal(date.today().toordinal() + 3))})
+            matches = data.get("matches", [])
+        return matches
+    except Exception:
+        return []
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -108,7 +80,7 @@ def fetch_team_history_safe(token, team_id):
 
 
 # ============================================================
-# MOTEUR Hybride : POISSON + MACHINE LEARNING
+# MOTEUR Hybride : POISSON + MACHINE LEARNING + SCÉNARIOS MI-TEMPS
 # ============================================================
 
 def team_result_from_match(match, team_id):
@@ -242,7 +214,7 @@ def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
                     tot_h = h1 + h2
                     tot_a = a1 + a2
                     res_ft = "1" if tot_h > tot_a else ("X" if tot_h == tot_a else "2")
-                    key = f"Mi-temps / Fin : {res_ht} / {res_ft}"
+                    key = f"Mi-temps / Fin de match : {res_ht} / {res_ft}"
                     htft_probs[key] = htft_probs.get(key, 0.0) + (p_ht * p_2nd)
 
     latest_features = np.array([[weighted_average(home_form, "gf"), weighted_average(home_form, "ga"),
@@ -301,24 +273,26 @@ def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
     }
     markets.update(htft_probs)
     scores.sort(key=lambda x: x[1], reverse=True)
-    return markets, scores
+    return markets, scores, matrix_ht
 
 
 # ============================================================
-# AGENT GEMINI 3.6 FLASH (AVEC GESTION D'ERREUR & RETRY)
+# AGENT GEMINI 3.6 FLASH (AVEC SCÉNARIO DÉTAILLÉ MI-TEMPS / FIN)
 # ============================================================
 
-def get_gemini_analysis(gemini_key, home_name, away_name, lam_h, lam_a, best_market):
+def get_gemini_analysis(gemini_key, home_name, away_name, lam_h, lam_a, best_market, top_score, ht_scenario):
     if not gemini_key:
         return "Analyse IA non disponible (Clé Gemini absente)."
     
     client = genai.Client(api_key=gemini_key)
     prompt = (
         f"Tu es un expert statisticien et analyste tactique Wyscout pour le football professionnel. "
-        f"Analyse la rencontre entre {home_name} (Domicile) et {away_name} (Extérieur). "
+        f"Analyse en détail la rencontre entre {home_name} (Domicile) et {away_name} (Extérieur). "
         f"xG Domicile : {lam_h:.2f}, xG Extérieur : {lam_a:.2f}. "
         f"Recommandation principale : {best_market[0]} ({best_market[1]*100:.1f}%). "
-        f"Rédige une synthèse tactique percutante pour parieurs pros (150 mots max)."
+        f"Score exact le plus probable : {top_score[0]} ({top_score[1]*100:.1f}%). "
+        f"Scénario Mi-temps / Fin le plus probable : {ht_scenario[0]} ({ht_scenario[1]*100:.1f}%). "
+        f"Rédige une synthèse tactique percutante et professionnelle pour parieurs pros (180 mots max), en explicitant précisément le déroulement du match (ex: scénario de la première mi-temps, verrouillage ou ouverture du score, et bascule en seconde période)."
     )
 
     for attempt in range(3):
@@ -341,28 +315,61 @@ def get_gemini_analysis(gemini_key, home_name, away_name, lam_h, lam_a, best_mar
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V21")
-st.caption("Modèle hybride souverain : Poisson complet + Random Forest + Agent Gemini 3.6 Flash.")
+st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V22")
+st.caption("Modèle hybride souverain : Calendrier Live API + Poisson + Random Forest + Scénarios Mi-Temps/Fin & Scores Exacts.")
 
 fd_token, gemini_key = get_tokens()
 
-matches = DEFAULT_MATCHES
-st.success(f"✅ {len(matches)} match(s) de prestige chargé(s) avec succès !")
+# Récupération dynamique des matchs réels de l'API Football-Data
+with st.spinner("Chargement du calendrier en direct des championnats (Premier League, La Liga, Ligue 1, Série A, C1)..."):
+    api_matches = fetch_live_matches_calendar(fd_token)
 
-match_options = {
-    f"[{m['competition']}] {m['homeTeam']['name']} vs {m['awayTeam']['name']}": m
-    for m in matches
-}
+if api_matches:
+    st.success(f"✅ {len(api_matches)} match(s) officiel(s) récupéré(s) en direct du calendrier !")
+    match_options = {
+        f"[{m.get('competition', {}).get('name', 'Match')} - {m.get('utcDate', '')[:10]}] {m['homeTeam']['name']} vs {m['awayTeam']['name']}": m
+        for m in api_matches
+    }
+else:
+    st.warning("⚠️ Impossible de joindre l'API en direct ou calendrier vide. Utilisation des affiches de secours.")
+    from datetime import date
+    api_matches = [
+        {
+            "id": 101,
+            "competition": {"name": "Premier League"},
+            "homeTeam": {"id": 65, "name": "Manchester City FC"},
+            "awayTeam": {"id": 61, "name": "Chelsea FC"},
+            "utcDate": str(date.today())
+        },
+        {
+            "id": 103,
+            "competition": {"name": "La Liga"},
+            "homeTeam": {"id": 86, "name": "Real Madrid CF"},
+            "awayTeam": {"id": 81, "name": "FC Barcelona"},
+            "utcDate": str(date.today())
+        },
+        {
+            "id": 104,
+            "competition": {"name": "Ligue 1"},
+            "homeTeam": {"id": 524, "name": "Paris Saint-Germain FC"},
+            "awayTeam": {"id": 516, "name": "Olympique de Marseille"},
+            "utcDate": str(date.today())
+        }
+    ]
+    match_options = {
+        f"[{m['competition']['name']}] {m['homeTeam']['name']} vs {m['awayTeam']['name']}": m
+        for m in api_matches
+    }
 
-selected_match_label = st.selectbox("🎯 Choisis un match précis à analyser", list(match_options.keys()))
+selected_match_label = st.selectbox("🎯 Choisis un match officiel dans le calendrier", list(match_options.keys()))
 selected_match = match_options[selected_match_label]
 
-if st.button("🧠 Lancer l'analyse IA Hybride Complète", type="primary", use_container_width=True):
+if st.button("🧠 Lancer l'analyse IA Hybride & Scénario Complet", type="primary", use_container_width=True):
     home = selected_match.get("homeTeam", {}) or {}
     away = selected_match.get("awayTeam", {}) or {}
     home_id, away_id = home.get("id"), away.get("id")
 
-    with st.spinner("Exécution des algorithmes et génération Gemini 3.6..."):
+    with st.spinner("Exécution des algorithmes de Poisson, Machine Learning et simulation des périodes..."):
         try:
             home_form = get_team_form(fd_token, home_id) if home_id else []
             away_form = get_team_form(fd_token, away_id) if away_id else []
@@ -374,10 +381,15 @@ if st.button("🧠 Lancer l'analyse IA Hybride Complète", type="primary", use_c
 
             ml_model = train_ml_predictor(home_form, away_form)
 
-            markets, scores = calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form)
+            markets, scores, matrix_ht = calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form)
             best_market = max(markets.items(), key=lambda x: x[1])
+            top_score = scores[0]
 
-            ai_narrative = get_gemini_analysis(gemini_key, home.get('name'), away.get('name'), lam_h, lam_a, best_market)
+            # Extraction du meilleur scénario Mi-temps / Fin de match
+            htft_markets = {k: v for k, v in markets.items() if "Mi-temps / Fin de match" in k}
+            best_htft = max(htft_markets.items(), key=lambda x: x[1]) if htft_markets else ("Mi-temps / Fin : X / 1", 0.35)
+
+            ai_narrative = get_gemini_analysis(gemini_key, home.get('name'), away.get('name'), lam_h, lam_a, best_market, top_score, best_htft)
 
             st.divider()
             st.subheader(f"📊 Analyse Tactique Ultime : {home.get('name')} vs {away.get('name')}")
@@ -391,17 +403,22 @@ if st.button("🧠 Lancer l'analyse IA Hybride Complète", type="primary", use_c
                 st.write(f"**Forme récente :** {''.join(x['char_res'] for x in away_form)}")
 
             st.info(f"🔥🔥 **Recommandation Roi des Pronos :** {best_market[0]} — Confiance estimée à **{best_market[1]*100:.1f}%**")
+            st.success(f"🏆 **Pronostic Score Exact Principal :** {top_score[0]} (Probabilité statistique : **{top_score[1]*100:.1f}%**) | **Scénario Mi-temps / Fin :** {best_htft[0]} (**{best_htft[1]*100:.1f}%**)")
 
-            st.markdown("### 🤖 Synthèse Narrative de l'Agent Gemini")
-            st.success(ai_narrative)
+            st.markdown("### 🤖 Synthèse Narrative de l'Agent Gemini & Déroulement du Match")
+            st.warning(ai_narrative)
 
-            st.markdown("### 📈 Tous les Marchés & Probabilités Statistiques")
+            st.markdown("### 🎯 Top Scores Exacts (Hiérarchie complète)")
+            score_df = pd.DataFrame([{"Score Exact": s, "Probabilité": f"{p*100:.1f}%"} for s, p in scores[:8]])
+            st.dataframe(score_df, use_container_width=True, hide_index=True)
+
+            st.markdown("### ⏱️ Analyse Mi-temps & Scénarios de Fin de Match")
+            htft_df = pd.DataFrame([{"Scénario Mi-temps / Fin": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(htft_markets.items(), key=lambda x: x[1], reverse=True)])
+            st.dataframe(htft_df, use_container_width=True, hide_index=True)
+
+            st.markdown("### 📈 Tous les Marchés Statistiques")
             market_df = pd.DataFrame([{"Marché": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(markets.items(), key=lambda x: x[1], reverse=True)])
             st.dataframe(market_df, use_container_width=True, hide_index=True)
-
-            st.markdown("### 🎯 Top Scores Exacts")
-            score_df = pd.DataFrame([{"Score": s, "Probabilité": f"{p*100:.1f}%"} for s, p in scores[:6]])
-            st.dataframe(score_df, use_container_width=True, hide_index=True)
 
         except Exception as e:
             st.error(f"Erreur lors de l'analyse : {e}")
