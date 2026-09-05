@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
-from sklearn.ensemble RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier
 
 # Import sécurisé de l'API Gemini
 try:
@@ -95,13 +95,11 @@ def get_tokens():
 def fetch_matches(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
     try:
-        # Interrogation directe de l'endpoint global pour récupérer tous les matchs de la date
         res = api.get("/matches", params={"dateFrom": date_from, "dateTo": date_to})
         matches = res.get("matches", [])
         
         if competition_codes:
             filtered = [m for m in matches if m.get("competition", {}).get("code") in competition_codes]
-            # Si le filtre par ligue est vide (ex: trêve internationale), on retourne tous les matchs dispos du jour
             return filtered if filtered else matches
         return matches
     except Exception:
