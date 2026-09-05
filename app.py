@@ -79,21 +79,18 @@ def get_token():
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_matches(token, date_from, date_to, competition_codes):
+def fetch_matches(token, target_date, competition_codes):
     api = FootballDataAPI(token)
-    all_matches = []
-    codes_to_fetch = competition_codes if competition_codes else list(COMPETITIONS.values())
+    endpoint = "/matches"
+    params = {"date": target_date}
     
-    for code in codes_to_fetch:
-        try:
-            endpoint = f"/competitions/{code}/matches"
-            params = {"dateFrom": date_from, "dateTo": date_to}
-            data = api.get(endpoint, params=params)
-            if "matches" in data:
-                all_matches.extend(data["matches"])
-        except Exception:
-            continue
-    return all_matches
+    data = api.get(endpoint, params=params)
+    matches = data.get("matches", [])
+    
+    if competition_codes:
+        matches = [m for m in matches if m.get("competition", {}).get("code") in competition_codes]
+        
+    return matches
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -314,9 +311,9 @@ date_to = (selected_date + timedelta(days=1)).isoformat()
 if load_submitted or "matches_cache" not in st.session_state:
     try:
         with st.spinner("Récupération des matchs..."):
-            st.session_state["matches_cache"] = fetch_matches(token, date_from, date_to, competition_codes)
+            st.session_state["matches_cache"] = fetch_matches(token, selected_date.isoformat(), competition_codes)
     except Exception as e:
-        st.error(f"Erreur : {e}")
+        st.error(f"Erreur technique API : {e}")
         st.session_state["matches_cache"] = []
 
 matches = st.session_state.get("matches_cache", [])
