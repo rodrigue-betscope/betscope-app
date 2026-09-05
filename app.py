@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V20 - GEMINI STABLE)
+# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V21 - GEMINI 3.6)
 # ============================================================
 import math
 import time
@@ -13,7 +13,7 @@ from sklearn.ensemble import RandomForestClassifier
 from google import genai
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V20",
+    page_title="Rodrigue Pro Football AI — Wyscout Ultimate V21",
     page_icon="⚽",
     layout="wide",
 )
@@ -305,7 +305,7 @@ def calculate_hybrid_markets(lam_h, lam_a, ml_model, home_form, away_form):
 
 
 # ============================================================
-# AGENT GEMINI STABLE (AVEC RETRY 503)
+# AGENT GEMINI 3.6 FLASH (AVEC GESTION D'ERREUR & RETRY)
 # ============================================================
 
 def get_gemini_analysis(gemini_key, home_name, away_name, lam_h, lam_a, best_market):
@@ -324,12 +324,12 @@ def get_gemini_analysis(gemini_key, home_name, away_name, lam_h, lam_a, best_mar
     for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.6-flash',
                 contents=prompt,
             )
             return response.text
         except Exception as e:
-            if "503" in str(e) and attempt < 2:
+            if ("503" in str(e) or "429" in str(e)) and attempt < 2:
                 time.sleep(2)
                 continue
             return f"Erreur lors de la génération Gemini : {e}"
@@ -341,8 +341,8 @@ def get_gemini_analysis(gemini_key, home_name, away_name, lam_h, lam_a, best_mar
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V20")
-st.caption("Modèle hybride souverain : Poisson complet + Random Forest + Agent Gemini Stable.")
+st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V21")
+st.caption("Modèle hybride souverain : Poisson complet + Random Forest + Agent Gemini 3.6 Flash.")
 
 fd_token, gemini_key = get_tokens()
 
@@ -362,7 +362,7 @@ if st.button("🧠 Lancer l'analyse IA Hybride Complète", type="primary", use_c
     away = selected_match.get("awayTeam", {}) or {}
     home_id, away_id = home.get("id"), away.get("id")
 
-    with st.spinner("Exécution des algorithmes et génération Gemini..."):
+    with st.spinner("Exécution des algorithmes et génération Gemini 3.6..."):
         try:
             home_form = get_team_form(fd_token, home_id) if home_id else []
             away_form = get_team_form(fd_token, away_id) if away_id else []
