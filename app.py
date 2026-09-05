@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V8 - IA TOTALE)
+# RODRIGUE PRO FOOTBALL AI - WYSCOUT ULTIMATE EDITION (V9 - AUTO-FALLBACK)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -18,7 +18,7 @@ except ImportError:
     GEMINI_AVAILABLE = False
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V8",
+    page_title="Rodrigue Pro Football AI - Wyscout Ultimate V9",
     page_icon="⚽",
     layout="wide",
 )
@@ -37,8 +37,6 @@ COMPETITIONS = {
     "Championship": "ELC",
     "Brasileirão Série A": "BSA",
 }
-
-OUTCOMES = ("1", "X", "2")
 
 
 # ============================================================
@@ -99,25 +97,29 @@ def fetch_matches(token, date_target, competition_codes):
     
     date_str = date_target.isoformat()
     
+    # 1. Tentative de récupération exacte à la date ciblée
     for code in codes:
         try:
-            res = api.get(f"/competitions/{code}/matches")
+            res = api.get(f"/competitions/{code}/matches", params={"date": date_str})
             matches = res.get("matches", [])
-            for m in matches:
-                utc_date = m.get("utcDate", "")
-                # On vérifie si le match correspond à la date sélectionnée
-                if utc_date.startswith(date_str):
-                    all_matches.append(m)
+            all_matches.extend(matches)
         except Exception:
-            continue
+            try:
+                res = api.get(f"/competitions/{code}/matches")
+                matches = res.get("matches", [])
+                for m in matches:
+                    if m.get("utcDate", "").startswith(date_str):
+                        all_matches.append(m)
+            except Exception:
+                continue
             
-    # Si aucun match trouvé exactement ce jour-là (ex: trêve), on élargit aux matchs récents/proches de la compétition
+    # 2. Si aucun match ce jour précis (trêve ou pas de match), recherche élargie sur les prochains matchs programmés
     if not all_matches and codes:
-        for code in codes[:3]:
+        for code in codes:
             try:
                 res = api.get(f"/competitions/{code}/matches", params={"status": "SCHEDULED"})
                 matches = res.get("matches", [])
-                all_matches.extend(matches[:5]) # Prend les 5 prochains programmés
+                all_matches.extend(matches[:3])  # Prend les 3 prochains de chaque ligue
             except Exception:
                 continue
 
@@ -326,7 +328,7 @@ def get_gemini_analysis(gemini_key, home_name, away_name, lam_h, lam_a, best_mar
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V8 (IA Avancée)")
+st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate V9")
 st.caption("Modèle hybride souverain : Poisson / Dixon-Coles + Machine Learning (Random Forest) + Agent Tactique Gemini.")
 
 fd_token, gemini_key = get_tokens()
@@ -335,19 +337,19 @@ if not fd_token:
     st.stop()
 
 with st.form("match_form"):
-    selected_date = st.date_input("📅 Date des matchs", value=date.today())
+    selected_date = st.date_input("📅 Date ciblée", value=date.today())
     competition_names = st.multiselect(
         "🏆 Compétitions",
         options=list(COMPETITIONS.keys()),
-        default=["Premier League", "La Liga", "Ligue 1"],
+        default=["Premier League", "La Liga", "Ligue 1", "Champions League"],
     )
-    load_submitted = st.form_submit_button("🔎 Charger les matchs du jour", type="primary")
+    load_submitted = st.form_submit_button("🔎 Charger les matchs disponibles", type="primary")
 
 competition_codes = [COMPETITIONS[name] for name in competition_names] if competition_names else []
 
 if load_submitted or "matches_cache" not in st.session_state:
     try:
-        with st.spinner("Récupération des matchs en cours..."):
+        with st.spinner("Recherche et synchronisation des matchs..."):
             st.session_state["matches_cache"] = fetch_matches(fd_token, selected_date, competition_codes)
     except Exception as e:
         st.error(f"Erreur : {e}")
@@ -356,13 +358,13 @@ if load_submitted or "matches_cache" not in st.session_state:
 matches = st.session_state.get("matches_cache", [])
 
 if not matches:
-    st.warning("Aucun match trouvé pour cette date. Essaie de changer la date sur un autre week-end ou de sélectionner 'Champions League' / 'Premier League'.")
+    st.warning("⚠️ Aucun match n'a pu être chargé pour cette sélection exacte. L'application a activé le mode automatique de repli. Essaie de modifier la date ou de sélectionner d'autres ligues.")
     st.stop()
 
-st.success(f"{len(matches)} match(s) disponible(s).")
+st.success(f"✅ {len(matches)} match(s) chargé(s) avec succès.")
 
 match_options = {
-    f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')} ({m.get('competition', {}).get('name', '')})": m
+    f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')} [{m.get('utcDate', '')[:10]}]": m
     for m in matches
 }
 
