@@ -92,18 +92,44 @@ def get_tokens():
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_matches(token, date_from, date_to, competition_codes):
+def fetch_matches(token, date_target, competition_codes):
     api = FootballDataAPI(token)
-    try:
-        res = api.get("/matches", params={"dateFrom": date_from, "dateTo": date_to})
-        matches = res.get("matches", [])
-        
-        if competition_codes:
-            filtered = [m for m in matches if m.get("competition", {}).get("code") in competition_codes]
-            return filtered if filtered else matches
-        return matches
-    except Exception:
-        return []
+    all_matches = []
+    codes = competition_codes if competition_codes else list(COMPETITIONS.values())
+    
+    date_str = date_target.isoformat()
+    
+    for code in codes:
+        try:
+            res = api.get(f"/competitions/{code}/matches")
+            matches = res.get("matches", [])
+            for m in matches:
+                utc_date = m.get("utcDate", "")
+                # On vérifie si le match correspond à la date sélectionnée
+                if utc_date.startswith(date_str):
+                    all_matches.append(m)
+        except Exception:
+            continue
+            
+    # Si aucun match trouvé exactement ce jour-là (ex: trêve), on élargit aux matchs récents/proches de la compétition
+    if not all_matches and codes:
+        for code in codes[:3]:
+            try:
+                res = api.get(f"/competitions/{code}/matches", params={"status": "SCHEDULED"})
+                matches = res.get("matches", [])
+                all_matches.extend(matches[:5]) # Prend les 5 prochains programmés
+            except Exception:
+                continue
+
+    seen = set()
+    unique_matches = []
+    for m in all_matches:
+        mid = m.get("id")
+        if mid not in seen:
+            seen.add(mid)
+            unique_matches.append(m)
+            
+    return unique_matches
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -318,13 +344,11 @@ with st.form("match_form"):
     load_submitted = st.form_submit_button("🔎 Charger les matchs du jour", type="primary")
 
 competition_codes = [COMPETITIONS[name] for name in competition_names] if competition_names else []
-date_from = selected_date.isoformat()
-date_to = (selected_date + timedelta(days=1)).isoformat()
 
 if load_submitted or "matches_cache" not in st.session_state:
     try:
         with st.spinner("Récupération des matchs en cours..."):
-            st.session_state["matches_cache"] = fetch_matches(fd_token, date_from, date_to, competition_codes)
+            st.session_state["matches_cache"] = fetch_matches(fd_token, selected_date, competition_codes)
     except Exception as e:
         st.error(f"Erreur : {e}")
         st.session_state["matches_cache"] = []
@@ -332,7 +356,7 @@ if load_submitted or "matches_cache" not in st.session_state:
 matches = st.session_state.get("matches_cache", [])
 
 if not matches:
-    st.warning("Aucun match trouvé pour cette date et ces compétitions. Essaie d'élargir les compétitions sélectionnées.")
+    st.warning("Aucun match trouvé pour cette date. Essaie de changer la date sur un autre week-end ou de sélectionner 'Champions League' / 'Premier League'.")
     st.stop()
 
 st.success(f"{len(matches)} match(s) disponible(s).")
