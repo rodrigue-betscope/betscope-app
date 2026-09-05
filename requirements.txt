@@ -1,6 +1,6 @@
-python-telegram-bot
-beautifulsoup4
-requests
-numpy
-scipy
 streamlit
+pandas
+numpy
+requests
+scikit-learn
+google-generativeai
