@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.1)
+# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.2)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -84,28 +84,29 @@ def fetch_matches(token, date_from, date_to, competition_codes):
     api = FootballDataAPI(token)
     matches = []
     
-    # Stratégie robuste : interrogation ciblée par compétition pour contourner les limites du plan gratuit
-    codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
-    
-    for code in codes_to_query:
-        try:
-            res = api.get(f"/competitions/{code}/matches", params={"dateFrom": date_from, "dateTo": date_to})
-            comp_matches = res.get("matches", [])
-            if comp_matches:
-                matches.extend(comp_matches)
-        except Exception:
-            pass
+    # Stratégie ultra-robuste inspirée des correctifs : 
+    # 1. Essai direct sur l'endpoint global /matches pour la date (contourne les restrictions de codes)
+    try:
+        res = api.get("/matches", params={"dateFrom": date_from, "dateTo": date_to})
+        all_matches = res.get("matches", [])
+        if competition_codes:
+            matches = [m for m in all_matches if m.get("competition", {}).get("code") in competition_codes]
+        else:
+            matches = all_matches
+    except Exception:
+        pass
             
-    # Si rien trouvé par compétition, essai sur l'endpoint global /matches
+    # 2. Si l'endpoint global ne renvoie rien, on interroge chaque code de compétition un par un
     if not matches:
-        try:
-            params = {"dateFrom": date_from, "dateTo": date_to}
-            if competition_codes:
-                params["competitions"] = ",".join(competition_codes)
-            res = api.get("/matches", params=params)
-            matches = res.get("matches", [])
-        except Exception:
-            pass
+        codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
+        for code in codes_to_query:
+            try:
+                res = api.get(f"/competitions/{code}/matches", params={"dateFrom": date_from, "dateTo": date_to})
+                comp_matches = res.get("matches", [])
+                if comp_matches:
+                    matches.extend(comp_matches)
+            except Exception:
+                pass
             
     return matches
 
@@ -343,7 +344,7 @@ with st.form("match_form"):
     competition_names = st.multiselect(
         "🏆 Compétitions",
         options=list(COMPETITIONS.keys()),
-        default=["Premier League", "La Liga", "Ligue 1"],
+        default=list(COMPETITIONS.keys()),
     )
     load_submitted = st.form_submit_button("🔎 Charger les matchs du jour", type="primary")
 
