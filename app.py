@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.2)
+# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.3)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -80,35 +80,38 @@ def get_token():
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def fetch_matches(token, date_from, date_to, competition_codes):
+def fetch_matches(token, date_from, competition_codes):
     api = FootballDataAPI(token)
     matches = []
     
-    # Stratégie ultra-robuste inspirée des correctifs : 
-    # 1. Essai direct sur l'endpoint global /matches pour la date (contourne les restrictions de codes)
-    try:
-        res = api.get("/matches", params={"dateFrom": date_from, "dateTo": date_to})
-        all_matches = res.get("matches", [])
-        if competition_codes:
-            matches = [m for m in all_matches if m.get("competition", {}).get("code") in competition_codes]
-        else:
-            matches = all_matches
-    except Exception:
-        pass
+    # Stratégie contournement plan gratuit : récupération globale par compétition sans filtre de date API
+    codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
+    
+    for code in codes_to_query:
+        try:
+            res = api.get(f"/competitions/{code}/matches")
+            comp_matches = res.get("matches", [])
+            if comp_matches:
+                matches.extend(comp_matches)
+        except Exception:
+            pass
             
-    # 2. Si l'endpoint global ne renvoie rien, on interroge chaque code de compétition un par un
+    # Si rien par compétition, essai sur l'endpoint global
     if not matches:
-        codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
-        for code in codes_to_query:
-            try:
-                res = api.get(f"/competitions/{code}/matches", params={"dateFrom": date_from, "dateTo": date_to})
-                comp_matches = res.get("matches", [])
-                if comp_matches:
-                    matches.extend(comp_matches)
-            except Exception:
-                pass
+        try:
+            res = api.get("/matches")
+            matches = res.get("matches", [])
+        except Exception:
+            pass
             
-    return matches
+    # Filtrage local strict par date (YYYY-MM-DD) pour s'affranchir des restrictions du plan gratuit
+    filtered_matches = []
+    for m in matches:
+        utc_date = m.get("utcDate", "")
+        if utc_date.startswith(date_from):
+            filtered_matches.append(m)
+            
+    return filtered_matches
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -350,12 +353,11 @@ with st.form("match_form"):
 
 competition_codes = [COMPETITIONS[name] for name in competition_names] if competition_names else []
 date_from = selected_date.isoformat()
-date_to = (selected_date + timedelta(days=1)).isoformat()
 
 if load_submitted or "matches_cache" not in st.session_state:
     try:
         with st.spinner("Récupération des matchs en cours..."):
-            st.session_state["matches_cache"] = fetch_matches(token, date_from, date_to, competition_codes)
+            st.session_state["matches_cache"] = fetch_matches(token, date_from, competition_codes)
     except Exception as e:
         st.error(f"Erreur : {e}")
         st.session_state["matches_cache"] = []
