@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.3)
+# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.4)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -83,34 +83,40 @@ def get_token():
 def fetch_matches(token, date_from, competition_codes):
     api = FootballDataAPI(token)
     matches = []
-    
-    # Stratégie contournement plan gratuit : récupération globale par compétition sans filtre de date API
     codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
     
+    # 1. Tentative de récupération ciblée par compétition
     for code in codes_to_query:
         try:
-            res = api.get(f"/competitions/{code}/matches")
+            res = api.get(f"/competitions/{code}/matches", params={"status": "SCHEDULED,LIVE,IN_PLAY,PAUSED"})
             comp_matches = res.get("matches", [])
             if comp_matches:
                 matches.extend(comp_matches)
         except Exception:
             pass
             
-    # Si rien par compétition, essai sur l'endpoint global
+    # 2. Si l'API par compétition échoue, tentative sur l'endpoint global /matches
     if not matches:
         try:
-            res = api.get("/matches")
+            res = api.get("/matches", params={"status": "SCHEDULED,LIVE,IN_PLAY,PAUSED"})
             matches = res.get("matches", [])
         except Exception:
             pass
-            
-    # Filtrage local strict par date (YYYY-MM-DD) pour s'affranchir des restrictions du plan gratuit
-    filtered_matches = []
-    for m in matches:
-        utc_date = m.get("utcDate", "")
-        if utc_date.startswith(date_from):
-            filtered_matches.append(m)
-            
+
+    # Filtrage par date exacte (YYYY-MM-DD)
+    filtered_matches = [m for m in matches if str(m.get("utcDate", "")).startswith(date_from)]
+    
+    # 🛡️ SÉCURITÉ PLAN GRATUIT : Si aucun match pile ce jour-là, on élargit aux 7 prochains jours
+    if not filtered_matches and matches:
+        start_dt = date.fromisoformat(date_from)
+        end_dt = start_dt + timedelta(days=7)
+        filtered_matches = [
+            m for m in matches 
+            if start_dt <= date.fromisoformat(str(m.get("utcDate", ""))[:10]) <= end_dt
+        ]
+        if filtered_matches:
+            st.toast("⚠️ Aucun match exact aujourd'hui : affichage des matchs de la semaine !", icon="ℹ️")
+
     return filtered_matches
 
 
@@ -365,13 +371,13 @@ if load_submitted or "matches_cache" not in st.session_state:
 matches = st.session_state.get("matches_cache", [])
 
 if not matches:
-    st.warning("Aucun match trouvé pour cette date et ces compétitions.")
+    st.warning("Aucun match trouvé pour cette période. Essaie d'élargir tes compétitions.")
     st.stop()
 
 st.success(f"{len(matches)} match(s) disponible(s).")
 
 match_options = {
-    f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')} ({m.get('competition', {}).get('name', '')})": m
+    f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')} ({m.get('competition', {}).get('name', '')}) — [{m.get('utcDate', '')[:10]}]": m
     for m in matches
 }
 
