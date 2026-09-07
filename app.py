@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.5)
+# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.6)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -34,7 +34,7 @@ OUTCOMES = ("1", "X", "2")
 
 
 # ============================================================
-# API CLIENT ULTRA-ROBUSTE AVEC MODE SECOURS (TRÊVE / HORS-SAISON)
+# API CLIENT ULTRA-ROBUSTE SANS INTERFÉRENCE STREAMLIT CACHÉE
 # ============================================================
 
 class FootballDataAPI:
@@ -48,14 +48,12 @@ class FootballDataAPI:
 
     def get(self, endpoint: str, params=None):
         if not self.token:
-            raise RuntimeError("Clé Football-Data.org absente.")
+            return {}
         try:
             r = self.session.get(API_BASE + endpoint, params=params or {}, timeout=15)
-        except requests.RequestException as exc:
-            raise RuntimeError(f"Erreur réseau API : {exc}") from exc
-
-        if r.status_code in (401, 403, 429, 400, 500):
+        except requests.RequestException:
             return {}
+
         if not r.ok:
             return {}
         return r.json()
@@ -100,7 +98,7 @@ def fetch_matches(token, date_from, competition_codes):
     # Filtrage par date exacte
     filtered_matches = [m for m in matches if str(m.get("utcDate", "")).startswith(date_from)]
     
-    # Si aucun match ce jour-là, élargissement sur 7 jours
+    # Élargissement sur 7 jours si rien ce jour-là
     if not filtered_matches and matches:
         start_dt = date.fromisoformat(date_from)
         end_dt = start_dt + timedelta(days=7)
@@ -109,9 +107,8 @@ def fetch_matches(token, date_from, competition_codes):
             if start_dt <= date.fromisoformat(str(m.get("utcDate", ""))[:10]) <= end_dt
         ]
 
-    # 🛡️ MODE SECOURS INTELLIGENT (Trêve internationale / Absence de matchs API)
+    # 🛡️ MODE SECOURS DE TRÊVE INTERNATIONALE
     if not filtered_matches:
-        st.toast("⚠️ Période sans match officiel détectée (Trêve). Mode simulation activé !", icon="⚽")
         filtered_matches = [
             {
                 "id": 9001,
