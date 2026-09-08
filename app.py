@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.10)
+# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.11)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -34,7 +34,7 @@ OUTCOMES = ("1", "X", "2")
 
 
 # ============================================================
-# API CLIENT ULTRA-ROBUSTE DIRECT SANS BLOCAGE DE SECOURS FICTIF
+# API CLIENT ULTRA-ROBUSTE OPTIMISÉ POUR LA VRAIE API
 # ============================================================
 
 class FootballDataAPI:
@@ -74,38 +74,27 @@ def get_token():
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_matches(token, date_from, competition_codes):
     api = FootballDataAPI(token)
-    matches = []
-    codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
+    start_dt = date.fromisoformat(date_from)
+    end_dt = start_dt + timedelta(days=7)
     
-    for code in codes_to_query:
-        try:
-            res = api.get(f"/competitions/{code}/matches", params={"status": "SCHEDULED,LIVE,IN_PLAY,PAUSED,TIMED"})
-            if isinstance(res, dict):
-                comp_matches = res.get("matches", [])
-                if comp_matches:
-                    matches.extend(comp_matches)
-        except Exception:
-            pass
-            
-    if not matches:
-        try:
-            res = api.get("/matches", params={"status": "SCHEDULED,LIVE,IN_PLAY,PAUSED,TIMED"})
-            if isinstance(res, dict):
-                matches = res.get("matches", [])
-        except Exception:
-            pass
+    # Utilisation de l'endpoint global avec plage de dates pour éviter les limites de requêtes (Rate Limit)
+    try:
+        res = api.get("/matches", params={
+            "dateFrom": start_dt.isoformat(),
+            "dateTo": end_dt.isoformat()
+        })
+        if isinstance(res, dict):
+            matches = res.get("matches", [])
+        else:
+            matches = []
+    except Exception:
+        matches = []
 
-    filtered_matches = [m for m in matches if str(m.get("utcDate", "")).startswith(date_from)]
-    
-    if not filtered_matches and matches:
-        start_dt = date.fromisoformat(date_from)
-        end_dt = start_dt + timedelta(days=7)
-        filtered_matches = [
-            m for m in matches 
-            if start_dt <= date.fromisoformat(str(m.get("utcDate", ""))[:10]) <= end_dt
-        ]
+    # Filtrage par compétitions sélectionnées si l'utilisateur en a cochées
+    if competition_codes and matches:
+        matches = [m for m in matches if m.get("competition", {}).get("code") in competition_codes]
 
-    return filtered_matches
+    return matches
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -276,35 +265,20 @@ def generate_wyscout_metrics(lam_h, lam_a):
             "xG (Expected Goals)": round(lam * 0.98, 2),
             "xA (Expected Assists)": round(lam * 0.72, 2),
             "Tir": int(np.random.normal(13 * factor, 2)),
-            "Tir contré (Tentative d'arrêt)": int(np.random.normal(3 * factor, 1)),
+            "Tir contré": int(np.random.normal(3 * factor, 1)),
             "Tir après corner": int(np.random.normal(2 * factor, 0.8)),
             "Toucher dans la boîte": int(np.random.normal(21 * factor, 3)),
-            "Opportunité": int(np.random.normal(4 * factor, 1)),
             "Passer": int(np.random.normal(420 * factor, 35)),
-            "Passage court/moyen": int(np.random.normal(350 * factor, 30)),
             "Passe décisive": int(np.random.normal(1.2 * factor, 0.5)),
-            "Deuxième / Troisième passe décisive": int(np.random.normal(2.5 * factor, 0.8)),
             "Passage dans le dernier tiers": int(np.random.normal(55 * factor, 6)),
-            "Passe dans la surface de réparation": int(np.random.normal(12 * factor, 2)),
             "Passage progressif": int(np.random.normal(68 * factor, 7)),
-            "Course progressive": int(np.random.normal(24 * factor, 4)),
-            "Pass intelligent": int(np.random.normal(5 * factor, 1.5)),
             "Duel": int(np.random.normal(90, 8)),
-            "Duel offensif": int(np.random.normal(45, 5)),
-            "Duel défensif": int(np.random.normal(45, 5)),
-            "Duel aérien": int(np.random.normal(30, 6)),
-            "Intensité du défi": round(np.random.uniform(5.2, 8.4), 1),
             "PPDA (Intensité pressing)": round(np.random.uniform(8.5 if is_home else 10.5, 14.0), 1),
             "Récupération": int(np.random.normal(52, 6)),
             "Interception": int(np.random.normal(11, 3)),
             "Faute": int(np.random.normal(11, 2.5)),
-            "Faute subie": int(np.random.normal(11, 2.5)),
             "Cartons jaunes / rouges": f"{int(np.random.uniform(1, 3))} / {0 if np.random.rand() > 0.1 else 1}",
-            "Transition": "Fluide" if np.random.rand() > 0.4 else "Compacte",
-            "Mouvements sans ballon": int(np.random.normal(120, 15)),
-            "Perte / Balle manquée": int(np.random.normal(18, 3)),
             "Corner": int(np.random.normal(5.5 * factor, 1.5)),
-            "Hors-jeu": int(np.random.normal(2, 0.8)),
             "Index Wyscout": round(np.random.uniform(6.5, 8.4), 2)
         }
 
@@ -348,7 +322,7 @@ date_from = selected_date.isoformat()
 
 if load_submitted or "matches_cache" not in st.session_state:
     try:
-        with st.spinner("Récupération des vrais matchs depuis l'API..."):
+        with st.spinner("Récupération globale des matchs via l'API..."):
             st.session_state["matches_cache"] = fetch_matches(token, date_from, competition_codes)
     except Exception as e:
         st.error(f"Erreur : {e}")
@@ -357,13 +331,13 @@ if load_submitted or "matches_cache" not in st.session_state:
 matches = st.session_state.get("matches_cache", [])
 
 if not matches:
-    st.warning("Aucun match réel trouvé pour cette date et ces compétitions sur l'API. Essayez une autre date (un week-end de match) ou vérifiez vos compétitions.")
+    st.warning("Aucun match trouvé sur l'API pour cette période avec les filtres actuels. Changez de date (par exemple un week-end) ou décochez certaines compétitions.")
     st.stop()
 
 st.success(f"{len(matches)} match(s) réel(s) disponible(s).")
 
 match_options = {
-    f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')} ({m.get('competition', {}).get('name', '')})": m
+    f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')} ({m.get('competition', {}).get('name', '')}) - {m.get('utcDate', '')[:10]}": m
     for m in matches
 }
 
@@ -418,7 +392,7 @@ if st.button("🧠 Lancer l'analyse Wyscout & Poisson à 100%", type="primary", 
             st.dataframe(score_df, use_container_width=True, hide_index=True)
 
             st.markdown("### ⏱️ Mi-temps / Fin de match (HT/FT)")
-            htft_df = pd.DataFrame([{"HT/Fel": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(htft.items(), key=lambda x: x[1], reverse=True)[:6]])
+            htft_df = pd.DataFrame([{"HT/FT": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(htft.items(), key=lambda x: x[1], reverse=True)[:6]])
             st.dataframe(htft_df, use_container_width=True, hide_index=True)
 
         except Exception as e:
