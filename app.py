@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.9)
+# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.10)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -77,7 +77,6 @@ def fetch_matches(token, date_from, competition_codes):
     matches = []
     codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
     
-    # Interrogation directe de l'API pour chaque compétition sélectionnée
     for code in codes_to_query:
         try:
             res = api.get(f"/competitions/{code}/matches", params={"status": "SCHEDULED,LIVE,IN_PLAY,PAUSED,TIMED"})
@@ -96,10 +95,8 @@ def fetch_matches(token, date_from, competition_codes):
         except Exception:
             pass
 
-    # Filtrage strict par date exacte pour ne garder QUE les vrais matchs du jour
     filtered_matches = [m for m in matches if str(m.get("utcDate", "")).startswith(date_from)]
     
-    # Si aucun match n'est trouvé, on élargit sur la semaine au lieu de renvoyer de faux matchs de simulation
     if not filtered_matches and matches:
         start_dt = date.fromisoformat(date_from)
         end_dt = start_dt + timedelta(days=7)
@@ -269,10 +266,6 @@ def calculate_htft(lambda_home, lambda_away):
     return result
 
 
-# ============================================================
-# GENERATEUR DE METRIQUES WYSCOUT OFFICIELLES
-# ============================================================
-
 def generate_wyscout_metrics(lam_h, lam_a):
     seed_val = int((lam_h + lam_a) * 10000)
     np.random.seed(seed_val)
@@ -397,7 +390,7 @@ if st.button("🧠 Lancer l'analyse Wyscout & Poisson à 100%", type="primary", 
             st.divider()
             st.subheader(f"📊 Analyse Tactique Ultime : {home.get('name')} vs {away.get('name')}")
 
-(`c1, c2 = st.columns(2)`)
+            c1, c2 = st.columns(2)
             with c1:
                 st.metric("xG Domicile (Attaque/Défense)", f"{lam_h:.2f}")
                 st.write(f"**Forme récente :** {form_string(home_form)}")
@@ -425,7 +418,7 @@ if st.button("🧠 Lancer l'analyse Wyscout & Poisson à 100%", type="primary", 
             st.dataframe(score_df, use_container_width=True, hide_index=True)
 
             st.markdown("### ⏱️ Mi-temps / Fin de match (HT/FT)")
-            htft_df = pd.DataFrame([{"HT/FT": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(htft.items(), key=lambda x: x[1], reverse=True)[:6]])
+            htft_df = pd.DataFrame([{"HT/Fel": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(htft.items(), key=lambda x: x[1], reverse=True)[:6]])
             st.dataframe(htft_df, use_container_width=True, hide_index=True)
 
         except Exception as e:
