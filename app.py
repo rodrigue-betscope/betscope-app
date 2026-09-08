@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.6)
+# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.7)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -33,10 +33,6 @@ COMPETITIONS = {
 OUTCOMES = ("1", "X", "2")
 
 
-# ============================================================
-# API CLIENT ULTRA-ROBUSTE SANS INTERFÉRENCE STREAMLIT CACHÉE
-# ============================================================
-
 class FootballDataAPI:
     def __init__(self, token: str):
         self.token = str(token or "").strip()
@@ -51,21 +47,22 @@ class FootballDataAPI:
             return {}
         try:
             r = self.session.get(API_BASE + endpoint, params=params or {}, timeout=15)
-        except requests.RequestException:
-            return {}
-
-        if not r.ok:
-            return {}
-        return r.json()
+            if r.ok:
+                return r.json()
+        except Exception:
+            pass
+        return {}
 
 
 def get_token():
     try:
-        return str(st.secrets["football_data"]["token"])
+        if "football_data" in st.secrets and "token" in st.secrets["football_data"]:
+            return str(st.secrets["football_data"]["token"])
     except Exception:
         pass
     try:
-        return str(st.secrets["FOOTBALL_DATA_TOKEN"])
+        if "FOOTBALL_DATA_TOKEN" in st.secrets:
+            return str(st.secrets["FOOTBALL_DATA_TOKEN"])
     except Exception:
         pass
     return "DEMO_KEY"
@@ -73,80 +70,65 @@ def get_token():
 
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_matches(token, date_from, competition_codes):
-    api = FootballDataAPI(token)
-    matches = []
-    codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
-    
-    for code in codes_to_query:
-        try:
-            res = api.get(f"/competitions/{code}/matches", params={"status": "SCHEDULED,LIVE,IN_PLAY,PAUSED,TIMED"})
-            if isinstance(res, dict):
-                comp_matches = res.get("matches", [])
-                if comp_matches:
-                    matches.extend(comp_matches)
-        except Exception:
-            pass
-            
-    if not matches:
-        try:
-            res = api.get("/matches", params={"status": "SCHEDULED,LIVE,IN_PLAY,PAUSED,TIMED"})
-            if isinstance(res, dict):
-                matches = res.get("matches", [])
-        except Exception:
-            pass
+    try:
+        api = FootballDataAPI(token)
+        matches = []
+        codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
+        
+        for code in codes_to_query:
+            try:
+                res = api.get(f"/competitions/{code}/matches", params={"status": "SCHEDULED,LIVE,IN_PLAY,PAUSED,TIMED"})
+                if isinstance(res, dict):
+                    comp_matches = res.get("matches", [])
+                    if comp_matches:
+                        matches.extend(comp_matches)
+            except Exception:
+                pass
+                
+        if not matches:
+            try:
+                res = api.get("/matches", params={"status": "SCHEDULED,LIVE,IN_PLAY,PAUSED,TIMED"})
+                if isinstance(res, dict):
+                    matches = res.get("matches", [])
+            except Exception:
+                pass
 
-    # Filtrage par date exacte
-    filtered_matches = [m for m in matches if str(m.get("utcDate", "")).startswith(date_from)]
-    
-    # Élargissement sur 7 jours si rien ce jour-là
-    if not filtered_matches and matches:
-        start_dt = date.fromisoformat(date_from)
-        end_dt = start_dt + timedelta(days=7)
-        filtered_matches = [
-            m for m in matches 
-            if start_dt <= date.fromisoformat(str(m.get("utcDate", ""))[:10]) <= end_dt
-        ]
+        filtered_matches = [m for m in matches if str(m.get("utcDate", "")).startswith(date_from)]
+        
+        if not filtered_matches and matches:
+            start_dt = date.fromisoformat(date_from)
+            end_dt = start_dt + timedelta(days=7)
+            filtered_matches = [
+                m for m in matches 
+                if start_dt <= date.fromisoformat(str(m.get("utcDate", ""))[:10]) <= end_dt
+            ]
 
-    # 🛡️ MODE SECOURS DE TRÊVE INTERNATIONALE
-    if not filtered_matches:
-        filtered_matches = [
-            {
-                "id": 9001,
-                "competition": {"name": "Premier League (Simulation Trêve)"},
-                "homeTeam": {"id": 61, "name": "Manchester City"},
-                "awayTeam": {"id": 65, "name": "Manchester United"},
-                "utcDate": f"{date_from}T20:00:00Z"
-            },
-            {
-                "id": 9002,
-                "competition": {"name": "La Liga (Simulation Trêve)"},
-                "homeTeam": {"id": 86, "name": "Real Madrid"},
-                "awayTeam": {"id": 81, "name": "FC Barcelona"},
-                "utcDate": f"{date_from}T21:00:00Z"
-            },
-            {
-                "id": 9003,
-                "competition": {"name": "Serie A (Simulation Trêve)"},
-                "homeTeam": {"id": 108, "name": "Inter Milan"},
-                "awayTeam": {"id": 109, "name": "Juventus FC"},
-                "utcDate": f"{date_from}T19:45:00Z"
-            },
-            {
-                "id": 9004,
-                "competition": {"name": "Ligue 1 (Simulation Trêve)"},
-                "homeTeam": {"id": 524, "name": "Paris Saint-Germain"},
-                "awayTeam": {"id": 529, "name": "Marseille"},
-                "utcDate": f"{date_from}T20:45:00Z"
-            }
-        ]
-
-    return filtered_matches
+        if not filtered_matches:
+            filtered_matches = [
+                {
+                    "id": 9001,
+                    "competition": {"name": "Premier League (Simulation Trêve)"},
+                    "homeTeam": {"id": 61, "name": "Manchester City"},
+                    "awayTeam": {"id": 65, "name": "Manchester United"},
+                    "utcDate": f"{date_from}T20:00:00Z"
+                },
+                {
+                    "id": 9002,
+                    "competition": {"name": "La Liga (Simulation Trêve)"},
+                    "homeTeam": {"id": 86, "name": "Real Madrid"},
+                    "awayTeam": {"id": 81, "name": "FC Barcelona"},
+                    "utcDate": f"{date_from}T21:00:00Z"
+                }
+            ]
+        return filtered_matches
+    except Exception:
+        return []
 
 
 @st.cache_data(ttl=900, show_spinner=False)
 def fetch_team_history_safe(token, team_id):
-    api = FootballDataAPI(token)
     try:
+        api = FootballDataAPI(token)
         data = api.get(f"/teams/{int(team_id)}/matches", params={"status": "FINISHED", "limit": 10})
         if isinstance(data, dict):
             return data.get("matches", [])
@@ -155,87 +137,101 @@ def fetch_team_history_safe(token, team_id):
     return []
 
 
-# ============================================================
-# MOTEUR STATISTIQUE & POISSON ULTRA-AVANCÉ (DIXON-COLES)
-# ============================================================
-
 def team_result_from_match(match, team_id):
-    home = match.get("homeTeam", {}) or {}
-    away = match.get("awayTeam", {}) or {}
-    score = match.get("score", {}) or {}
-    full = score.get("fullTime", {}) or {}
-    hg, ag = full.get("home"), full.get("away")
-    if hg is None or ag is None:
+    try:
+        home = match.get("homeTeam", {}) or {}
+        away = match.get("awayTeam", {}) or {}
+        score = match.get("score", {}) or {}
+        full = score.get("fullTime", {}) or {}
+        hg, ag = full.get("home"), full.get("away")
+        if hg is None or ag is None:
+            return None
+        if home.get("id") == team_id:
+            gf, ga, venue = float(hg), float(ag), "HOME"
+        elif away.get("id") == team_id:
+            gf, ga, venue = float(ag), float(hg), "AWAY"
+        else:
+            return None
+        return {
+            "gf": gf, 
+            "ga": ga, 
+            "result": "W" if gf > ga else "D" if gf == ga else "L", 
+            "venue": venue, 
+            "date": match.get("utcDate", "")
+        }
+    except Exception:
         return None
-    if home.get("id") == team_id:
-        gf, ga, venue = float(hg), float(ag), "HOME"
-    elif away.get("id") == team_id:
-        gf, ga, venue = float(ag), float(hg), "AWAY"
-    else:
-        return None
-    return {
-        "gf": gf, 
-        "ga": ga, 
-        "result": "W" if gf > ga else "D" if gf == ga else "L", 
-        "venue": venue, 
-        "date": match.get("utcDate", "")
-    }
 
 
 def get_team_form(token, team_id):
-    raw_matches = fetch_team_history_safe(token, team_id)
-    rows = [team_result_from_match(m, team_id) for m in raw_matches]
-    rows = [r for r in rows if r is not None]
-    rows.sort(key=lambda x: x["date"], reverse=True)
-    
-    if not rows:
-        np.random.seed(int(team_id) if isinstance(team_id, int) else 42)
-        simulated = []
-        outcomes = ["W", "D", "L", "W", "W"]
-        for i in range(5):
-            simulated.append({
-                "gf": float(np.random.choice([1, 2, 0, 3])),
-                "ga": float(np.random.choice([0, 1, 2, 1])),
-                "result": outcomes[i],
-                "venue": "HOME" if i % 2 == 0 else "AWAY",
-                "date": f"2026-09-{5-i:02d}"
-            })
-        return simulated
-    return rows[:6]
+    try:
+        raw_matches = fetch_team_history_safe(token, team_id)
+        rows = [team_result_from_match(m, team_id) for m in raw_matches]
+        rows = [r for r in rows if r is not None]
+        rows.sort(key=lambda x: x["date"], reverse=True)
+        
+        if not rows:
+            np.random.seed(int(team_id) if isinstance(team_id, int) else 42)
+            simulated = []
+            outcomes = ["W", "D", "L", "W", "W"]
+            for i in range(5):
+                simulated.append({
+                    "gf": float(np.random.choice([1, 2, 0, 3])),
+                    "ga": float(np.random.choice([0, 1, 2, 1])),
+                    "result": outcomes[i],
+                    "venue": "HOME" if i % 2 == 0 else "AWAY",
+                    "date": f"2026-09-{5-i:02d}"
+                })
+            return simulated
+        return rows[:6]
+    except Exception:
+        return [{"gf": 1.0, "ga": 1.0, "result": "D", "venue": "HOME", "date": "2026-09-01"}]
 
 
 def weighted_average(rows, key):
-    if not rows:
+    try:
+        if not rows:
+            return 1.3
+        values = np.array([float(x[key]) for x in rows], dtype=float)
+        weights = np.exp(-0.10 * np.arange(len(values)))
+        return float(np.average(values, weights=weights))
+    except Exception:
         return 1.3
-    values = np.array([float(x[key]) for x in rows], dtype=float)
-    weights = np.exp(-0.10 * np.arange(len(values)))
-    return float(np.average(values, weights=weights))
 
 
 def form_string(rows):
-    return "".join(x["result"] for x in rows) if rows else "N/D"
+    try:
+        return "".join(x["result"] for x in rows) if rows else "N/D"
+    except Exception:
+        return "N/D"
 
 
 def poisson_probability(k, lam):
-    lam = max(float(lam), 0.001)
-    return math.exp(-lam) * (lam ** k) / math.factorial(k)
+    try:
+        lam = max(float(lam), 0.001)
+        return math.exp(-lam) * (lam ** k) / math.factorial(k)
+    except Exception:
+        return 0.0
 
 
 def probability_matrix(lambda_home, lambda_away, max_goals=10):
-    matrix = np.zeros((max_goals + 1, max_goals + 1), dtype=float)
-    for h in range(max_goals + 1):
-        for a in range(max_goals + 1):
-            matrix[h, a] = poisson_probability(h, lambda_home) * poisson_probability(a, lambda_away)
-    
-    rho = -0.10
-    matrix[0, 0] *= (1.0 - lambda_home * lambda_away * rho)
-    matrix[0, 1] *= (1.0 + lambda_home * rho)
-    matrix[1, 0] *= (1.0 + lambda_away * rho)
-    matrix[1, 1] *= (1.0 - rho)
-    
-    matrix = np.clip(matrix, 0, None)
-    total = matrix.sum()
-    return matrix / total if total > 0 else matrix
+    try:
+        matrix = np.zeros((max_goals + 1, max_goals + 1), dtype=float)
+        for h in range(max_goals + 1):
+            for a in range(max_goals + 1):
+                matrix[h, a] = poisson_probability(h, lambda_home) * poisson_probability(a, lambda_away)
+        
+        rho = -0.10
+        matrix[0, 0] *= (1.0 - lambda_home * lambda_away * rho)
+        matrix[0, 1] *= (1.0 + lambda_home * rho)
+        matrix[1, 0] *= (1.0 + lambda_away * rho)
+        matrix[1, 1] *= (1.0 - rho)
+        
+        matrix = np.clip(matrix, 0, None)
+        total = matrix.sum()
+        return matrix / total if total > 0 else matrix
+    except Exception:
+        return np.ones((11, 11)) / 121.0
 
 
 def calculate_markets(lambda_home, lambda_away):
@@ -278,87 +274,69 @@ def calculate_markets(lambda_home, lambda_away):
 
 
 def calculate_htft(lambda_home, lambda_away):
-    ht_h = max(0.01, lambda_home * 0.45)
-    ht_a = max(0.01, lambda_away * 0.45)
-    s_h = max(0.01, lambda_home - ht_h)
-    s_a = max(0.01, lambda_away - ht_a)
+    try:
+        ht_h = max(0.01, lambda_home * 0.45)
+        ht_a = max(0.01, lambda_away * 0.45)
+        s_h = max(0.01, lambda_home - ht_h)
+        s_a = max(0.01, lambda_away - ht_a)
 
-    result = {f"{ht}/{ft}": 0.0 for ht in OUTCOMES for ft in OUTCOMES}
-    for h1 in range(6):
-        for a1 in range(6):
-            p_ht = poisson_probability(h1, ht_h) * poisson_probability(a1, ht_a)
-            ht_res = "1" if h1 > a1 else ("2" if h1 < a1 else "X")
-            for h2 in range(6):
-                for a2 in range(6):
-                    p = p_ht * poisson_probability(h2, s_h) * poisson_probability(a2, s_a)
-                    tot_h, tot_a = h1 + h2, a1 + a2
-                    ft_res = "1" if tot_h > tot_a else ("2" if tot_h < tot_a else "X")
-                    result[f"{ht_res}/{ft_res}"] += p
+        result = {f"{ht}/{ft}": 0.0 for ht in OUTCOMES for ft in OUTCOMES}
+        for h1 in range(6):
+            for a1 in range(6):
+                p_ht = poisson_probability(h1, ht_h) * poisson_probability(a1, ht_a)
+                ht_res = "1" if h1 > a1 else ("2" if h1 < a1 else "X")
+                for h2 in range(6):
+                    for a2 in range(6):
+                        p = p_ht * poisson_probability(h2, s_h) * poisson_probability(a2, s_a)
+                        tot_h, tot_a = h1 + h2, a1 + a2
+                        ft_res = "1" if tot_h > tot_a else ("2" if tot_h < tot_a else "X")
+                        result[f"{ht_res}/{ft_res}"] += p
 
-    total = sum(result.values())
-    if total > 0:
-        result = {k: v / total for k, v in result.items()}
-    return result
+        total = sum(result.values())
+        if total > 0:
+            result = {k: v / total for k, v in result.items()}
+        return result
+    except Exception:
+        return {"1/1": 0.25, "X/1": 0.15, "X/X": 0.20, "2/2": 0.20, "1/X": 0.10, "2/X": 0.10}
 
-
-# ============================================================
-# GENERATEUR DE METRIQUES WYSCOUT OFFICIELLES
-# ============================================================
 
 def generate_wyscout_metrics(lam_h, lam_a):
-    seed_val = int((lam_h + lam_a) * 10000)
-    np.random.seed(seed_val)
-    
-    def team_block(lam, is_home=True):
-        factor = lam / 1.4
-        return {
-            "xG (Expected Goals)": round(lam * 0.98, 2),
-            "xA (Expected Assists)": round(lam * 0.72, 2),
-            "Tir": int(np.random.normal(13 * factor, 2)),
-            "Tir contré (Tentative d'arrêt)": int(np.random.normal(3 * factor, 1)),
-            "Tir après corner": int(np.random.normal(2 * factor, 0.8)),
-            "Toucher dans la boîte": int(np.random.normal(21 * factor, 3)),
-            "Opportunité": int(np.random.normal(4 * factor, 1)),
-            "Passer": int(np.random.normal(420 * factor, 35)),
-            "Passage court/moyen": int(np.random.normal(350 * factor, 30)),
-            "Passe décisive": int(np.random.normal(1.2 * factor, 0.5)),
-            "Deuxième / Troisième passe décisive": int(np.random.normal(2.5 * factor, 0.8)),
-            "Passage dans le dernier tiers": int(np.random.normal(55 * factor, 6)),
-            "Passe dans la surface de réparation": int(np.random.normal(12 * factor, 2)),
-            "Passage progressif": int(np.random.normal(68 * factor, 7)),
-            "Course progressive": int(np.random.normal(24 * factor, 4)),
-            "Pass intelligent": int(np.random.normal(5 * factor, 1.5)),
-            "Duel": int(np.random.normal(90, 8)),
-            "Duel offensif": int(np.random.normal(45, 5)),
-            "Duel défensif": int(np.random.normal(45, 5)),
-            "Duel aérien": int(np.random.normal(30, 6)),
-            "Intensité du défi": round(np.random.uniform(5.2, 8.4), 1),
-            "PPDA (Intensité pressing)": round(np.random.uniform(8.5 if is_home else 10.5, 14.0), 1),
-            "Récupération": int(np.random.normal(52, 6)),
-            "Interception": int(np.random.normal(11, 3)),
-            "Faute": int(np.random.normal(11, 2.5)),
-            "Faute subie": int(np.random.normal(11, 2.5)),
-            "Cartons jaunes / rouges": f"{int(np.random.uniform(1, 3))} / {0 if np.random.rand() > 0.1 else 1}",
-            "Transition": "Fluide" if np.random.rand() > 0.4 else "Compacte",
-            "Mouvements sans ballon": int(np.random.normal(120, 15)),
-            "Perte / Balle manquée": int(np.random.normal(18, 3)),
-            "Corner": int(np.random.normal(5.5 * factor, 1.5)),
-            "Hors-jeu": int(np.random.normal(2, 0.8)),
-            "Index Wyscout": round(np.random.uniform(6.5, 8.4), 2)
-        }
+    try:
+        seed_val = int((lam_h + lam_a) * 10000)
+        np.random.seed(seed_val)
+        
+        def team_block(lam, is_home=True):
+            factor = lam / 1.4
+            return {
+                "xG (Expected Goals)": round(lam * 0.98, 2),
+                "xA (Expected Assists)": round(lam * 0.72, 2),
+                "Tir": int(np.random.normal(13 * factor, 2)),
+                "Toucher dans la boîte": int(np.random.normal(21 * factor, 3)),
+                "Passer": int(np.random.normal(420 * factor, 35)),
+                "Passage dans le dernier tiers": int(np.random.normal(55 * factor, 6)),
+                "Intensité du défi": round(np.random.uniform(5.2, 8.4), 1),
+                "PPDA (Intensité pressing)": round(np.random.uniform(8.5 if is_home else 10.5, 14.0), 1),
+                "Récupération": int(np.random.normal(52, 6)),
+                "Index Wyscout": round(np.random.uniform(6.5, 8.4), 2)
+            }
 
-    return {
-        "Home": team_block(lam_h, is_home=True),
-        "Away": team_block(lam_a, is_home=False)
-    }
+        return {
+            "Home": team_block(lam_h, is_home=True),
+            "Away": team_block(lam_a, is_home=False)
+        }
+    except Exception:
+        return {"Home": {"xG": 1.2}, "Away": {"xG": 1.0}}
 
 
 def build_lambdas(home_form, away_form):
-    h_gf, h_ga = weighted_average(home_form, "gf"), weighted_average(home_form, "ga")
-    a_gf, a_ga = weighted_average(away_form, "gf"), weighted_average(away_form, "ga")
-    lam_h = (0.60 * h_gf + 0.40 * a_ga) * 1.05
-    lam_a = (0.60 * a_gf + 0.40 * h_ga) * 0.98
-    return float(np.clip(lam_h, 0.10, 5.00)), float(np.clip(lam_a, 0.10, 5.00))
+    try:
+        h_gf, h_ga = weighted_average(home_form, "gf"), weighted_average(home_form, "ga")
+        a_gf, a_ga = weighted_average(away_form, "gf"), weighted_average(away_form, "ga")
+        lam_h = (0.60 * h_gf + 0.40 * a_ga) * 1.05
+        lam_a = (0.60 * a_gf + 0.40 * h_ga) * 0.98
+        return float(np.clip(lam_h, 0.10, 5.00)), float(np.clip(lam_a, 0.10, 5.00))
+    except Exception:
+        return 1.4, 1.1
 
 
 # ============================================================
@@ -366,7 +344,7 @@ def build_lambdas(home_form, away_form):
 # ============================================================
 
 st.title("⚽ Rodrigue Pro Football AI — Wyscout Ultimate Edition")
-st.caption("Moteur analytique souverain combinant Poisson avancé, Dixon-Coles et l'ensemble complet des métriques Wyscout.")
+st.caption("Moteur analytique souverain combinant Poisson avancé, Dixon-Coles et métriques tactiques.")
 
 token = get_token()
 
@@ -387,7 +365,7 @@ if load_submitted or "matches_cache" not in st.session_state:
         with st.spinner("Récupération des matchs..."):
             st.session_state["matches_cache"] = fetch_matches(token, date_from, competition_codes)
     except Exception as e:
-        st.error(f"Erreur : {e}")
+        st.error(f"Erreur de chargement : {e}")
         st.session_state["matches_cache"] = []
 
 matches = st.session_state.get("matches_cache", [])
@@ -407,12 +385,12 @@ selected_match_label = st.selectbox("🎯 Choisis un match précis à analyser",
 selected_match = match_options[selected_match_label]
 
 if st.button("🧠 Lancer l'analyse Wyscout & Poisson à 100%", type="primary", use_container_width=True):
-    home = selected_match.get("homeTeam", {}) or {}
-    away = selected_match.get("awayTeam", {}) or {}
-    home_id, away_id = home.get("id"), away.get("id")
+    try:
+        home = selected_match.get("homeTeam", {}) or {}
+        away = selected_match.get("awayTeam", {}) or {}
+        home_id, away_id = home.get("id"), away.get("id")
 
-    with st.spinner("Calcul des matrices de probabilité et extraction des métriques tactiques..."):
-        try:
+        with st.spinner("Calcul des matrices de probabilité et extraction des métriques tactiques..."):
             home_form = get_team_form(token, home_id) if home_id else []
             away_form = get_team_form(token, away_id) if away_id else []
 
@@ -434,7 +412,7 @@ if st.button("🧠 Lancer l'analyse Wyscout & Poisson à 100%", type="primary", 
                 st.metric("xG Extérieur (Attaque/Défense)", f"{lam_a:.2f}")
                 st.write(f"**Forme récente :** {form_string(away_form)}")
 
-            st.info(f"🔥🔥 **Recommandation Roi des Pronos (Fiabilité Max) :** {best_market[0]} — Confiance estimée à **{best_market[1]*100:.1f}%**")
+            st.info(f"🔥🔥 **Recommandation Prono (Fiabilité Max) :** {best_market[0]} — Confiance estimée à **{best_market[1]*100:.1f}%**")
 
             st.markdown("### 🧬 Dashboard Complet des Métriques & Concepts Wyscout")
             col_w1, col_w2 = st.columns(2)
@@ -457,5 +435,5 @@ if st.button("🧠 Lancer l'analyse Wyscout & Poisson à 100%", type="primary", 
             htft_df = pd.DataFrame([{"HT/FT": k, "Probabilité": f"{v*100:.1f}%"} for k, v in sorted(htft.items(), key=lambda x: x[1], reverse=True)[:6]])
             st.dataframe(htft_df, use_container_width=True, hide_index=True)
 
-        except Exception as e:
-            st.error(f"Erreur lors de l'analyse : {e}")
+    except Exception as e:
+        st.error(f"Une erreur est survenue lors de l'exécution de l'analyse : {e}")
