@@ -1,5 +1,5 @@
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.8)
+# RODRIGUE PRO FOOTBALL AI - WYSCOURT ULTIMATE EDITION (V7.9)
 # ============================================================
 import math
 from datetime import date, timedelta
@@ -34,7 +34,7 @@ OUTCOMES = ("1", "X", "2")
 
 
 # ============================================================
-# API CLIENT ULTRA-ROBUSTE & GESTION AUTOMATIQUE
+# API CLIENT ULTRA-ROBUSTE DIRECT SANS BLOCAGE DE SECOURS FICTIF
 # ============================================================
 
 class FootballDataAPI:
@@ -77,6 +77,7 @@ def fetch_matches(token, date_from, competition_codes):
     matches = []
     codes_to_query = competition_codes if competition_codes else list(COMPETITIONS.values())
     
+    # Interrogation directe de l'API pour chaque compétition sélectionnée
     for code in codes_to_query:
         try:
             res = api.get(f"/competitions/{code}/matches", params={"status": "SCHEDULED,LIVE,IN_PLAY,PAUSED,TIMED"})
@@ -95,47 +96,16 @@ def fetch_matches(token, date_from, competition_codes):
         except Exception:
             pass
 
+    # Filtrage strict par date exacte pour ne garder QUE les vrais matchs du jour
     filtered_matches = [m for m in matches if str(m.get("utcDate", "")).startswith(date_from)]
     
+    # Si aucun match n'est trouvé, on élargit sur la semaine au lieu de renvoyer de faux matchs de simulation
     if not filtered_matches and matches:
         start_dt = date.fromisoformat(date_from)
         end_dt = start_dt + timedelta(days=7)
         filtered_matches = [
             m for m in matches 
             if start_dt <= date.fromisoformat(str(m.get("utcDate", ""))[:10]) <= end_dt
-        ]
-
-    # 🛡️ MODE SECOURS DYNAMIQUE BASÉ SUR LA DATE CHOISIE (Évite de bloquer en boucle)
-    if not filtered_matches:
-        filtered_matches = [
-            {
-                "id": 9001,
-                "competition": {"name": f"Premier League ({date_from})"},
-                "homeTeam": {"id": 61, "name": "Arsenal"},
-                "awayTeam": {"id": 65, "name": "Chelsea"},
-                "utcDate": f"{date_from}T15:00:00Z"
-            },
-            {
-                "id": 9002,
-                "competition": {"name": f"La Liga ({date_from})"},
-                "homeTeam": {"id": 86, "name": "Real Madrid"},
-                "awayTeam": {"id": 81, "name": "Atletico Madrid"},
-                "utcDate": f"{date_from}T18:30:00Z"
-            },
-            {
-                "id": 9003,
-                "competition": {"name": f"Serie A ({date_from})"},
-                "homeTeam": {"id": 108, "name": "AC Milan"},
-                "awayTeam": {"id": 109, "name": "Napoli"},
-                "utcDate": f"{date_from}T20:45:00Z"
-            },
-            {
-                "id": 9004,
-                "competition": {"name": f"Ligue 1 ({date_from})"},
-                "homeTeam": {"id": 524, "name": "Lyon"},
-                "awayTeam": {"id": 529, "name": "Monaco"},
-                "utcDate": f"{date_from}T21:00:00Z"
-            }
         ]
 
     return filtered_matches
@@ -368,6 +338,9 @@ st.caption("Moteur analytique souverain combinant Poisson avancé, Dixon-Coles e
 
 token = get_token()
 
+if token == "DEMO_KEY":
+    st.warning("⚠️ Attention : Aucune clé API valide n'a été détectée dans vos secrets Streamlit (`football_data.token`). L'API renverra une liste vide. Veuillez configurer votre token dans les paramètres de Streamlit Cloud.")
+
 with st.form("match_form"):
     selected_date = st.date_input("📅 Date des matchs", value=date.today())
     competition_names = st.multiselect(
@@ -382,7 +355,7 @@ date_from = selected_date.isoformat()
 
 if load_submitted or "matches_cache" not in st.session_state:
     try:
-        with st.spinner("Récupération des matchs..."):
+        with st.spinner("Récupération des vrais matchs depuis l'API..."):
             st.session_state["matches_cache"] = fetch_matches(token, date_from, competition_codes)
     except Exception as e:
         st.error(f"Erreur : {e}")
@@ -391,10 +364,10 @@ if load_submitted or "matches_cache" not in st.session_state:
 matches = st.session_state.get("matches_cache", [])
 
 if not matches:
-    st.warning("Aucun match disponible.")
+    st.warning("Aucun match réel trouvé pour cette date et ces compétitions sur l'API. Essayez une autre date (un week-end de match) ou vérifiez vos compétitions.")
     st.stop()
 
-st.success(f"{len(matches)} match(s) disponible(s).")
+st.success(f"{len(matches)} match(s) réel(s) disponible(s).")
 
 match_options = {
     f"{m.get('homeTeam', {}).get('name', '?')} vs {m.get('awayTeam', {}).get('name', '?')} ({m.get('competition', {}).get('name', '')})": m
@@ -424,7 +397,7 @@ if st.button("🧠 Lancer l'analyse Wyscout & Poisson à 100%", type="primary", 
             st.divider()
             st.subheader(f"📊 Analyse Tactique Ultime : {home.get('name')} vs {away.get('name')}")
 
-            c1, c2 = st.columns(2)
+(`c1, c2 = st.columns(2)`)
             with c1:
                 st.metric("xG Domicile (Attaque/Défense)", f"{lam_h:.2f}")
                 st.write(f"**Forme récente :** {form_string(home_form)}")
