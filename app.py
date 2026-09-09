@@ -136,6 +136,31 @@ def _football_request(endpoint, params_items=()):
         }
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def validate_football_api():
+    """Teste uniquement l'authentification avec une ressource officielle simple."""
+    return _football_request("/competitions/PL", ())
+
+
+def api_auth_ok(result):
+    return bool(result and result.get("status") == 200)
+
+
+def api_error_message(result):
+    if not result:
+        return "Aucune réponse reçue de football-data.org."
+    detail = (result.get("error") or result.get("raw") or "").strip()
+    if detail.startswith("{") and detail.endswith("}"):
+        try:
+            payload = requests.models.complexjson.loads(detail)
+            detail = str(payload.get("message") or payload.get("error") or detail)
+        except Exception:
+            pass
+    if len(detail) > 350:
+        detail = detail[:350] + "…"
+    return detail or f"Réponse HTTP {result.get('status', 0)} sans détail."
+
+
 def football_get(endpoint, params=None, show_error=True):
     """GET football-data.org sans répéter inutilement les appels."""
     params_items = tuple(sorted((params or {}).items()))
@@ -224,18 +249,22 @@ def serp_search(query, num=8):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_matches_date_once(selected_date, competition_codes=()):
-    """Charge les matchs sans dépendre du filtre dateFrom/dateTo.
+    """Charge les matchs seulement après validation de l'API.
 
-    - Si la date sélectionnée est aujourd'hui : une seule requête /matches
-      sans paramètres, puis filtrage local.
-    - Pour une autre date : une requête par compétition sélectionnée avec
-      SEASON uniquement, puis filtrage local sur utcDate.
-
-    Cette stratégie évite de renvoyer les paramètres dateFrom/dateTo qui
-    provoquent actuellement HTTP 400 dans l'environnement de l'utilisateur.
+    L'authentification est testée une seule fois sur /competitions/PL.
+    Si le token est refusé, aucun appel de match n'est lancé.
     """
     codes = tuple(competition_codes or ())
     target = selected_date.isoformat()
+
+    auth = validate_football_api()
+    if not api_auth_ok(auth):
+        return {
+            "mode": "auth_failed",
+            "target_date": target,
+            "auth": auth,
+            "results": [],
+        }
 
     # Cas principal : aujourd'hui -> une seule requête globale.
     if selected_date == date.today():
@@ -341,14 +370,34 @@ def fetch_matches(selected_date, competition_codes):
 
 
 def diagnostic_competitions(selected_date, competition_codes):
-    """Diagnostic fidèle au même bundle mis en cache que la recherche."""
+    """Diagnostic : authentification d'abord, puis matchs seulement si OK."""
     codes = tuple(competition_codes or ())
     if not codes:
         return []
 
+    auth = validate_football_api()
+    if not api_auth_ok(auth):
+        return [{
+            "Test": "AUTHENTIFICATION API",
+            "HTTP": auth.get("status", 0),
+            "Statut": "TOKEN REFUSÉ",
+            "Matchs": 0,
+            "Détail": api_error_message(auth),
+            "Client API": auth.get("authenticated_client", ""),
+            "Appels restants": auth.get("remaining", ""),
+        }]
+
     bundle = get_matches_date_once(selected_date, codes)
     target = bundle["target_date"]
-    rows = []
+    rows = [{
+        "Test": "AUTHENTIFICATION API",
+        "HTTP": auth.get("status", 0),
+        "Statut": "TOKEN ACCEPTÉ",
+        "Matchs": "—",
+        "Détail": "Le token est accepté par /competitions/PL.",
+        "Client API": auth.get("authenticated_client", ""),
+        "Appels restants": auth.get("remaining", ""),
+    }]
 
     for request_code, result in bundle["results"]:
         status = result["status"]
@@ -359,45 +408,34 @@ def diagnostic_competitions(selected_date, competition_codes):
         if request_code == "ALL":
             for code in codes:
                 count = sum(
-                    1
-                    for match in matches
+                    1 for match in matches
                     if match.get("competition", {}).get("code") == code
                     and match.get("utcDate", "")[:10] == target
                 )
                 rows.append({
-                    "Code": code,
+                    "Test": code,
                     "HTTP": status,
                     "Statut": "OK — requête unique" if status == 200 else "Erreur",
                     "Matchs": count if status == 200 else 0,
-                    "Détail": (
-                        "Aucun filtre date ; filtrage local"
-                        if status == 200
-                        else (detail or "Réponse API sans détail")
-                    ),
+                    "Détail": "Filtrage local" if status == 200 else (detail or "Réponse API sans détail"),
                     "Client API": result.get("authenticated_client", ""),
                     "Appels restants": result.get("remaining", ""),
                 })
             continue
 
         count = sum(
-            1
-            for match in matches
+            1 for match in matches
             if match.get("competition", {}).get("code") == request_code
             and match.get("utcDate", "")[:10] == target
         )
         rows.append({
-            "Code": request_code,
+            "Test": request_code,
             "HTTP": status,
-            "Statut": "OK — saison + filtrage local" if status == 200 else (
-                "Clé non authentifiée" if status == 401 else
-                "Limite atteinte" if status == 429 else
-                "Erreur"
-            ),
+            "Statut": "OK — saison + filtrage local" if status == 200 else "Erreur",
             "Matchs": count if status == 200 else 0,
             "Détail": (
                 "Filtre season=%s ; date filtrée localement" % selected_date.year
-                if status == 200
-                else (detail or "Réponse API sans détail")
+                if status == 200 else (detail or "Réponse API sans détail")
             ),
             "Client API": result.get("authenticated_client", ""),
             "Appels restants": result.get("remaining", ""),
@@ -1481,6 +1519,27 @@ st.warning(
 
 
 # ============================================================
+# ÉTAT DE L'API
+# ============================================================
+
+api_check = validate_football_api()
+if api_auth_ok(api_check):
+    st.success(
+        "🟢 football-data.org : token accepté — authentification OK."
+    )
+else:
+    st.error(
+        "🔴 football-data.org refuse actuellement le token. "
+        "Aucun appel de matchs ne sera lancé tant que ce test échoue."
+    )
+    st.code(api_error_message(api_check))
+    st.caption(
+        f"HTTP {api_check.get('status', 0)} · "
+        f"Client API : {api_check.get('authenticated_client', '') or 'non détecté'}"
+    )
+
+
+# ============================================================
 # PARAMÈTRES
 # ============================================================
 
@@ -1553,8 +1612,15 @@ if st.button(
         )
         st.stop()
 
+    if not api_auth_ok(api_check):
+        st.error(
+            "❌ Recherche arrêtée : football-data.org n'accepte pas le token. "
+            "Corrige/renouvelle le token puis relance l'application."
+        )
+        st.stop()
+
     with st.spinner(
-        "🔎 Chargement des matchs sans filtre date fragile..."
+        "🔎 Chargement des matchs..."
     ):
         matches = fetch_matches(
             selected_date,
