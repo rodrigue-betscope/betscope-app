@@ -1086,4 +1086,1341 @@ def classify_absences(
 
         for category, words in categories.items():
 
-     
+            if any(
+                word in text
+                for word in words
+            ):
+
+                found.append(
+                    category
+                )
+
+        if found:
+
+            output.append({
+                **result,
+                "categories": found
+            })
+
+    return output
+
+
+# ============================================================
+# LAMBDA PRINCIPAL
+# ============================================================
+
+def build_lambdas(
+    home_form,
+    away_form,
+    home_split,
+    away_split,
+    home_standing=None,
+    away_standing=None
+):
+
+    home_attack = (
+        0.55 * home_form["gf_avg"]
+        +
+        0.45 * home_split["gf_avg"]
+    )
+
+    away_attack = (
+        0.55 * away_form["gf_avg"]
+        +
+        0.45 * away_split["gf_avg"]
+    )
+
+    home_defense = (
+        0.55 * away_form["ga_avg"]
+        +
+        0.45 * away_split["ga_avg"]
+    )
+
+    away_defense = (
+        0.55 * home_form["ga_avg"]
+        +
+        0.45 * home_split["ga_avg"]
+    )
+
+    home_lambda = (
+        0.58 * home_attack
+        +
+        0.42 * home_defense
+    )
+
+    away_lambda = (
+        0.58 * away_attack
+        +
+        0.42 * away_defense
+    )
+
+    # avantage domicile
+    home_lambda *= 1.08
+    away_lambda *= 0.94
+
+    # forme
+    home_lambda *= (
+        0.92
+        +
+        0.16 * home_form["form_score"]
+    )
+
+    away_lambda *= (
+        0.92
+        +
+        0.16 * away_form["form_score"]
+    )
+
+    # classement
+    if home_standing and away_standing:
+
+        hp = home_standing.get(
+            "position",
+            10
+        )
+
+        ap = away_standing.get(
+            "position",
+            10
+        )
+
+        if hp < ap:
+
+            home_lambda *= 1.03
+            away_lambda *= 0.98
+
+        elif ap < hp:
+
+            away_lambda *= 1.03
+            home_lambda *= 0.98
+
+    return (
+        max(
+            0.20,
+            min(home_lambda, 3.8)
+        ),
+        max(
+            0.15,
+            min(away_lambda, 3.5)
+        )
+    )
+
+
+# ============================================================
+# AJUSTEMENT CONTEXTUEL
+# ============================================================
+
+def contextual_adjustment(
+    home_lambda,
+    away_lambda,
+    home_absences,
+    away_absences
+):
+
+    important_words = [
+        "key player",
+        "star",
+        "captain",
+        "capitaine",
+        "top scorer",
+        "meilleur buteur",
+        "principal attaquant",
+        "important player"
+    ]
+
+    home_text = " ".join(
+        x["title"]
+        + " "
+        + x["snippet"]
+        for x in home_absences
+    ).lower()
+
+    away_text = " ".join(
+        x["title"]
+        + " "
+        + x["snippet"]
+        for x in away_absences
+    ).lower()
+
+    home_penalty = 0
+    away_penalty = 0
+
+    for word in important_words:
+
+        if word in home_text:
+            home_penalty += 0.025
+
+        if word in away_text:
+            away_penalty += 0.025
+
+    home_penalty = min(
+        home_penalty,
+        0.12
+    )
+
+    away_penalty = min(
+        away_penalty,
+        0.12
+    )
+
+    home_lambda *= (
+        1 - home_penalty
+    )
+
+    away_lambda *= (
+        1 - away_penalty
+    )
+
+    return (
+        max(home_lambda, 0.15),
+        max(away_lambda, 0.15)
+    )
+
+
+# ============================================================
+# ANALYSE HUMAINE
+# ============================================================
+
+def human_analysis(
+    home,
+    away,
+    markets,
+    scores,
+    htft,
+    home_form,
+    away_form,
+    home_lambda,
+    away_lambda
+):
+
+    p1 = markets["1"]
+    px = markets["X"]
+    p2 = markets["2"]
+
+    results = {
+        "1": p1,
+        "X": px,
+        "2": p2
+    }
+
+    main_result = max(
+        results,
+        key=results.get
+    )
+
+    best_score = scores[0][0]
+
+    best_htft = htft[0][0]
+
+    # lecture de l'équilibre
+    if (
+        abs(p1 - p2) < 0.08
+        and px >= 0.27
+    ):
+
+        reading = (
+            "Les deux équipes sont proches. "
+            "Le scénario nul est à surveiller."
+        )
+
+    elif (
+        p1 > p2
+        and
+        home_form["form_score"]
+        >=
+        away_form["form_score"]
+    ):
+
+        reading = (
+            "Le modèle et la dynamique récente "
+            "convergent vers l'équipe à domicile."
+        )
+
+    elif (
+        p2 > p1
+        and
+        away_form["form_score"]
+        >=
+        home_form["form_score"]
+    ):
+
+        reading = (
+            "L'équipe extérieure possède "
+            "un signal statistique supérieur."
+        )
+
+    else:
+
+        reading = (
+            "Les signaux sont partagés. "
+            "Une couverture est préférable au 1X2 sec."
+        )
+
+    # buts
+    if markets["Over 2.5"] >= 0.60:
+
+        goals = (
+            "Le scénario d'au moins 3 buts "
+            "est dominant dans le modèle."
+        )
+
+    elif markets["Under 2.5"] >= 0.60:
+
+        goals = (
+            "Le modèle privilégie "
+            "un match à faible total de buts."
+        )
+
+    else:
+
+        goals = (
+            "Le total de buts reste équilibré."
+        )
+
+    # BTTS
+    if markets["BTTS Oui"] >= 0.60:
+
+        btts = "Les deux équipes ont un signal favorable pour marquer."
+
+    elif markets["BTTS Non"] >= 0.60:
+
+        btts = "Une des deux équipes pourrait rester muette."
+
+    else:
+
+        btts = "Le BTTS est difficile à départager."
+
+    return {
+        "main_result": main_result,
+        "best_score": best_score,
+        "best_htft": best_htft,
+        "reading": reading,
+        "goals": goals,
+        "btts": btts
+    }
+
+
+# ============================================================
+# ANALYSE COMPLÈTE
+# ============================================================
+
+def analyze_match(match):
+
+    home = match.get(
+        "homeTeam",
+        {}
+    )
+
+    away = match.get(
+        "awayTeam",
+        {}
+    )
+
+    home_id = home.get("id")
+    away_id = away.get("id")
+
+    home_name = home.get(
+        "name",
+        "Domicile"
+    )
+
+    away_name = away.get(
+        "name",
+        "Extérieur"
+    )
+
+    competition = match.get(
+        "competition",
+        {}
+    ).get(
+        "name",
+        ""
+    )
+
+    competition_code = match.get(
+        "competition",
+        {}
+    ).get(
+        "code"
+    )
+
+    # historique
+    home_history = fetch_team_history(
+        home_id,
+        12
+    )
+
+    away_history = fetch_team_history(
+        away_id,
+        12
+    )
+
+    home_form = analyze_form(
+        home_history,
+        home_id,
+        8
+    )
+
+    away_form = analyze_form(
+        away_history,
+        away_id,
+        8
+    )
+
+    home_split = analyze_home_away(
+        home_history,
+        home_id,
+        True,
+        8
+    )
+
+    away_split = analyze_home_away(
+        away_history,
+        away_id,
+        False,
+        8
+    )
+
+    # classement
+    table = []
+
+    if competition_code:
+
+        table = fetch_standings(
+            competition_code
+        )
+
+    home_standing = get_standing(
+        table,
+        home_id
+    )
+
+    away_standing = get_standing(
+        table,
+        away_id
+    )
+
+    # lambdas
+    home_lambda, away_lambda = build_lambdas(
+        home_form,
+        away_form,
+        home_split,
+        away_split,
+        home_standing,
+        away_standing
+    )
+
+    match_date = match.get(
+        "utcDate",
+        ""
+    )[:10]
+
+    # absences
+    home_absences_raw = search_absences(
+        home_name,
+        match_date
+    )
+
+    away_absences_raw = search_absences(
+        away_name,
+        match_date
+    )
+
+    home_absences = classify_absences(
+        home_absences_raw
+    )
+
+    away_absences = classify_absences(
+        away_absences_raw
+    )
+
+    # correction contextuelle
+    home_lambda, away_lambda = contextual_adjustment(
+        home_lambda,
+        away_lambda,
+        home_absences,
+        away_absences
+    )
+
+    # modèle
+    matrix = poisson_matrix(
+        home_lambda,
+        away_lambda
+    )
+
+    markets = calculate_markets(
+        matrix
+    )
+
+    scores = exact_scores(
+        matrix,
+        10
+    )
+
+    ht = half_time_model(
+        home_lambda,
+        away_lambda
+    )
+
+    htft = htft_model(
+        home_lambda,
+        away_lambda
+    )
+
+    # statistiques détaillées
+    home_stats_raw = search_detailed_stats(
+        home_name
+    )
+
+    away_stats_raw = search_detailed_stats(
+        away_name
+    )
+
+    home_stats = {
+        key: summarize_stat_results(
+            value
+        )
+        for key, value
+        in home_stats_raw.items()
+    }
+
+    away_stats = {
+        key: summarize_stat_results(
+            value
+        )
+        for key, value
+        in away_stats_raw.items()
+    }
+
+    # analyse humaine
+    verdict = human_analysis(
+        home_name,
+        away_name,
+        markets,
+        scores,
+        htft,
+        home_form,
+        away_form,
+        home_lambda,
+        away_lambda
+    )
+
+    return {
+        "home": home_name,
+        "away": away_name,
+        "competition": competition,
+
+        "home_form": home_form,
+        "away_form": away_form,
+
+        "home_split": home_split,
+        "away_split": away_split,
+
+        "home_standing": home_standing,
+        "away_standing": away_standing,
+
+        "home_lambda": home_lambda,
+        "away_lambda": away_lambda,
+
+        "markets": markets,
+        "scores": scores,
+
+        "ht": ht,
+        "htft": htft,
+
+        "home_absences": home_absences,
+        "away_absences": away_absences,
+
+        "home_stats": home_stats,
+        "away_stats": away_stats,
+
+        "verdict": verdict
+    }
+
+
+# ============================================================
+# AFFICHAGE STATISTIQUES
+# ============================================================
+
+STAT_LABELS = {
+    "corners": "🚩 Corners",
+    "cartons": "🟨 Cartons",
+    "tirs": "🎯 Tirs",
+    "tirs_cadres": "🥅 Tirs cadrés",
+    "possession": "📊 Possession",
+    "fautes": "🟥 Fautes",
+    "hors_jeu": "🚩 Hors-jeu"
+}
+
+
+def display_detailed_stats(
+    title,
+    stats
+):
+
+    st.markdown(
+        f"### {title}"
+    )
+
+    for key, label in STAT_LABELS.items():
+
+        data = stats.get(
+            key,
+            {}
+        )
+
+        st.markdown(
+            f"**{label}**"
+        )
+
+        if not data.get(
+            "available",
+            False
+        ):
+
+            st.caption(
+                "Donnée non trouvée dans les résultats disponibles."
+            )
+
+            continue
+
+        signals = data.get(
+            "signals",
+            []
+        )
+
+        if not signals:
+
+            st.caption(
+                "Aucun signal exploitable."
+            )
+
+            continue
+
+        for signal in signals[:3]:
+
+            st.write(
+                "• "
+                + signal["title"]
+            )
+
+            if signal["snippet"]:
+
+                st.caption(
+                    signal["snippet"]
+                )
+
+
+# ============================================================
+# INTERFACE
+# ============================================================
+
+st.title(
+    "⚽ RODRIGUE PRO FOOTBALL AI — V10"
+)
+
+st.markdown(
+    """
+## 🧠 Analyse avancée
+
+**Données + statistiques + contexte + lecture humaine**
+
+Le moteur recherche notamment :
+
+- ⚽ buts
+- 📈 forme
+- 🏠 domicile / extérieur
+- 🏆 classement
+- 🎯 tirs
+- 🥅 tirs cadrés
+- 🚩 corners
+- 🟨 cartons
+- 📊 possession
+- 🟥 fautes
+- 🚩 hors-jeu
+- 🚑 blessures
+- ⛔ suspensions
+- 👤 absences
+- 🔢 scores exacts
+- ⏱️ mi-temps
+- 🔄 MT/FT
+"""
+)
+
+st.warning(
+    "Les statistiques détaillées provenant de recherches Web "
+    "ne sont affichées que lorsqu'une information exploitable est trouvée. "
+    "Aucune statistique manquante n'est remplacée par une valeur inventée."
+)
+
+
+# ============================================================
+# PARAMÈTRES
+# ============================================================
+
+col1, col2 = st.columns(2)
+
+with col1:
+
+    selected_date = st.date_input(
+        "📅 Date",
+        value=date.today()
+    )
+
+with col2:
+
+    selected_competitions = st.multiselect(
+        "🏆 Compétitions",
+        list(COMPETITIONS.keys()),
+        default=[
+            "Premier League",
+            "LaLiga",
+            "Bundesliga",
+            "Serie A",
+            "Ligue 1"
+        ]
+    )
+
+
+competition_codes = [
+    COMPETITIONS[x]
+    for x in selected_competitions
+]
+
+
+# ============================================================
+# CHARGEMENT
+# ============================================================
+
+if st.button(
+    "🚀 CHERCHER LES MATCHS",
+    type="primary",
+    use_container_width=True
+):
+
+    with st.spinner(
+        "🔎 Recherche des matchs..."
+    ):
+
+        matches = fetch_matches(
+            selected_date,
+            competition_codes
+        )
+
+    if not matches:
+
+        st.error(
+            "❌ Aucun match trouvé pour cette date "
+            "dans les compétitions sélectionnées."
+        )
+
+    else:
+
+        st.success(
+            f"✅ {len(matches)} match(s) trouvé(s)."
+        )
+
+        st.session_state[
+            "matches_v10"
+        ] = matches
+
+
+# ============================================================
+# AFFICHAGE MATCHS
+# ============================================================
+
+if "matches_v10" in st.session_state:
+
+    matches = st.session_state[
+        "matches_v10"
+    ]
+
+    st.subheader(
+        "📋 MATCHS"
+    )
+
+    for index, match in enumerate(
+        matches
+    ):
+
+        home = match.get(
+            "homeTeam",
+            {}
+        ).get(
+            "name",
+            "?"
+        )
+
+        away = match.get(
+            "awayTeam",
+            {}
+        ).get(
+            "name",
+            "?"
+        )
+
+        competition = match.get(
+            "competition",
+            {}
+        ).get(
+            "name",
+            ""
+        )
+
+        with st.expander(
+            f"⚽ {home} — {away} | {competition}"
+        ):
+
+            if st.button(
+                "🧠 ANALYSER CE MATCH",
+                key=f"v10_{index}",
+                use_container_width=True
+            ):
+
+                with st.spinner(
+                    "🧠 Analyse complète en cours..."
+                ):
+
+                    result = analyze_match(
+                        match
+                    )
+
+                # =================================================
+                # EN-TÊTE
+                # =================================================
+
+                st.header(
+                    f"⚽ {result['home']} "
+                    f"— "
+                    f"{result['away']}"
+                )
+
+                st.caption(
+                    result["competition"]
+                )
+
+                # =================================================
+                # XG
+                # =================================================
+
+                c1, c2, c3 = st.columns(3)
+
+                c1.metric(
+                    "xG domicile",
+                    number(
+                        result["home_lambda"]
+                    )
+                )
+
+                c2.metric(
+                    "xG extérieur",
+                    number(
+                        result["away_lambda"]
+                    )
+                )
+
+                c3.metric(
+                    "Buts attendus",
+                    number(
+                        result["home_lambda"]
+                        +
+                        result["away_lambda"]
+                    )
+                )
+
+                # =================================================
+                # FORME
+                # =================================================
+
+                st.subheader(
+                    "📈 FORME"
+                )
+
+                f1, f2 = st.columns(2)
+
+                with f1:
+
+                    st.markdown(
+                        f"### 🏠 {result['home']}"
+                    )
+
+                    form = result[
+                        "home_form"
+                    ]
+
+                    st.write(
+                        f"**V-D-Défaite :** "
+                        f"{form['wins']}-"
+                        f"{form['draws']}-"
+                        f"{form['losses']}"
+                    )
+
+                    st.write(
+                        f"**Buts :** "
+                        f"{form['gf']} / "
+                        f"{form['ga']}"
+                    )
+
+                    st.write(
+                        f"**Moyenne buts marqués :** "
+                        f"{form['gf_avg']:.2f}"
+                    )
+
+                    st.write(
+                        f"**Moyenne buts encaissés :** "
+                        f"{form['ga_avg']:.2f}"
+                    )
+
+                with f2:
+
+                    st.markdown(
+                        f"### ✈️ {result['away']}"
+                    )
+
+                    form = result[
+                        "away_form"
+                    ]
+
+                    st.write(
+                        f"**V-D-Défaite :** "
+                        f"{form['wins']}-"
+                        f"{form['draws']}-"
+                        f"{form['losses']}"
+                    )
+
+                    st.write(
+                        f"**Buts :** "
+                        f"{form['gf']} / "
+                        f"{form['ga']}"
+                    )
+
+                    st.write(
+                        f"**Moyenne buts marqués :** "
+                        f"{form['gf_avg']:.2f}"
+                    )
+
+                    st.write(
+                        f"**Moyenne buts encaissés :** "
+                        f"{form['ga_avg']:.2f}"
+                    )
+
+                # =================================================
+                # CLASSEMENT
+                # =================================================
+
+                st.subheader(
+                    "🏆 CLASSEMENT"
+                )
+
+                s1, s2 = st.columns(2)
+
+                for column, team_name, standing in [
+                    (
+                        s1,
+                        result["home"],
+                        result["home_standing"]
+                    ),
+                    (
+                        s2,
+                        result["away"],
+                        result["away_standing"]
+                    )
+                ]:
+
+                    with column:
+
+                        st.markdown(
+                            f"**{team_name}**"
+                        )
+
+                        if standing:
+
+                            st.write(
+                                "Position : "
+                                + str(
+                                    standing.get(
+                                        "position",
+                                        "N/D"
+                                    )
+                                )
+                            )
+
+                            st.write(
+                                "Points : "
+                                + str(
+                                    standing.get(
+                                        "points",
+                                        "N/D"
+                                    )
+                                )
+                            )
+
+                            st.write(
+                                "Différence : "
+                                + str(
+                                    standing.get(
+                                        "goalDifference",
+                                        "N/D"
+                                    )
+                                )
+                            )
+
+                        else:
+
+                            st.caption(
+                                "Classement non disponible."
+                            )
+
+                # =================================================
+                # 1X2
+                # =================================================
+
+                st.subheader(
+                    "🎯 1X2 / DOUBLE CHANCE"
+                )
+
+                market_rows = []
+
+                for market in [
+                    "1",
+                    "X",
+                    "2",
+                    "1X",
+                    "X2",
+                    "12"
+                ]:
+
+                    market_rows.append({
+                        "Marché": market,
+                        "Probabilité": percent(
+                            result["markets"][market]
+                        )
+                    })
+
+                st.dataframe(
+                    pd.DataFrame(
+                        market_rows
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # =================================================
+                # BUTS
+                # =================================================
+
+                st.subheader(
+                    "⚽ BUTS"
+                )
+
+                goals_rows = []
+
+                for market in [
+                    "BTTS Oui",
+                    "BTTS Non",
+                    "Over 1.5",
+                    "Under 1.5",
+                    "Over 2.5",
+                    "Under 2.5",
+                    "Over 3.5",
+                    "Under 3.5"
+                ]:
+
+                    goals_rows.append({
+                        "Marché": market,
+                        "Probabilité": percent(
+                            result["markets"][market]
+                        )
+                    })
+
+                st.dataframe(
+                    pd.DataFrame(
+                        goals_rows
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # =================================================
+                # SCORES EXACTS
+                # =================================================
+
+                st.subheader(
+                    "🔢 SCORES EXACTS"
+                )
+
+                score_rows = []
+
+                for score, probability in result[
+                    "scores"
+                ]:
+
+                    score_rows.append({
+                        "Score": score,
+                        "Probabilité": percent(
+                            probability
+                        )
+                    })
+
+                st.dataframe(
+                    pd.DataFrame(
+                        score_rows
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # =================================================
+                # MI-TEMPS
+                # =================================================
+
+                st.subheader(
+                    "⏱️ MI-TEMPS"
+                )
+
+                ht_rows = []
+
+                for score, probability in result[
+                    "ht"
+                ]["scores"]:
+
+                    ht_rows.append({
+                        "Score MT": score,
+                        "Probabilité": percent(
+                            probability
+                        )
+                    })
+
+                st.dataframe(
+                    pd.DataFrame(
+                        ht_rows
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # =================================================
+                # MT/FT
+                # =================================================
+
+                st.subheader(
+                    "🔄 MT / FT"
+                )
+
+                htft_rows = []
+
+                for combination, probability in result[
+                    "htft"
+                ][:9]:
+
+                    htft_rows.append({
+                        "MT/FT": combination,
+                        "Probabilité": percent(
+                            probability
+                        )
+                    })
+
+                st.dataframe(
+                    pd.DataFrame(
+                        htft_rows
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # =================================================
+                # STATISTIQUES DÉTAILLÉES
+                # =================================================
+
+                st.subheader(
+                    "📊 STATISTIQUES DÉTAILLÉES"
+                )
+
+                stats1, stats2 = st.columns(2)
+
+                with stats1:
+
+                    display_detailed_stats(
+                        "🏠 " + result["home"],
+                        result["home_stats"]
+                    )
+
+                with stats2:
+
+                    display_detailed_stats(
+                        "✈️ " + result["away"],
+                        result["away_stats"]
+                    )
+
+                # =================================================
+                # ABSENCES
+                # =================================================
+
+                st.subheader(
+                    "🚑 ABSENCES / BLESSURES / SUSPENSIONS"
+                )
+
+                abs1, abs2 = st.columns(2)
+
+                with abs1:
+
+                    st.markdown(
+                        f"### {result['home']}"
+                    )
+
+                    if result[
+                        "home_absences"
+                    ]:
+
+                        for item in result[
+                            "home_absences"
+                        ][:8]:
+
+                            st.write(
+                                "• "
+                                + item["title"]
+                            )
+
+                            if item["snippet"]:
+
+                                st.caption(
+                                    item["snippet"]
+                                )
+
+                    else:
+
+                        st.info(
+                            "Aucune information exploitable trouvée."
+                        )
+
+                with abs2:
+
+                    st.markdown(
+                        f"### {result['away']}"
+                    )
+
+                    if result[
+                        "away_absences"
+                    ]:
+
+                        for item in result[
+                            "away_absences"
+                        ][:8]:
+
+                            st.write(
+                                "• "
+                                + item["title"]
+                            )
+
+                            if item["snippet"]:
+
+                                st.caption(
+                                    item["snippet"]
+                                )
+
+                    else:
+
+                        st.info(
+                            "Aucune information exploitable trouvée."
+                        )
+
+                # =================================================
+                # SYNTHÈSE
+                # =================================================
+
+                st.subheader(
+                    "🧠 SYNTHÈSE HUMAINE RODRIGUE PRO"
+                )
+
+                verdict = result[
+                    "verdict"
+                ]
+
+                st.success(
+                    "🎯 Résultat principal : "
+                    f"**{verdict['main_result']}**"
+                )
+
+                st.info(
+                    "🔢 Score exact : "
+                    f"**{verdict['best_score']}**"
+                )
+
+                st.info(
+                    "⏱️ MT/FT : "
+                    f"**{verdict['best_htft']}**"
+                )
+
+                st.write(
+                    "**Lecture du match :** "
+                    + verdict["reading"]
+                )
+
+                st.write(
+                    "**Lecture des buts :** "
+                    + verdict["goals"]
+                )
+
+                st.write(
+                    "**Lecture BTTS :** "
+                    + verdict["btts"]
+                )
+
+                # =================================================
+                # TOP 5
+                # =================================================
+
+                st.subheader(
+                    "🔥 TOP SÉLECTIONS DU MODÈLE"
+                )
+
+                top_markets = sorted(
+                    result["markets"].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )
+
+                top_rows = []
+
+                for market, probability in top_markets[:5]:
+
+                    top_rows.append({
+                        "Marché": market,
+                        "Probabilité": percent(
+                            probability
+                        )
+                    })
+
+                st.dataframe(
+                    pd.DataFrame(
+                        top_rows
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # =================================================
+                # CONCLUSION
+                # =================================================
+
+                st.divider()
+
+                st.markdown(
+                    f"""
+### 🏁 PRONOSTIC FINAL
+
+**{result['home']} — {result['away']}**
+
+- 🎯 **1X2 :** {verdict['main_result']}
+- 🔢 **Score :** {verdict['best_score']}
+- ⏱️ **MT/FT :** {verdict['best_htft']}
+- ⚽ **BTTS :** {verdict['btts']}
+- 📊 **Lecture :** {verdict['reading']}
+"""
+                )
+
+                st.caption(
+                    "Rodrigue Pro Football AI V10 — "
+                    "les données absentes ne sont pas remplacées "
+                    "par des valeurs artificielles."
+                )
