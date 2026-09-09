@@ -445,7 +445,6 @@ def top_exact_scores(matrix, n=8):
 
 def calculate_half_time(home_lambda, away_lambda):
 
-    # Part moyenne des buts attendus avant la pause.
     ht_home = home_lambda * 0.44
     ht_away = away_lambda * 0.44
 
@@ -573,7 +572,6 @@ def search_team_information(team_name, match_date):
                 "link": item.get("link", "")
             })
 
-    # suppression des doublons
     unique = {}
 
     for item in results:
@@ -718,10 +716,6 @@ def build_lambdas(
     standings_away=None
 ):
 
-    # --------------------------------------------------------
-    # Attaque
-    # --------------------------------------------------------
-
     home_attack = (
         0.55 * home_form["gf_avg"] +
         0.45 * home_split["gf_avg"]
@@ -731,10 +725,6 @@ def build_lambdas(
         0.55 * away_form["gf_avg"] +
         0.45 * away_split["gf_avg"]
     )
-
-    # --------------------------------------------------------
-    # Défense adverse
-    # --------------------------------------------------------
 
     home_defense_weakness = (
         0.55 * away_form["ga_avg"] +
@@ -746,10 +736,6 @@ def build_lambdas(
         0.45 * home_split["ga_avg"]
     )
 
-    # --------------------------------------------------------
-    # Modèle de base
-    # --------------------------------------------------------
-
     home_lambda = (
         0.58 * home_attack +
         0.42 * home_defense_weakness
@@ -760,13 +746,8 @@ def build_lambdas(
         0.42 * away_defense_weakness
     )
 
-    # Avantage domicile
     home_lambda *= 1.08
     away_lambda *= 0.94
-
-    # --------------------------------------------------------
-    # Forme récente
-    # --------------------------------------------------------
 
     home_lambda *= (
         0.92 +
@@ -777,10 +758,6 @@ def build_lambdas(
         0.92 +
         0.16 * away_form["form_score"]
     )
-
-    # --------------------------------------------------------
-    # Classement
-    # --------------------------------------------------------
 
     if standings_home and standings_away:
 
@@ -865,7 +842,6 @@ def human_verdict(
     px = markets["X"]
     p2 = markets["2"]
 
-    # résultat principal
     result_probs = {
         "Victoire domicile": p1,
         "Match nul": px,
@@ -877,13 +853,9 @@ def human_verdict(
         key=result_probs.get
     )
 
-    # score exact
     best_score = exact_scores[0][0]
-
-    # MT/FT
     best_htft = htft[0][0]
 
-    # lecture humaine
     gap = abs(p1 - p2)
 
     if gap < 0.08 and px >= 0.27:
@@ -900,812 +872,34 @@ def human_verdict(
 
     elif p2 > p1 and away_form["form_score"] >= home_form["form_score"]:
         reading = (
-            "L'équipe extérieure présente le meilleur signal "
-            "global malgré le désavantage du terrain."
+            "Attention au déplacement : "
+            "l'équipe visiteuse affiche une meilleure dynamique."
         )
 
     else:
         reading = (
-            "Les signaux sont partagés : prudence sur le 1X2 "
-            "et préférence pour un marché de couverture."
+            "Configuration complexe. "
+            "Les marchés secondaires (Double chance ou Over) sont privilégiés."
         )
-
-    # buts
-    if markets["Under 2.5"] >= 0.60:
-        goals_reading = "Tendance vers un match fermé."
-    elif markets["Over 2.5"] >= 0.60:
-        goals_reading = "Tendance vers un match ouvert."
-    else:
-        goals_reading = "Total de buts difficile à trancher."
 
     return {
         "main_result": main_result,
         "best_score": best_score,
         "best_htft": best_htft,
-        "reading": reading,
-        "goals_reading": goals_reading
+        "reading": reading
     }
 
 
 # ============================================================
-# ANALYSE D'UN MATCH
+# INTERFACE STREAMLIT
 # ============================================================
 
-def analyze_match(match):
+def main():
+    st.sidebar.title("⚙️ Paramètres & Filtres")
 
-    home = match.get("homeTeam", {})
-    away = match.get("awayTeam", {})
-
-    home_id = home.get("id")
-    away_id = away.get("id")
-
-    home_name = home.get("name", "Domicile")
-    away_name = away.get("name", "Extérieur")
-
-    competition = (
-        match.get("competition", {})
-        .get("name", "")
-    )
-
-    # historique
-    home_history = fetch_team_history(home_id, 12)
-    away_history = fetch_team_history(away_id, 12)
-
-    home_form = analyze_form(
-        home_history,
-        home_id,
-        8
-    )
-
-    away_form = analyze_form(
-        away_history,
-        away_id,
-        8
-    )
-
-    home_split = analyze_home_away(
-        home_history,
-        home_id,
-        home=True,
-        last_n=8
-    )
-
-    away_split = analyze_home_away(
-        away_history,
-        away_id,
-        home=False,
-        last_n=8
-    )
-
-    # classement
-    competition_code = (
-        match.get("competition", {})
-        .get("code")
-    )
-
-    table = []
-
-    if competition_code:
-        table = fetch_standings(
-            competition_code
-        )
-
-    standing_home = get_team_standing(
-        table,
-        home_id
-    )
-
-    standing_away = get_team_standing(
-        table,
-        away_id
-    )
-
-    # lambdas
-    home_lambda, away_lambda = build_lambdas(
-        home_form,
-        away_form,
-        home_split,
-        away_split,
-        standing_home,
-        standing_away
-    )
-
-    # informations web
-    match_date = match.get(
-        "utcDate",
-        ""
-    )[:10]
-
-    home_news = search_team_information(
-        home_name,
-        match_date
-    )
-
-    away_news = search_team_information(
-        away_name,
-        match_date
-    )
-
-    home_info = classify_information(
-        home_news
-    )
-
-    away_info = classify_information(
-        away_news
-    )
-
-    # correction contextuelle
-    home_lambda, away_lambda = human_context_adjustment(
-        home_lambda,
-        away_lambda,
-        home_info,
-        away_info
-    )
-
-    # matrice
-    matrix = poisson_matrix(
-        home_lambda,
-        away_lambda,
-        7
-    )
-
-    markets = calculate_markets(
-        matrix
-    )
-
-    exact_scores = top_exact_scores(
-        matrix,
-        8
-    )
-
-    ht = calculate_half_time(
-        home_lambda,
-        away_lambda
-    )
-
-    htft = calculate_htft(
-        home_lambda,
-        away_lambda
-    )
-
-    verdict = human_verdict(
-        home_name,
-        away_name,
-        markets,
-        exact_scores,
-        htft,
-        home_form,
-        away_form,
-        home_lambda,
-        away_lambda
-    )
-
-    return {
-        "home": home_name,
-        "away": away_name,
-        "competition": competition,
-        "home_form": home_form,
-        "away_form": away_form,
-        "home_split": home_split,
-        "away_split": away_split,
-        "standing_home": standing_home,
-        "standing_away": standing_away,
-        "home_lambda": home_lambda,
-        "away_lambda": away_lambda,
-        "markets": markets,
-        "exact_scores": exact_scores,
-        "ht": ht,
-        "htft": htft,
-        "home_info": home_info,
-        "away_info": away_info,
-        "verdict": verdict
-    }
-
-
-# ============================================================
-# AFFICHAGE FORM
-# ============================================================
-
-def form_string(form):
-
-    chars = []
-
-    for r in form["results"]:
-        chars.append(r["result"])
-
-    return " ".join(chars)
-
-
-# ============================================================
-# INTERFACE
-# ============================================================
-
-st.title("⚽ RODRIGUE PRO FOOTBALL AI — V9")
-
-st.markdown(
-    """
-### 🧠 Analyse Football : données réelles + modèle Poisson + lecture humaine
-
-Le programme combine :
-- forme récente ;
-- buts marqués et encaissés ;
-- rendement domicile/extérieur ;
-- classement ;
-- contexte d'absences et suspensions trouvé sur le Web ;
-- probabilités 1X2 ;
-- Double Chance ;
-- BTTS ;
-- Over/Under ;
-- scores exacts ;
-- score à la mi-temps ;
-- MT/FT ;
-- synthèse finale.
-"""
-)
-
-st.warning(
-    "Les résultats sont des probabilités calculées à partir des données disponibles. "
-    "Les informations d'absences issues du Web doivent être vérifiées avant utilisation."
-)
-
-
-# ============================================================
-# PARAMÈTRES
-# ============================================================
-
-col1, col2 = st.columns(2)
-
-with col1:
-    selected_date = st.date_input(
-        "📅 Date des matchs",
+    selected_date = st.sidebar.date_input(
+        "Date des matchs",
         value=date.today()
     )
 
-with col2:
-    selected_competitions = st.multiselect(
-        "🏆 Compétitions",
-        options=list(COMPETITIONS.keys()),
-        default=[
-            "Premier League",
-            "LaLiga",
-            "Bundesliga",
-            "Serie A",
-            "Ligue 1"
-        ]
-    )
-
-
-competition_codes = [
-    COMPETITIONS[x]
-    for x in selected_competitions
-]
-
-
-# ============================================================
-# BOUTON
-# ============================================================
-
-if st.button(
-    "🚀 LANCER L'ANALYSE",
-    type="primary",
-    use_container_width=True
-):
-
-    with st.spinner(
-        "🔎 Recherche des matchs et analyse en cours..."
-    ):
-
-        matches = fetch_matches(
-            selected_date,
-            competition_codes
-        )
-
-    if not matches:
-
-        st.error(
-            "❌ Aucun match disponible pour cette date "
-            "dans les compétitions sélectionnées."
-        )
-
-        st.info(
-            "Vérifie la date et les compétitions sélectionnées."
-        )
-
-    else:
-
-        st.success(
-            f"✅ {len(matches)} match(s) trouvé(s)."
-        )
-
-        st.session_state["matches"] = matches
-
-
-# ============================================================
-# AFFICHAGE
-# ============================================================
-
-if "matches" in st.session_state:
-
-    matches = st.session_state["matches"]
-
-    st.subheader("📋 Matchs disponibles")
-
-    for i, match in enumerate(matches):
-
-        home = match.get(
-            "homeTeam", {}
-        ).get("name", "?")
-
-        away = match.get(
-            "awayTeam", {}
-        ).get("name", "?")
-
-        competition = match.get(
-            "competition", {}
-        ).get("name", "")
-
-        utc = match.get(
-            "utcDate",
-            ""
-        )
-
-        with st.expander(
-            f"⚽ {home} — {away} | {competition}"
-        ):
-
-            if utc:
-                st.caption(
-                    f"Date UTC : {utc}"
-                )
-
-            if st.button(
-                f"🔬 Analyser {home} — {away}",
-                key=f"analyse_{i}"
-            ):
-
-                with st.spinner(
-                    "🧠 Analyse approfondie..."
-                ):
-
-                    result = analyze_match(
-                        match
-                    )
-
-                # ------------------------------------------------
-                # TITRE
-                # ------------------------------------------------
-
-                st.markdown(
-                    f"# ⚽ {result['home']} — {result['away']}"
-                )
-
-                st.markdown(
-                    f"**Compétition :** {result['competition']}"
-                )
-
-                # ------------------------------------------------
-                # LAMBDAS
-                # ------------------------------------------------
-
-                c1, c2, c3 = st.columns(3)
-
-                c1.metric(
-                    "xG modèle domicile",
-                    f"{result['home_lambda']:.2f}"
-                )
-
-                c2.metric(
-                    "xG modèle extérieur",
-                    f"{result['away_lambda']:.2f}"
-                )
-
-                c3.metric(
-                    "Total buts attendu",
-                    f"{result['home_lambda'] + result['away_lambda']:.2f}"
-                )
-
-                # ------------------------------------------------
-                # FORME
-                # ------------------------------------------------
-
-                st.subheader("📈 Forme récente")
-
-                f1, f2 = st.columns(2)
-
-                with f1:
-
-                    st.markdown(
-                        f"### 🏠 {result['home']}"
-                    )
-
-                    st.write(
-                        f"Forme : **{form_string(result['home_form'])}**"
-                    )
-
-                    st.write(
-                        f"Victoires : {result['home_form']['wins']}"
-                    )
-
-                    st.write(
-                        f"Nuls : {result['home_form']['draws']}"
-                    )
-
-                    st.write(
-                        f"Défaites : {result['home_form']['losses']}"
-                    )
-
-                    st.write(
-                        f"Buts : "
-                        f"{result['home_form']['gf']} pour / "
-                        f"{result['home_form']['ga']} contre"
-                    )
-
-                with f2:
-
-                    st.markdown(
-                        f"### ✈️ {result['away']}"
-                    )
-
-                    st.write(
-                        f"Forme : **{form_string(result['away_form'])}**"
-                    )
-
-                    st.write(
-                        f"Victoires : {result['away_form']['wins']}"
-                    )
-
-                    st.write(
-                        f"Nuls : {result['away_form']['draws']}"
-                    )
-
-                    st.write(
-                        f"Défaites : {result['away_form']['losses']}"
-                    )
-
-                    st.write(
-                        f"Buts : "
-                        f"{result['away_form']['gf']} pour / "
-                        f"{result['away_form']['ga']} contre"
-                    )
-
-                # ------------------------------------------------
-                # CLASSEMENT
-                # ------------------------------------------------
-
-                st.subheader("🏆 Classement")
-
-                s1, s2 = st.columns(2)
-
-                with s1:
-
-                    if result["standing_home"]:
-                        row = result["standing_home"]
-
-                        st.write(
-                            f"**{result['home']}**"
-                        )
-
-                        st.write(
-                            f"Position : {row.get('position', '-')}"
-                        )
-
-                        st.write(
-                            f"Points : {row.get('points', '-')}"
-                        )
-
-                        st.write(
-                            f"Différence : "
-                            f"{row.get('goalDifference', '-')}"
-                        )
-
-                    else:
-                        st.info(
-                            "Classement non disponible."
-                        )
-
-                with s2:
-
-                    if result["standing_away"]:
-                        row = result["standing_away"]
-
-                        st.write(
-                            f"**{result['away']}**"
-                        )
-
-                        st.write(
-                            f"Position : {row.get('position', '-')}"
-                        )
-
-                        st.write(
-                            f"Points : {row.get('points', '-')}"
-                        )
-
-                        st.write(
-                            f"Différence : "
-                            f"{row.get('goalDifference', '-')}"
-                        )
-
-                    else:
-                        st.info(
-                            "Classement non disponible."
-                        )
-
-                # ------------------------------------------------
-                # 1X2
-                # ------------------------------------------------
-
-                st.subheader("🎯 1X2")
-
-                markets = result["markets"]
-
-                table = pd.DataFrame({
-                    "Marché": [
-                        "Victoire domicile",
-                        "Match nul",
-                        "Victoire extérieur",
-                        "Double Chance 1X",
-                        "Double Chance X2",
-                        "Double Chance 12",
-                    ],
-                    "Probabilité": [
-                        markets["1"],
-                        markets["X"],
-                        markets["2"],
-                        markets["1X"],
-                        markets["X2"],
-                        markets["12"],
-                    ]
-                })
-
-                table["Probabilité"] = (
-                    table["Probabilité"] * 100
-                ).round(2).astype(str) + "%"
-
-                st.dataframe(
-                    table,
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                # ------------------------------------------------
-                # BUTS
-                # ------------------------------------------------
-
-                st.subheader("⚽ Marchés de buts")
-
-                goals_table = pd.DataFrame({
-                    "Marché": [
-                        "BTTS Oui",
-                        "BTTS Non",
-                        "Over 1.5",
-                        "Under 1.5",
-                        "Over 2.5",
-                        "Under 2.5",
-                        "Over 3.5",
-                        "Under 3.5"
-                    ],
-                    "Probabilité": [
-                        markets["BTTS Oui"],
-                        markets["BTTS Non"],
-                        markets["Over 1.5"],
-                        markets["Under 1.5"],
-                        markets["Over 2.5"],
-                        markets["Under 2.5"],
-                        markets["Over 3.5"],
-                        markets["Under 3.5"]
-                    ]
-                })
-
-                goals_table["Probabilité"] = (
-                    goals_table["Probabilité"] * 100
-                ).round(2).astype(str) + "%"
-
-                st.dataframe(
-                    goals_table,
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                # ------------------------------------------------
-                # SCORES EXACTS
-                # ------------------------------------------------
-
-                st.subheader("🔢 Scores exacts les plus probables")
-
-                score_table = pd.DataFrame(
-                    result["exact_scores"],
-                    columns=[
-                        "Score",
-                        "Probabilité"
-                    ]
-                )
-
-                score_table["Probabilité"] = (
-                    score_table["Probabilité"] * 100
-                ).round(2).astype(str) + "%"
-
-                st.dataframe(
-                    score_table,
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                # ------------------------------------------------
-                # MI-TEMPS
-                # ------------------------------------------------
-
-                st.subheader("⏱️ Mi-temps")
-
-                ht_scores = pd.DataFrame(
-                    result["ht"]["scores"],
-                    columns=[
-                        "Score MT",
-                        "Probabilité"
-                    ]
-                )
-
-                ht_scores["Probabilité"] = (
-                    ht_scores["Probabilité"] * 100
-                ).round(2).astype(str) + "%"
-
-                st.dataframe(
-                    ht_scores,
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                # ------------------------------------------------
-                # MT/FT
-                # ------------------------------------------------
-
-                st.subheader("🔄 Mi-temps / Fin du match")
-
-                htft_table = pd.DataFrame(
-                    result["htft"],
-                    columns=[
-                        "MT/FT",
-                        "Probabilité"
-                    ]
-                )
-
-                htft_table["Probabilité"] = (
-                    htft_table["Probabilité"] * 100
-                ).round(2).astype(str) + "%"
-
-                st.dataframe(
-                    htft_table,
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                # ------------------------------------------------
-                # ABSENCES
-                # ------------------------------------------------
-
-                st.subheader(
-                    "🚑 Blessures / absences / suspensions"
-                )
-
-                a1, a2 = st.columns(2)
-
-                with a1:
-
-                    st.markdown(
-                        f"### {result['home']}"
-                    )
-
-                    if result["home_info"]:
-
-                        for info in result["home_info"][:8]:
-
-                            st.write(
-                                "• " +
-                                info["title"]
-                            )
-
-                            if info["snippet"]:
-                                st.caption(
-                                    info["snippet"]
-                                )
-
-                    else:
-
-                        st.info(
-                            "Aucune information exploitable trouvée."
-                        )
-
-                with a2:
-
-                    st.markdown(
-                        f"### {result['away']}"
-                    )
-
-                    if result["away_info"]:
-
-                        for info in result["away_info"][:8]:
-
-                            st.write(
-                                "• " +
-                                info["title"]
-                            )
-
-                            if info["snippet"]:
-                                st.caption(
-                                    info["snippet"]
-                                )
-
-                    else:
-
-                        st.info(
-                            "Aucune information exploitable trouvée."
-                        )
-
-                # ------------------------------------------------
-                # SYNTHÈSE HUMAINE
-                # ------------------------------------------------
-
-                st.subheader("🧠 SYNTHÈSE RODRIGUE PRO")
-
-                verdict = result["verdict"]
-
-                st.success(
-                    f"🎯 Résultat principal : "
-                    f"**{verdict['main_result']}**"
-                )
-
-                st.info(
-                    f"🔢 Score exact principal : "
-                    f"**{verdict['best_score']}**"
-                )
-
-                st.info(
-                    f"⏱️ MT/FT principal : "
-                    f"**{verdict['best_htft']}**"
-                )
-
-                st.write(
-                    f"**Lecture humaine :** "
-                    f"{verdict['reading']}"
-                )
-
-                st.write(
-                    f"**Lecture buts :** "
-                    f"{verdict['goals_reading']}"
-                )
-
-                # ------------------------------------------------
-                # TOP CHOIX
-                # ------------------------------------------------
-
-                st.subheader("🔥 TOP CHOIX")
-
-                top_market = max(
-                    markets.items(),
-                    key=lambda x: x[1]
-                )
-
-                c1, c2, c3 = st.columns(3)
-
-                c1.metric(
-                    "Marché le plus fort",
-                    top_market[0],
-                    f"{top_market[1] * 100:.1f}%"
-                )
-
-                c2.metric(
-                    "Score exact",
-                    verdict["best_score"]
-                )
-
-                c3.metric(
-                    "MT/FT",
-                    verdict["best_htft"]
-                )
-
-                st.divider()
-
-                st.caption(
-                    "Rodrigue Pro Football AI V9 — "
-                    "analyse basée sur les données disponibles "
-                    "et une combinaison modèle statistique + lecture contextuelle."
-                )
+    selected_competitions = st.sidebar.multiselec
