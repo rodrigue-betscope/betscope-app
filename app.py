@@ -1,37 +1,22 @@
+
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI — V10 ULTIMATE
+# RODRIGUE PRO FOOTBALL AI — V10 ULTIMATE — VERSION CORRIGÉE
 # ============================================================
 # Sources :
 #   - football-data.org : matchs, résultats, classement
 #   - SerpApi / Google : contexte, blessures, suspensions,
 #     statistiques détaillées et événements disponibles sur le Web
 #
-# Analyse :
-#   - Forme récente
-#   - Domicile / extérieur
-#   - Classement
-#   - Buts
-#   - Poisson
-#   - 1X2 / Double Chance
-#   - BTTS
-#   - Over / Under
-#   - Scores exacts
-#   - Mi-temps
-#   - MT/FT
-#   - Corners
-#   - Cartons
-#   - Tirs
-#   - Tirs cadrés
-#   - Possession
-#   - Fautes
-#   - Hors-jeu
-#   - Blessures / absences / suspensions
-#   - Lecture humaine finale
+# CORRECTION PRINCIPALE :
+#   L'ancien code envoyait une seule requête /v4/matches avec
+#   "competitions=PL,PD,BL1,...". Sur certains comptes/configurations
+#   football-data.org cette combinaison renvoie HTTP 400.
 #
-# Compatible :
-#   - Pydroid 3
-#   - Streamlit
-#   - RStudio avec Python
+#   Cette version interroge chaque compétition séparément avec :
+#   /v4/competitions/{CODE}/matches
+#   puis fusionne les résultats.
+#
+# Cela évite le HTTP 400 lié au filtre "competitions".
 # ============================================================
 
 import math
@@ -75,7 +60,8 @@ st.set_page_config(
 
 SESSION = requests.Session()
 SESSION.headers.update({
-    "User-Agent": "Rodrigue-Pro-Football-AI-V10"
+    "User-Agent": "Rodrigue-Pro-Football-AI-V10",
+    "Accept": "application/json",
 })
 
 
@@ -86,7 +72,6 @@ SESSION.headers.update({
 def safe_float(value):
     if value is None:
         return None
-
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -96,17 +81,14 @@ def safe_float(value):
 def percent(value):
     if value is None:
         return "N/D"
-
     return f"{value * 100:.1f}%"
 
 
 def number(value):
     if value is None:
         return "N/D"
-
-    if isinstance(value, (float, np.floating)):
+    if isinstance(value, float):
         return f"{value:.2f}"
-
     return str(value)
 
 
@@ -114,49 +96,77 @@ def number(value):
 # FOOTBALL-DATA.ORG
 # ============================================================
 
-def football_get(endpoint, params=None):
+def football_get(endpoint, params=None, show_error=True):
+    """GET robuste vers football-data.org."""
     try:
         response = SESSION.get(
             API_BASE + endpoint,
-            headers={
-                "X-Auth-Token": FOOTBALL_DATA_KEY
-            },
+            headers={"X-Auth-Token": FOOTBALL_DATA_KEY},
             params=params or {},
             timeout=25,
         )
 
         if response.status_code == 200:
-            return response.json()
+            try:
+                return response.json()
+            except ValueError:
+                if show_error:
+                    st.warning("⚠️ Réponse JSON invalide de football-data.org.")
+                return None
 
-        if response.status_code == 429:
-            st.warning(
-                "⚠️ Limite football-data.org atteinte."
-            )
+        if response.status_code == 400:
+            detail = ""
+            try:
+                detail = response.json().get("error", "")
+            except Exception:
+                pass
+            if show_error:
+                st.warning(
+                    f"⚠️ Requête football-data.org refusée (400). "
+                    f"{detail}".strip()
+                )
+            return None
+
+        if response.status_code == 401:
+            if show_error:
+                st.error("❌ Clé football-data.org absente ou non authentifiée.")
             return None
 
         if response.status_code == 403:
-            st.error(
-                "❌ Clé football-data.org refusée."
-            )
+            detail = ""
+            try:
+                detail = response.json().get("error", "")
+            except Exception:
+                pass
+            if show_error:
+                st.warning(
+                    "⚠️ Ressource football-data.org non autorisée "
+                    f"(403). {detail}".strip()
+                )
             return None
 
-        if response.status_code == 400:
+        if response.status_code == 404:
+            if show_error:
+                st.warning(f"⚠️ Ressource introuvable : {endpoint}")
+            return None
+
+        if response.status_code == 429:
+            if show_error:
+                st.warning(
+                    "⚠️ Limite football-data.org atteinte "
+                    "(10 appels/minute sur le forfait gratuit)."
+                )
+            return None
+
+        if show_error:
             st.warning(
-                f"⚠️ Requête football-data.org refusée (400). "
-                f"Paramètres : {params or {}}"
+                f"⚠️ football-data.org a répondu HTTP {response.status_code}."
             )
-            return None
-
-        st.warning(
-            f"⚠️ football-data.org a répondu avec le code "
-            f"{response.status_code}."
-        )
         return None
 
     except requests.RequestException as error:
-        st.warning(
-            f"Erreur football-data.org : {error}"
-        )
+        if show_error:
+            st.warning(f"Erreur réseau football-data.org : {error}")
         return None
 
 
@@ -185,131 +195,130 @@ def serp_search(query, num=8):
             return []
 
         data = response.json()
+        return data.get("organic_results", [])
 
-        return data.get(
-            "organic_results",
-            [],
-        )
-
-    except requests.RequestException:
+    except (requests.RequestException, ValueError):
         return []
 
 
 # ============================================================
-# MATCHS
+# MATCHS — CORRECTION DÉFINITIVE
 # ============================================================
 
-def fetch_matches(selected_date, competition_codes=None):
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_matches(selected_date, competition_codes):
     """
-    Recherche d'abord les matchs de la date avec les compétitions
-    sélectionnées. Si l'API ne retourne rien, une seconde recherche
-    est faite sans filtre de compétition afin de diagnostiquer les
-    journées où les grands championnats ne jouent pas.
+    Recherche les matchs compétition par compétition.
+
+    IMPORTANT :
+    On n'utilise volontairement PAS :
+        /v4/matches?competitions=PL,PD,BL1,...
+
+    car cette requête groupée peut renvoyer HTTP 400 selon
+    la combinaison de codes / droits du compte.
+
+    On utilise :
+        /v4/competitions/{CODE}/matches
+        ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
+
+    Puis on fusionne et dédoublonne.
     """
+    if not competition_codes:
+        return []
 
     date_str = selected_date.isoformat()
+    all_matches = []
+    failed_codes = []
 
-    # 1. Recherche avec les compétitions sélectionnées
-    params = {
-        "dateFrom": date_str,
-        "dateTo": date_str,
-    }
+    for code in competition_codes:
+        params = {
+            "dateFrom": date_str,
+            "dateTo": date_str,
+        }
 
-    if competition_codes:
-        params["competitions"] = ",".join(
-            competition_codes
+        data = football_get(
+            f"/competitions/{code}/matches",
+            params,
+            show_error=False,
         )
 
-    data = football_get(
-        "/matches",
-        params,
+        if data is None:
+            failed_codes.append(code)
+            continue
+
+        matches = data.get("matches", [])
+
+        for match in matches:
+            # Sécurité : ne garder que la date demandée.
+            utc_date = match.get("utcDate", "")
+            if utc_date[:10] == date_str:
+                all_matches.append(match)
+
+    # Dédoublonnage par ID.
+    unique = {}
+    for match in all_matches:
+        match_id = match.get("id")
+        if match_id is not None:
+            unique[match_id] = match
+
+    matches = list(unique.values())
+
+    matches.sort(
+        key=lambda m: m.get("utcDate", "")
     )
 
-    if data is None:
-        return []
-
-    matches = data.get(
-        "matches",
-        [],
-    )
-
-    if matches:
-        return matches
-
-    # 2. Recherche sans filtre de compétition
-    fallback_params = {
-        "dateFrom": date_str,
-        "dateTo": date_str,
-    }
-
-    fallback_data = football_get(
-        "/matches",
-        fallback_params,
-    )
-
-    if not fallback_data:
-        return []
-
-    all_matches = fallback_data.get(
-        "matches",
-        [],
-    )
-
-    # 3. Filtrage local
-    if competition_codes:
-        selected_matches = [
-            match
-            for match in all_matches
-            if match.get(
-                "competition",
-                {},
-            ).get("code") in competition_codes
+    # Information lisible au lieu d'un faux "400 global".
+    if failed_codes:
+        failed_names = [
+            code for code in failed_codes
         ]
+        st.caption(
+            "ℹ️ Certaines compétitions n'ont pas pu être interrogées : "
+            + ", ".join(failed_names)
+        )
 
-        if selected_matches:
-            return selected_matches
+    return matches
 
-        if all_matches:
-            available_names = []
-            seen_codes = set()
 
-            for match in all_matches:
-                competition = match.get(
-                    "competition",
-                    {},
-                )
-                code = competition.get("code")
-                name = competition.get("name")
+# ============================================================
+# DIAGNOSTIC API
+# ============================================================
 
-                if code not in seen_codes:
-                    seen_codes.add(code)
-                    if name:
-                        available_names.append(name)
+def diagnostic_competitions(selected_date, competition_codes):
+    rows = []
+    date_str = selected_date.isoformat()
 
-            st.info(
-                f"ℹ️ L'API possède {len(all_matches)} match(s) "
-                f"le {date_str}, mais aucune rencontre ne correspond "
-                "aux compétitions sélectionnées."
-            )
+    for code in competition_codes:
+        data = football_get(
+            f"/competitions/{code}/matches",
+            {
+                "dateFrom": date_str,
+                "dateTo": date_str,
+            },
+            show_error=False,
+        )
 
-            if available_names:
-                st.caption(
-                    "Compétitions disponibles : "
-                    + ", ".join(available_names)
-                )
+        if data is None:
+            rows.append({
+                "Code": code,
+                "Statut": "Erreur / non autorisé",
+                "Matchs": 0,
+            })
+        else:
+            rows.append({
+                "Code": code,
+                "Statut": "OK",
+                "Matchs": len(data.get("matches", [])),
+            })
 
-            # On retourne les matchs réellement disponibles afin
-            # que l'utilisateur puisse les voir.
-            return all_matches
-
-    return all_matches
+    return rows
 
 
 # ============================================================
 # HISTORIQUE
 # ============================================================
 
-@st.cache_data(ttl=900)
+@st.cache_data(ttl=900, show_spinner=False)
 def fetch_team_history(team_id, limit=12):
     if not team_id:
         return []
@@ -320,55 +329,49 @@ def fetch_team_history(team_id, limit=12):
             "status": "FINISHED",
             "limit": limit,
         },
+        show_error=False,
     )
 
     if not data:
         return []
 
-    return data.get(
-        "matches",
-        [],
-    )
+    return data.get("matches", [])
 
 
 # ============================================================
 # CLASSEMENT
 # ============================================================
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=1800, show_spinner=False)
 def fetch_standings(competition_code):
     if not competition_code:
         return []
 
     data = football_get(
-        f"/competitions/{competition_code}/standings"
+        f"/competitions/{competition_code}/standings",
+        show_error=False,
     )
 
     if not data:
         return []
 
-    standings = data.get(
-        "standings",
-        [],
-    )
+    standings = data.get("standings", [])
 
     if not standings:
         return []
 
-    return standings[0].get(
-        "table",
-        [],
-    )
+    # TOTAL en priorité.
+    for standing in standings:
+        if standing.get("type") == "TOTAL":
+            return standing.get("table", [])
+
+    return standings[0].get("table", [])
 
 
 def get_standing(table, team_id):
     for row in table:
-        if row.get(
-            "team",
-            {},
-        ).get("id") == team_id:
+        if row.get("team", {}).get("id") == team_id:
             return row
-
     return None
 
 
@@ -377,25 +380,10 @@ def get_standing(table, team_id):
 # ============================================================
 
 def team_result(match, team_id):
-    home = match.get(
-        "homeTeam",
-        {},
-    )
-
-    away = match.get(
-        "awayTeam",
-        {},
-    )
-
-    score = match.get(
-        "score",
-        {},
-    )
-
-    full = score.get(
-        "fullTime",
-        {},
-    )
+    home = match.get("homeTeam", {})
+    away = match.get("awayTeam", {})
+    score = match.get("score", {})
+    full = score.get("fullTime", {})
 
     hg = full.get("home")
     ag = full.get("away")
@@ -404,12 +392,10 @@ def team_result(match, team_id):
         return None
 
     if home.get("id") == team_id:
-        gf = hg
-        ga = ag
+        gf, ga = hg, ag
         opponent = away.get("name")
     elif away.get("id") == team_id:
-        gf = ag
-        ga = hg
+        gf, ga = ag, hg
         opponent = home.get("name")
     else:
         return None
@@ -425,10 +411,7 @@ def team_result(match, team_id):
         "result": result,
         "gf": gf,
         "ga": ga,
-        "date": match.get(
-            "utcDate",
-            "",
-        ),
+        "date": match.get("utcDate", ""),
         "opponent": opponent,
     }
 
@@ -441,11 +424,7 @@ def analyze_form(matches, team_id, last_n=8):
     results = []
 
     for match in matches:
-        result = team_result(
-            match,
-            team_id,
-        )
-
+        result = team_result(match, team_id)
         if result:
             results.append(result)
 
@@ -471,30 +450,12 @@ def analyze_form(matches, team_id, last_n=8):
             "results": [],
         }
 
-    wins = sum(
-        x["result"] == "W"
-        for x in results
-    )
+    wins = sum(x["result"] == "W" for x in results)
+    draws = sum(x["result"] == "D" for x in results)
+    losses = sum(x["result"] == "L" for x in results)
 
-    draws = sum(
-        x["result"] == "D"
-        for x in results
-    )
-
-    losses = sum(
-        x["result"] == "L"
-        for x in results
-    )
-
-    gf = sum(
-        x["gf"]
-        for x in results
-    )
-
-    ga = sum(
-        x["ga"]
-        for x in results
-    )
+    gf = sum(x["gf"] for x in results)
+    ga = sum(x["ga"] for x in results)
 
     points = wins * 3 + draws
 
@@ -518,36 +479,19 @@ def analyze_form(matches, team_id, last_n=8):
 # DOMICILE / EXTÉRIEUR
 # ============================================================
 
-def analyze_home_away(
-    matches,
-    team_id,
-    home=True,
-    last_n=8,
-):
+def analyze_home_away(matches, team_id, home=True, last_n=8):
     filtered = []
 
     for match in matches:
-        home_id = match.get(
-            "homeTeam",
-            {},
-        ).get("id")
-
-        away_id = match.get(
-            "awayTeam",
-            {},
-        ).get("id")
+        home_id = match.get("homeTeam", {}).get("id")
+        away_id = match.get("awayTeam", {}).get("id")
 
         if home and home_id == team_id:
             filtered.append(match)
-
         elif not home and away_id == team_id:
             filtered.append(match)
 
-    return analyze_form(
-        filtered,
-        team_id,
-        last_n,
-    )
+    return analyze_form(filtered, team_id, last_n)
 
 
 # ============================================================
@@ -555,7 +499,8 @@ def analyze_home_away(
 # ============================================================
 
 def poisson_probability(lam, goals):
-    lam = max(float(lam), 0.0001)
+    if lam <= 0:
+        return 0.0
 
     return (
         math.exp(-lam)
@@ -564,30 +509,16 @@ def poisson_probability(lam, goals):
     )
 
 
-def poisson_matrix(
-    home_lambda,
-    away_lambda,
-    max_goals=7,
-):
+def poisson_matrix(home_lambda, away_lambda, max_goals=7):
     matrix = np.zeros(
-        (
-            max_goals + 1,
-            max_goals + 1,
-        )
+        (max_goals + 1, max_goals + 1)
     )
 
     for h in range(max_goals + 1):
         for a in range(max_goals + 1):
             matrix[h, a] = (
-                poisson_probability(
-                    home_lambda,
-                    h,
-                )
-                *
-                poisson_probability(
-                    away_lambda,
-                    a,
-                )
+                poisson_probability(home_lambda, h)
+                * poisson_probability(away_lambda, a)
             )
 
     total = matrix.sum()
@@ -603,14 +534,14 @@ def poisson_matrix(
 # ============================================================
 
 def calculate_markets(matrix):
-    home_win = 0
-    draw = 0
-    away_win = 0
+    home_win = 0.0
+    draw = 0.0
+    away_win = 0.0
 
-    btts = 0
-    over15 = 0
-    over25 = 0
-    over35 = 0
+    btts = 0.0
+    over15 = 0.0
+    over25 = 0.0
+    over35 = 0.0
 
     for h in range(matrix.shape[0]):
         for a in range(matrix.shape[1]):
@@ -663,10 +594,7 @@ def exact_scores(matrix, limit=10):
     for h in range(matrix.shape[0]):
         for a in range(matrix.shape[1]):
             scores.append(
-                (
-                    f"{h}-{a}",
-                    matrix[h, a],
-                )
+                (f"{h}-{a}", matrix[h, a])
             )
 
     scores.sort(
@@ -681,25 +609,17 @@ def exact_scores(matrix, limit=10):
 # MI-TEMPS
 # ============================================================
 
-def half_time_model(
-    home_lambda,
-    away_lambda,
-):
+def half_time_model(home_lambda, away_lambda):
     matrix = poisson_matrix(
         home_lambda * 0.44,
         away_lambda * 0.44,
         5,
     )
 
-    markets = calculate_markets(matrix)
-
     return {
         "matrix": matrix,
-        "markets": markets,
-        "scores": exact_scores(
-            matrix,
-            6,
-        ),
+        "markets": calculate_markets(matrix),
+        "scores": exact_scores(matrix, 6),
     }
 
 
@@ -707,10 +627,7 @@ def half_time_model(
 # MT / FT
 # ============================================================
 
-def htft_model(
-    home_lambda,
-    away_lambda,
-):
+def htft_model(home_lambda, away_lambda):
     ht = half_time_model(
         home_lambda,
         away_lambda,
@@ -724,16 +641,9 @@ def htft_model(
 
     combinations = {}
 
-    for ht_home in range(
-        ht["matrix"].shape[0]
-    ):
-        for ht_away in range(
-            ht["matrix"].shape[1]
-        ):
-            ht_probability = ht["matrix"][
-                ht_home,
-                ht_away,
-            ]
+    for ht_home in range(ht["matrix"].shape[0]):
+        for ht_away in range(ht["matrix"].shape[1]):
+            ht_probability = ht["matrix"][ht_home, ht_away]
 
             ht_result = (
                 "1"
@@ -745,10 +655,7 @@ def htft_model(
 
             for ft_home in range(ft.shape[0]):
                 for ft_away in range(ft.shape[1]):
-                    ft_probability = ft[
-                        ft_home,
-                        ft_away,
-                    ]
+                    ft_probability = ft[ft_home, ft_away]
 
                     ft_result = (
                         "1"
@@ -761,13 +668,8 @@ def htft_model(
                     key = f"{ht_result}/{ft_result}"
 
                     combinations[key] = (
-                        combinations.get(
-                            key,
-                            0,
-                        )
-                        +
-                        ht_probability
-                        * ft_probability
+                        combinations.get(key, 0)
+                        + ht_probability * ft_probability
                     )
 
     total = sum(combinations.values())
@@ -790,34 +692,13 @@ def htft_model(
 # ============================================================
 
 STAT_QUERY_TYPES = {
-    "corners": [
-        "corners",
-        "corner stats",
-    ],
-    "cartons": [
-        "yellow cards",
-        "red cards",
-        "cartons",
-    ],
-    "tirs": [
-        "shots",
-        "tirs",
-    ],
-    "tirs_cadres": [
-        "shots on target",
-        "tirs cadrés",
-    ],
-    "possession": [
-        "possession",
-    ],
-    "fautes": [
-        "fouls",
-        "fautes",
-    ],
-    "hors_jeu": [
-        "offsides",
-        "hors jeu",
-    ],
+    "corners": ["corners", "corner stats"],
+    "cartons": ["yellow cards", "red cards", "cartons"],
+    "tirs": ["shots", "tirs"],
+    "tirs_cadres": ["shots on target", "tirs cadrés"],
+    "possession": ["possession"],
+    "fautes": ["fouls", "fautes"],
+    "hors_jeu": ["offsides", "hors jeu"],
 }
 
 
@@ -825,38 +706,23 @@ def search_detailed_stats(team_name):
     all_results = {}
 
     for stat_name, keywords in STAT_QUERY_TYPES.items():
-        queries = []
-
-        for keyword in keywords:
-            queries.append(
-                f'"{team_name}" football {keyword} statistics'
-            )
-
         collected = []
 
-        for query in queries:
-            results = serp_search(
-                query,
-                num=5,
+        for keyword in keywords:
+            query = (
+                f'"{team_name}" football '
+                f'{keyword} statistics'
             )
+
+            results = serp_search(query, num=5)
 
             for result in results:
                 collected.append({
-                    "title": result.get(
-                        "title",
-                        "",
-                    ),
-                    "snippet": result.get(
-                        "snippet",
-                        "",
-                    ),
-                    "link": result.get(
-                        "link",
-                        "",
-                    ),
+                    "title": result.get("title", ""),
+                    "snippet": result.get("snippet", ""),
+                    "link": result.get("link", ""),
                 })
 
-        # Dédoublonnage
         unique = {}
 
         for item in collected:
@@ -882,33 +748,20 @@ def extract_numbers(text):
         return []
 
     pattern = r"(?<!\w)(\d+(?:[.,]\d+)?)(?!\w)"
-
-    values = re.findall(
-        pattern,
-        text,
-    )
+    values = re.findall(pattern, text)
 
     numbers = []
 
     for value in values:
         try:
             numbers.append(
-                float(
-                    value.replace(
-                        ",",
-                        ".",
-                    )
-                )
+                float(value.replace(",", "."))
             )
         except (TypeError, ValueError):
             pass
 
     return numbers
 
-
-# ============================================================
-# LECTURE DES STATISTIQUES
-# ============================================================
 
 def summarize_stat_results(results):
     if not results:
@@ -928,9 +781,9 @@ def summarize_stat_results(results):
             + item["snippet"]
         )
 
-        nums = extract_numbers(text)
-
-        numbers.extend(nums)
+        numbers.extend(
+            extract_numbers(text)
+        )
 
         signals.append({
             "title": item["title"],
@@ -961,25 +814,13 @@ def search_absences(team_name, match_date):
     collected = []
 
     for query in queries:
-        results = serp_search(
-            query,
-            6,
-        )
+        results = serp_search(query, 6)
 
         for result in results:
             collected.append({
-                "title": result.get(
-                    "title",
-                    "",
-                ),
-                "snippet": result.get(
-                    "snippet",
-                    "",
-                ),
-                "link": result.get(
-                    "link",
-                    "",
-                ),
+                "title": result.get("title", ""),
+                "snippet": result.get("snippet", ""),
+                "link": result.get("link", ""),
             })
 
     unique = {}
@@ -991,9 +832,7 @@ def search_absences(team_name, match_date):
         )
         unique[key] = item
 
-    return list(
-        unique.values()
-    )[:15]
+    return list(unique.values())[:15]
 
 
 # ============================================================
@@ -1037,10 +876,7 @@ def classify_absences(results):
         found = []
 
         for category, words in categories.items():
-            if any(
-                word in text
-                for word in words
-            ):
+            if any(word in text for word in words):
                 found.append(category)
 
         if found:
@@ -1066,86 +902,64 @@ def build_lambdas(
 ):
     home_attack = (
         0.55 * home_form["gf_avg"]
-        +
-        0.45 * home_split["gf_avg"]
+        + 0.45 * home_split["gf_avg"]
     )
 
     away_attack = (
         0.55 * away_form["gf_avg"]
-        +
-        0.45 * away_split["gf_avg"]
+        + 0.45 * away_split["gf_avg"]
     )
 
     home_defense = (
         0.55 * away_form["ga_avg"]
-        +
-        0.45 * away_split["ga_avg"]
+        + 0.45 * away_split["ga_avg"]
     )
 
     away_defense = (
         0.55 * home_form["ga_avg"]
-        +
-        0.45 * home_split["ga_avg"]
+        + 0.45 * home_split["ga_avg"]
     )
 
     home_lambda = (
         0.58 * home_attack
-        +
-        0.42 * home_defense
+        + 0.42 * home_defense
     )
 
     away_lambda = (
         0.58 * away_attack
-        +
-        0.42 * away_defense
+        + 0.42 * away_defense
     )
 
-    # Avantage domicile
+    # Avantage domicile.
     home_lambda *= 1.08
     away_lambda *= 0.94
 
-    # Forme
+    # Forme.
     home_lambda *= (
         0.92
-        +
-        0.16 * home_form["form_score"]
+        + 0.16 * home_form["form_score"]
     )
 
     away_lambda *= (
         0.92
-        +
-        0.16 * away_form["form_score"]
+        + 0.16 * away_form["form_score"]
     )
 
-    # Classement
+    # Classement.
     if home_standing and away_standing:
-        hp = home_standing.get(
-            "position",
-            10,
-        )
-
-        ap = away_standing.get(
-            "position",
-            10,
-        )
+        hp = home_standing.get("position", 10)
+        ap = away_standing.get("position", 10)
 
         if hp < ap:
             home_lambda *= 1.03
             away_lambda *= 0.98
-
         elif ap < hp:
             away_lambda *= 1.03
             home_lambda *= 0.98
 
     return (
-        max(
-            0.20,
-            min(home_lambda, 3.8),
-        ),
-        max(
-            0.15,
-            min(away_lambda, 3.5),
-        ),
+        max(0.20, min(home_lambda, 3.8)),
+        max(0.15, min(away_lambda, 3.5)),
     )
 
 
@@ -1171,16 +985,12 @@ def contextual_adjustment(
     ]
 
     home_text = " ".join(
-        x["title"]
-        + " "
-        + x["snippet"]
+        x["title"] + " " + x["snippet"]
         for x in home_absences
     ).lower()
 
     away_text = " ".join(
-        x["title"]
-        + " "
-        + x["snippet"]
+        x["title"] + " " + x["snippet"]
         for x in away_absences
     ).lower()
 
@@ -1190,27 +1000,14 @@ def contextual_adjustment(
     for word in important_words:
         if word in home_text:
             home_penalty += 0.025
-
         if word in away_text:
             away_penalty += 0.025
 
-    home_penalty = min(
-        home_penalty,
-        0.12,
-    )
+    home_penalty = min(home_penalty, 0.12)
+    away_penalty = min(away_penalty, 0.12)
 
-    away_penalty = min(
-        away_penalty,
-        0.12,
-    )
-
-    home_lambda *= (
-        1 - home_penalty
-    )
-
-    away_lambda *= (
-        1 - away_penalty
-    )
+    home_lambda *= (1 - home_penalty)
+    away_lambda *= (1 - away_penalty)
 
     return (
         max(home_lambda, 0.15),
@@ -1251,7 +1048,6 @@ def human_analysis(
     best_score = scores[0][0]
     best_htft = htft[0][0]
 
-    # Lecture de l'équilibre
     if (
         abs(p1 - p2) < 0.08
         and px >= 0.27
@@ -1260,72 +1056,52 @@ def human_analysis(
             "Les deux équipes sont proches. "
             "Le scénario nul est à surveiller."
         )
-
     elif (
         p1 > p2
-        and
-        home_form["form_score"]
-        >=
-        away_form["form_score"]
+        and home_form["form_score"]
+        >= away_form["form_score"]
     ):
         reading = (
             "Le modèle et la dynamique récente "
             "convergent vers l'équipe à domicile."
         )
-
     elif (
         p2 > p1
-        and
-        away_form["form_score"]
-        >=
-        home_form["form_score"]
+        and away_form["form_score"]
+        >= home_form["form_score"]
     ):
         reading = (
             "L'équipe extérieure possède "
             "un signal statistique supérieur."
         )
-
     else:
         reading = (
             "Les signaux sont partagés. "
             "Une couverture est préférable au 1X2 sec."
         )
 
-    # Buts
     if markets["Over 2.5"] >= 0.60:
         goals = (
             "Le scénario d'au moins 3 buts "
             "est dominant dans le modèle."
         )
-
     elif markets["Under 2.5"] >= 0.60:
         goals = (
             "Le modèle privilégie "
             "un match à faible total de buts."
         )
-
     else:
-        goals = (
-            "Le total de buts reste équilibré."
-        )
+        goals = "Le total de buts reste équilibré."
 
-    # BTTS
     if markets["BTTS Oui"] >= 0.60:
         btts = (
-            "Les deux équipes ont un signal "
-            "favorable pour marquer."
+            "Les deux équipes ont un signal favorable "
+            "pour marquer."
         )
-
     elif markets["BTTS Non"] >= 0.60:
-        btts = (
-            "Une des deux équipes pourrait "
-            "rester muette."
-        )
-
+        btts = "Une des deux équipes pourrait rester muette."
     else:
-        btts = (
-            "Le BTTS est difficile à départager."
-        )
+        btts = "Le BTTS est difficile à départager."
 
     return {
         "main_result": main_result,
@@ -1342,54 +1118,23 @@ def human_analysis(
 # ============================================================
 
 def analyze_match(match):
-    home = match.get(
-        "homeTeam",
-        {},
-    )
-
-    away = match.get(
-        "awayTeam",
-        {},
-    )
+    home = match.get("homeTeam", {})
+    away = match.get("awayTeam", {})
 
     home_id = home.get("id")
     away_id = away.get("id")
 
-    home_name = home.get(
-        "name",
-        "Domicile",
-    )
+    home_name = home.get("name", "Domicile")
+    away_name = away.get("name", "Extérieur")
 
-    away_name = away.get(
-        "name",
-        "Extérieur",
-    )
+    competition_data = match.get("competition", {})
 
-    competition = match.get(
-        "competition",
-        {},
-    ).get(
-        "name",
-        "",
-    )
+    competition = competition_data.get("name", "")
+    competition_code = competition_data.get("code")
 
-    competition_code = match.get(
-        "competition",
-        {},
-    ).get(
-        "code"
-    )
-
-    # Historique
-    home_history = fetch_team_history(
-        home_id,
-        12,
-    )
-
-    away_history = fetch_team_history(
-        away_id,
-        12,
-    )
+    # Historique.
+    home_history = fetch_team_history(home_id, 12)
+    away_history = fetch_team_history(away_id, 12)
 
     home_form = analyze_form(
         home_history,
@@ -1417,7 +1162,7 @@ def analyze_match(match):
         8,
     )
 
-    # Classement
+    # Classement.
     table = []
 
     if competition_code:
@@ -1435,7 +1180,7 @@ def analyze_match(match):
         away_id,
     )
 
-    # Lambdas
+    # Lambdas.
     home_lambda, away_lambda = build_lambdas(
         home_form,
         away_form,
@@ -1450,7 +1195,7 @@ def analyze_match(match):
         "",
     )[:10]
 
-    # Absences
+    # Absences.
     home_absences_raw = search_absences(
         home_name,
         match_date,
@@ -1469,7 +1214,6 @@ def analyze_match(match):
         away_absences_raw
     )
 
-    # Correction contextuelle
     home_lambda, away_lambda = contextual_adjustment(
         home_lambda,
         away_lambda,
@@ -1477,15 +1221,13 @@ def analyze_match(match):
         away_absences,
     )
 
-    # Modèle
+    # Modèle.
     matrix = poisson_matrix(
         home_lambda,
         away_lambda,
     )
 
-    markets = calculate_markets(
-        matrix
-    )
+    markets = calculate_markets(matrix)
 
     scores = exact_scores(
         matrix,
@@ -1502,7 +1244,7 @@ def analyze_match(match):
         away_lambda,
     )
 
-    # Statistiques détaillées
+    # Statistiques Web.
     home_stats_raw = search_detailed_stats(
         home_name
     )
@@ -1521,7 +1263,6 @@ def analyze_match(match):
         for key, value in away_stats_raw.items()
     }
 
-    # Analyse humaine
     verdict = human_analysis(
         home_name,
         away_name,
@@ -1538,31 +1279,22 @@ def analyze_match(match):
         "home": home_name,
         "away": away_name,
         "competition": competition,
-
         "home_form": home_form,
         "away_form": away_form,
-
         "home_split": home_split,
         "away_split": away_split,
-
         "home_standing": home_standing,
         "away_standing": away_standing,
-
         "home_lambda": home_lambda,
         "away_lambda": away_lambda,
-
         "markets": markets,
         "scores": scores,
-
         "ht": ht,
         "htft": htft,
-
         "home_absences": home_absences,
         "away_absences": away_absences,
-
         "home_stats": home_stats,
         "away_stats": away_stats,
-
         "verdict": verdict,
     }
 
@@ -1583,50 +1315,30 @@ STAT_LABELS = {
 
 
 def display_detailed_stats(title, stats):
-    st.markdown(
-        f"### {title}"
-    )
+    st.markdown(f"### {title}")
 
     for key, label in STAT_LABELS.items():
-        data = stats.get(
-            key,
-            {},
-        )
+        data = stats.get(key, {})
 
-        st.markdown(
-            f"**{label}**"
-        )
+        st.markdown(f"**{label}**")
 
-        if not data.get(
-            "available",
-            False,
-        ):
+        if not data.get("available", False):
             st.caption(
                 "Donnée non trouvée dans les résultats disponibles."
             )
             continue
 
-        signals = data.get(
-            "signals",
-            [],
-        )
+        signals = data.get("signals", [])
 
         if not signals:
-            st.caption(
-                "Aucun signal exploitable."
-            )
+            st.caption("Aucun signal exploitable.")
             continue
 
         for signal in signals[:3]:
-            st.write(
-                "• "
-                + signal["title"]
-            )
+            st.write("• " + signal["title"])
 
             if signal["snippet"]:
-                st.caption(
-                    signal["snippet"]
-                )
+                st.caption(signal["snippet"])
 
 
 # ============================================================
@@ -1634,7 +1346,7 @@ def display_detailed_stats(title, stats):
 # ============================================================
 
 st.title(
-    "⚽ RODRIGUE PRO FOOTBALL AI — V10"
+    "⚽ RODRIGUE PRO FOOTBALL AI — V10 ULTIMATE"
 )
 
 st.markdown(
@@ -1662,6 +1374,11 @@ Le moteur recherche notamment :
 - 🔢 scores exacts
 - ⏱️ mi-temps
 - 🔄 MT/FT
+
+### 🔧 Correction technique
+La recherche des matchs se fait désormais **compétition par compétition**.
+Cela évite l'erreur HTTP 400 provoquée par la requête groupée
+`competitions=PL,PD,BL1,...`.
 """
 )
 
@@ -1676,36 +1393,24 @@ st.warning(
 # PARAMÈTRES
 # ============================================================
 
-st.subheader("⚙️ PARAMÈTRES")
+col1, col2 = st.columns(2)
 
-columns = st.columns(2)
-
-with columns[0]:
+with col1:
     selected_date = st.date_input(
         "📅 Date",
         value=date.today(),
     )
 
-with columns[1]:
+with col2:
     selected_competitions = st.multiselect(
         "🏆 Compétitions",
-        options=list(COMPETITIONS.keys()),
-        default=[
-            "Premier League",
-            "LaLiga",
-            "Bundesliga",
-            "Serie A",
-            "Ligue 1",
-            "Champions League",
-            "Eredivisie",
-            "Primeira Liga",
-            "Championship",
-        ],
+        list(COMPETITIONS.keys()),
+        default=list(COMPETITIONS.keys()),
     )
 
 competition_codes = [
-    COMPETITIONS[name]
-    for name in selected_competitions
+    COMPETITIONS[x]
+    for x in selected_competitions
 ]
 
 
@@ -1715,88 +1420,32 @@ competition_codes = [
 
 with st.expander("🔧 DIAGNOSTIC FOOTBALL-DATA.ORG"):
     st.caption(
-        "Ce diagnostic permet de voir ce que l'API retourne réellement "
-        "pour la date choisie."
+        "Ce diagnostic teste chaque compétition séparément. "
+        "Il n'utilise pas la requête groupée qui provoquait HTTP 400."
     )
 
     if st.button(
-        "🔍 TESTER L'API",
+        "🔍 Tester les compétitions",
         use_container_width=True,
     ):
-        diagnostic_params = {
-            "dateFrom": selected_date.isoformat(),
-            "dateTo": selected_date.isoformat(),
-        }
-
-        diagnostic_data = football_get(
-            "/matches",
-            diagnostic_params,
-        )
-
-        if diagnostic_data is None:
-            st.error(
-                "❌ L'API n'a pas répondu correctement."
+        if not competition_codes:
+            st.warning(
+                "Sélectionne au moins une compétition."
             )
         else:
-            api_matches = diagnostic_data.get(
-                "matches",
-                [],
-            )
-
-            st.success(
-                f"✅ L'API a retourné {len(api_matches)} match(s)."
-            )
-
-            if api_matches:
-                diagnostic_rows = []
-
-                for m in api_matches:
-                    diagnostic_rows.append({
-                        "Compétition": m.get(
-                            "competition",
-                            {},
-                        ).get(
-                            "name",
-                            "N/D",
-                        ),
-                        "Code": m.get(
-                            "competition",
-                            {},
-                        ).get(
-                            "code",
-                            "N/D",
-                        ),
-                        "Domicile": m.get(
-                            "homeTeam",
-                            {},
-                        ).get(
-                            "name",
-                            "N/D",
-                        ),
-                        "Extérieur": m.get(
-                            "awayTeam",
-                            {},
-                        ).get(
-                            "name",
-                            "N/D",
-                        ),
-                        "Date": m.get(
-                            "utcDate",
-                            "N/D",
-                        ),
-                    })
-
-                st.dataframe(
-                    pd.DataFrame(
-                        diagnostic_rows
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
+            with st.spinner(
+                "Test de football-data.org..."
+            ):
+                diagnostic = diagnostic_competitions(
+                    selected_date,
+                    competition_codes,
                 )
-            else:
-                st.warning(
-                    "L'API ne retourne aucun match pour cette date."
-                )
+
+            st.dataframe(
+                pd.DataFrame(diagnostic),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 # ============================================================
@@ -1808,32 +1457,31 @@ if st.button(
     type="primary",
     use_container_width=True,
 ):
-    if not selected_competitions:
+    if not competition_codes:
         st.error(
             "❌ Sélectionne au moins une compétition."
         )
         st.stop()
 
     with st.spinner(
-        "🔎 Recherche des matchs..."
+        "🔎 Recherche compétition par compétition..."
     ):
         matches = fetch_matches(
             selected_date,
-            competition_codes,
+            tuple(competition_codes),
         )
 
     if not matches:
         st.error(
-            "❌ Aucun match trouvé pour cette date."
+            "❌ Aucun match trouvé pour cette date "
+            "dans les compétitions sélectionnées."
         )
 
         st.info(
-            "Essaie une autre date ou active d'autres compétitions "
-            "dans le menu."
+            "💡 Vérifie la date et les compétitions. "
+            "Le problème HTTP 400 du filtre groupé a été supprimé."
         )
 
-        # On supprime l'ancien résultat pour éviter
-        # d'afficher des matchs d'une recherche précédente.
         st.session_state.pop(
             "matches_v10",
             None,
@@ -1844,9 +1492,7 @@ if st.button(
             f"✅ {len(matches)} match(s) trouvé(s)."
         )
 
-        st.session_state[
-            "matches_v10"
-        ] = matches
+        st.session_state["matches_v10"] = matches
 
 
 # ============================================================
@@ -1854,13 +1500,41 @@ if st.button(
 # ============================================================
 
 if "matches_v10" in st.session_state:
-    matches = st.session_state[
-        "matches_v10"
-    ]
+    matches = st.session_state["matches_v10"]
 
-    st.subheader(
-        "📋 MATCHS"
-    )
+    st.subheader("📋 MATCHS")
+
+    # Petit résumé par compétition.
+    competition_counts = {}
+
+    for match in matches:
+        name = match.get(
+            "competition",
+            {},
+        ).get(
+            "name",
+            "Compétition inconnue",
+        )
+        competition_counts[name] = (
+            competition_counts.get(name, 0) + 1
+        )
+
+    if competition_counts:
+        summary_rows = [
+            {
+                "Compétition": name,
+                "Matchs": count,
+            }
+            for name, count in sorted(
+                competition_counts.items()
+            )
+        ]
+
+        st.dataframe(
+            pd.DataFrame(summary_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     for index, match in enumerate(matches):
         home = match.get(
@@ -1897,7 +1571,7 @@ if "matches_v10" in st.session_state:
         ):
             if utc_date:
                 st.caption(
-                    f"📅 {utc_date}"
+                    f"🕐 Date API : {utc_date}"
                 )
 
             if st.button(
@@ -1908,18 +1582,14 @@ if "matches_v10" in st.session_state:
                 with st.spinner(
                     "🧠 Analyse complète en cours..."
                 ):
-                    result = analyze_match(
-                        match
-                    )
+                    result = analyze_match(match)
 
                 # =================================================
                 # EN-TÊTE
                 # =================================================
 
                 st.header(
-                    f"⚽ {result['home']} "
-                    f"— "
-                    f"{result['away']}"
+                    f"⚽ {result['home']} — {result['away']}"
                 )
 
                 st.caption(
@@ -1934,24 +1604,19 @@ if "matches_v10" in st.session_state:
 
                 c1.metric(
                     "xG domicile",
-                    number(
-                        result["home_lambda"]
-                    ),
+                    number(result["home_lambda"]),
                 )
 
                 c2.metric(
                     "xG extérieur",
-                    number(
-                        result["away_lambda"]
-                    ),
+                    number(result["away_lambda"]),
                 )
 
                 c3.metric(
                     "Buts attendus",
                     number(
                         result["home_lambda"]
-                        +
-                        result["away_lambda"]
+                        + result["away_lambda"]
                     ),
                 )
 
@@ -1959,9 +1624,7 @@ if "matches_v10" in st.session_state:
                 # FORME
                 # =================================================
 
-                st.subheader(
-                    "📈 FORME"
-                )
+                st.subheader("📈 FORME")
 
                 f1, f2 = st.columns(2)
 
@@ -1970,12 +1633,10 @@ if "matches_v10" in st.session_state:
                         f"### 🏠 {result['home']}"
                     )
 
-                    form = result[
-                        "home_form"
-                    ]
+                    form = result["home_form"]
 
                     st.write(
-                        f"**V-Défaite :** "
+                        f"**V-N-D :** "
                         f"{form['wins']}-"
                         f"{form['draws']}-"
                         f"{form['losses']}"
@@ -1983,8 +1644,7 @@ if "matches_v10" in st.session_state:
 
                     st.write(
                         f"**Buts :** "
-                        f"{form['gf']} / "
-                        f"{form['ga']}"
+                        f"{form['gf']} / {form['ga']}"
                     )
 
                     st.write(
@@ -2002,12 +1662,10 @@ if "matches_v10" in st.session_state:
                         f"### ✈️ {result['away']}"
                     )
 
-                    form = result[
-                        "away_form"
-                    ]
+                    form = result["away_form"]
 
                     st.write(
-                        f"**V-Défaite :** "
+                        f"**V-N-D :** "
                         f"{form['wins']}-"
                         f"{form['draws']}-"
                         f"{form['losses']}"
@@ -2015,8 +1673,7 @@ if "matches_v10" in st.session_state:
 
                     st.write(
                         f"**Buts :** "
-                        f"{form['gf']} / "
-                        f"{form['ga']}"
+                        f"{form['gf']} / {form['ga']}"
                     )
 
                     st.write(
@@ -2033,9 +1690,7 @@ if "matches_v10" in st.session_state:
                 # CLASSEMENT
                 # =================================================
 
-                st.subheader(
-                    "🏆 CLASSEMENT"
-                )
+                st.subheader("🏆 CLASSEMENT")
 
                 s1, s2 = st.columns(2)
 
@@ -2086,7 +1741,6 @@ if "matches_v10" in st.session_state:
                                     )
                                 )
                             )
-
                         else:
                             st.caption(
                                 "Classement non disponible."
@@ -2118,9 +1772,7 @@ if "matches_v10" in st.session_state:
                     })
 
                 st.dataframe(
-                    pd.DataFrame(
-                        market_rows
-                    ),
+                    pd.DataFrame(market_rows),
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -2129,9 +1781,7 @@ if "matches_v10" in st.session_state:
                 # BUTS
                 # =================================================
 
-                st.subheader(
-                    "⚽ BUTS"
-                )
+                st.subheader("⚽ BUTS")
 
                 goals_rows = []
 
@@ -2153,9 +1803,7 @@ if "matches_v10" in st.session_state:
                     })
 
                 st.dataframe(
-                    pd.DataFrame(
-                        goals_rows
-                    ),
+                    pd.DataFrame(goals_rows),
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -2164,15 +1812,11 @@ if "matches_v10" in st.session_state:
                 # SCORES EXACTS
                 # =================================================
 
-                st.subheader(
-                    "🔢 SCORES EXACTS"
-                )
+                st.subheader("🔢 SCORES EXACTS")
 
                 score_rows = []
 
-                for score, probability in result[
-                    "scores"
-                ]:
+                for score, probability in result["scores"]:
                     score_rows.append({
                         "Score": score,
                         "Probabilité": percent(
@@ -2181,9 +1825,7 @@ if "matches_v10" in st.session_state:
                     })
 
                 st.dataframe(
-                    pd.DataFrame(
-                        score_rows
-                    ),
+                    pd.DataFrame(score_rows),
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -2192,15 +1834,11 @@ if "matches_v10" in st.session_state:
                 # MI-TEMPS
                 # =================================================
 
-                st.subheader(
-                    "⏱️ MI-TEMPS"
-                )
+                st.subheader("⏱️ MI-TEMPS")
 
                 ht_rows = []
 
-                for score, probability in result[
-                    "ht"
-                ]["scores"]:
+                for score, probability in result["ht"]["scores"]:
                     ht_rows.append({
                         "Score MT": score,
                         "Probabilité": percent(
@@ -2209,9 +1847,7 @@ if "matches_v10" in st.session_state:
                     })
 
                 st.dataframe(
-                    pd.DataFrame(
-                        ht_rows
-                    ),
+                    pd.DataFrame(ht_rows),
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -2220,15 +1856,11 @@ if "matches_v10" in st.session_state:
                 # MT/FT
                 # =================================================
 
-                st.subheader(
-                    "🔄 MT / FT"
-                )
+                st.subheader("🔄 MT / FT")
 
                 htft_rows = []
 
-                for combination, probability in result[
-                    "htft"
-                ][:9]:
+                for combination, probability in result["htft"][:9]:
                     htft_rows.append({
                         "MT/FT": combination,
                         "Probabilité": percent(
@@ -2237,9 +1869,7 @@ if "matches_v10" in st.session_state:
                     })
 
                 st.dataframe(
-                    pd.DataFrame(
-                        htft_rows
-                    ),
+                    pd.DataFrame(htft_rows),
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -2281,22 +1911,16 @@ if "matches_v10" in st.session_state:
                         f"### {result['home']}"
                     )
 
-                    if result[
-                        "home_absences"
-                    ]:
-                        for item in result[
-                            "home_absences"
-                        ][:8]:
+                    if result["home_absences"]:
+                        for item in result["home_absences"][:8]:
                             st.write(
-                                "• "
-                                + item["title"]
+                                "• " + item["title"]
                             )
 
                             if item["snippet"]:
                                 st.caption(
                                     item["snippet"]
                                 )
-
                     else:
                         st.info(
                             "Aucune information exploitable trouvée."
@@ -2307,22 +1931,16 @@ if "matches_v10" in st.session_state:
                         f"### {result['away']}"
                     )
 
-                    if result[
-                        "away_absences"
-                    ]:
-                        for item in result[
-                            "away_absences"
-                        ][:8]:
+                    if result["away_absences"]:
+                        for item in result["away_absences"][:8]:
                             st.write(
-                                "• "
-                                + item["title"]
+                                "• " + item["title"]
                             )
 
                             if item["snippet"]:
                                 st.caption(
                                     item["snippet"]
                                 )
-
                     else:
                         st.info(
                             "Aucune information exploitable trouvée."
@@ -2336,9 +1954,7 @@ if "matches_v10" in st.session_state:
                     "🧠 SYNTHÈSE HUMAINE RODRIGUE PRO"
                 )
 
-                verdict = result[
-                    "verdict"
-                ]
+                verdict = result["verdict"]
 
                 st.success(
                     "🎯 Résultat principal : "
@@ -2395,9 +2011,7 @@ if "matches_v10" in st.session_state:
                     })
 
                 st.dataframe(
-                    pd.DataFrame(
-                        top_rows
-                    ),
+                    pd.DataFrame(top_rows),
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -2427,3 +2041,8 @@ if "matches_v10" in st.session_state:
                     "les données absentes ne sont pas remplacées "
                     "par des valeurs artificielles."
                 )
+
+
+st.caption(
+    "Data provided by football-data.org"
+)
