@@ -96,78 +96,90 @@ def number(value):
 # FOOTBALL-DATA.ORG
 # ============================================================
 
-def football_get(endpoint, params=None, show_error=True):
-    """GET robuste vers football-data.org."""
+@st.cache_data(ttl=300, show_spinner=False)
+def _football_request(endpoint, params_items=()):
+    """Effectue UNE requête et mémorise aussi les erreurs pendant 5 min."""
+    params = dict(params_items)
     try:
         response = SESSION.get(
             API_BASE + endpoint,
             headers={"X-Auth-Token": FOOTBALL_DATA_KEY},
-            params=params or {},
+            params=params,
             timeout=25,
         )
 
-        if response.status_code == 200:
-            try:
-                return response.json()
-            except ValueError:
-                if show_error:
-                    st.warning("⚠️ Réponse JSON invalide de football-data.org.")
-                return None
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
 
-        if response.status_code == 400:
-            detail = ""
-            try:
-                detail = response.json().get("error", "")
-            except Exception:
-                pass
-            if show_error:
-                st.warning(
-                    f"⚠️ Requête football-data.org refusée (400). "
-                    f"{detail}".strip()
-                )
-            return None
+        error = ""
+        if isinstance(payload, dict):
+            error = str(payload.get("error", "") or "")
 
-        if response.status_code == 401:
-            if show_error:
-                st.error("❌ Clé football-data.org absente ou non authentifiée.")
-            return None
+        return {
+            "status": response.status_code,
+            "data": payload if response.status_code == 200 else None,
+            "error": error,
+        }
 
-        if response.status_code == 403:
-            detail = ""
-            try:
-                detail = response.json().get("error", "")
-            except Exception:
-                pass
-            if show_error:
-                st.warning(
-                    "⚠️ Ressource football-data.org non autorisée "
-                    f"(403). {detail}".strip()
-                )
-            return None
+    except requests.RequestException as exc:
+        return {
+            "status": 0,
+            "data": None,
+            "error": str(exc),
+        }
 
-        if response.status_code == 404:
-            if show_error:
-                st.warning(f"⚠️ Ressource introuvable : {endpoint}")
-            return None
 
-        if response.status_code == 429:
-            if show_error:
-                st.warning(
-                    "⚠️ Limite football-data.org atteinte "
-                    "(10 appels/minute sur le forfait gratuit)."
-                )
-            return None
+def football_get(endpoint, params=None, show_error=True):
+    """GET football-data.org sans répéter inutilement les appels."""
+    params_items = tuple(sorted((params or {}).items()))
+    result = _football_request(endpoint, params_items)
+    status = result["status"]
 
-        if show_error:
-            st.warning(
-                f"⚠️ football-data.org a répondu HTTP {response.status_code}."
-            )
+    if status == 200:
+        return result["data"]
+
+    if not show_error:
         return None
 
-    except requests.RequestException as error:
-        if show_error:
-            st.warning(f"Erreur réseau football-data.org : {error}")
-        return None
+    detail = result.get("error", "")
+
+    if status == 400:
+        st.warning(
+            f"⚠️ Requête football-data.org refusée (400). {detail}".strip()
+        )
+    elif status == 401:
+        st.error(
+            "❌ Clé football-data.org non authentifiée (401). "
+            "Vérifie le token dans le code."
+        )
+    elif status == 403:
+        st.warning(
+            f"⚠️ Ressource non autorisée (403). {detail}".strip()
+        )
+    elif status == 404:
+        st.warning(f"⚠️ Ressource introuvable : {endpoint}")
+    elif status == 429:
+        st.warning(
+            "⚠️ Limite football-data.org atteinte (429). "
+            "Le code réutilise maintenant les résultats en cache pour "
+            "éviter les appels répétés."
+        )
+    elif status == 0:
+        st.warning(f"🌐 Erreur réseau football-data.org : {detail}")
+    else:
+        st.warning(
+            f"⚠️ football-data.org a répondu HTTP {status}. {detail}".strip()
+        )
+
+    return None
+
+
+def football_status(endpoint, params=None):
+    """Retourne le statut détaillé sans déclencher de seconde requête."""
+    params_items = tuple(sorted((params or {}).items()))
+    return _football_request(endpoint, params_items)
 
 
 # ============================================================
@@ -202,117 +214,207 @@ def serp_search(query, num=8):
 
 
 # ============================================================
-# MATCHS — CORRECTION DÉFINITIVE
+# MATCHS — MOTEUR CENTRAL SANS RÉPÉTITION
 # ============================================================
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_matches(selected_date, competition_codes):
+def get_matches_date_once(selected_date):
+    """Une seule requête pour récupérer les matchs de la date.
+
+    On n'envoie PLUS le filtre `competitions=PL,PD,...`.
+    L'API accepte dateFrom/dateTo sur /v4/matches ; on filtre ensuite
+    localement selon les compétitions choisies par l'utilisateur.
     """
-    Recherche les matchs compétition par compétition.
-
-    IMPORTANT :
-    On n'utilise volontairement PAS :
-        /v4/matches?competitions=PL,PD,BL1,...
-
-    car cette requête groupée peut renvoyer HTTP 400 selon
-    la combinaison de codes / droits du compte.
-
-    On utilise :
-        /v4/competitions/{CODE}/matches
-        ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
-
-    Puis on fusionne et dédoublonne.
-    """
-    if not competition_codes:
-        return []
-
     date_str = selected_date.isoformat()
-    all_matches = []
-    failed_codes = []
-
-    for code in competition_codes:
-        params = {
+    result = football_status(
+        "/matches",
+        {
             "dateFrom": date_str,
             "dateTo": date_str,
-        }
-
-        data = football_get(
-            f"/competitions/{code}/matches",
-            params,
-            show_error=False,
-        )
-
-        if data is None:
-            failed_codes.append(code)
-            continue
-
-        matches = data.get("matches", [])
-
-        for match in matches:
-            # Sécurité : ne garder que la date demandée.
-            utc_date = match.get("utcDate", "")
-            if utc_date[:10] == date_str:
-                all_matches.append(match)
-
-    # Dédoublonnage par ID.
-    unique = {}
-    for match in all_matches:
-        match_id = match.get("id")
-        if match_id is not None:
-            unique[match_id] = match
-
-    matches = list(unique.values())
-
-    matches.sort(
-        key=lambda m: m.get("utcDate", "")
+        },
     )
-
-    # Information lisible au lieu d'un faux "400 global".
-    if failed_codes:
-        failed_names = [
-            code for code in failed_codes
-        ]
-        st.caption(
-            "ℹ️ Certaines compétitions n'ont pas pu être interrogées : "
-            + ", ".join(failed_names)
-        )
-
-    return matches
+    return result
 
 
-# ============================================================
-# DIAGNOSTIC API
-# ============================================================
+@st.cache_data(ttl=300, show_spinner=False)
+def get_matches_by_competition_fallback(selected_date, competition_codes):
+    """Secours uniquement si /v4/matches sans filtre échoue.
 
-def diagnostic_competitions(selected_date, competition_codes):
-    rows = []
+    Chaque compétition est alors interrogée une seule fois et les réponses
+    sont mémorisées. Ce chemin ne sert pas au fonctionnement normal.
+    """
     date_str = selected_date.isoformat()
+    rows = []
 
     for code in competition_codes:
-        data = football_get(
+        result = football_status(
             f"/competitions/{code}/matches",
             {
                 "dateFrom": date_str,
                 "dateTo": date_str,
             },
-            show_error=False,
         )
+        rows.append((code, result))
 
-        if data is None:
-            rows.append({
-                "Code": code,
-                "Statut": "Erreur / non autorisé",
-                "Matchs": 0,
-            })
-        else:
-            rows.append({
-                "Code": code,
-                "Statut": "OK",
-                "Matchs": len(data.get("matches", [])),
-            })
+        if result["status"] in (401, 429):
+            break
 
     return rows
 
+
+def _filter_matches_by_competition(matches, competition_codes):
+    wanted = set(competition_codes)
+    selected = []
+    seen = set()
+
+    for match in matches or []:
+        code = (
+            match.get("competition", {})
+            .get("code")
+        )
+        if code not in wanted:
+            continue
+
+        match_id = match.get("id")
+        key = match_id if match_id is not None else (
+            match.get("utcDate", ""),
+            match.get("homeTeam", {}).get("id"),
+            match.get("awayTeam", {}).get("id"),
+        )
+
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(match)
+
+    return sorted(
+        selected,
+        key=lambda m: m.get("utcDate", ""),
+    )
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_matches(selected_date, competition_codes):
+    """Récupère les matchs sans répéter les appels réseau."""
+    if not competition_codes:
+        return []
+
+    result = get_matches_date_once(selected_date)
+
+    if result["status"] == 200:
+        return _filter_matches_by_competition(
+            (result.get("data") or {}).get("matches", []),
+            competition_codes,
+        )
+
+    # Secours uniquement en cas d'échec de /matches.
+    fallback = get_matches_by_competition_fallback(
+        selected_date,
+        tuple(competition_codes),
+    )
+
+    all_matches = []
+    for code, item in fallback:
+        if item["status"] == 200:
+            all_matches.extend(
+                (item.get("data") or {}).get("matches", [])
+            )
+
+    return _filter_matches_by_competition(
+        all_matches,
+        competition_codes,
+    )
+
+
+# ============================================================
+# DIAGNOSTIC API — RÉUTILISE EXACTEMENT LE MÊME CACHE
+# ============================================================
+
+def diagnostic_competitions(selected_date, competition_codes):
+    """Diagnostic qui ne relance pas les requêtes déjà effectuées."""
+    if not competition_codes:
+        return []
+
+    result = get_matches_date_once(selected_date)
+    date_str = selected_date.isoformat()
+
+    if result["status"] == 200:
+        all_matches = (result.get("data") or {}).get("matches", [])
+        rows = []
+
+        for code in competition_codes:
+            count = sum(
+                1
+                for match in all_matches
+                if match.get("competition", {}).get("code") == code
+                and match.get("utcDate", "")[:10] == date_str
+            )
+            rows.append({
+                "Code": code,
+                "HTTP": 200,
+                "Statut": "OK — 1 requête globale",
+                "Matchs": count,
+                "Détail": "Filtrage local, aucun appel supplémentaire",
+            })
+
+        return rows
+
+    # Si la requête globale échoue, afficher la cause exacte.
+    fallback = get_matches_by_competition_fallback(
+        selected_date,
+        tuple(competition_codes),
+    )
+    rows = []
+
+    for code, item in fallback:
+        status = item["status"]
+        detail = item.get("error", "")
+        data = item.get("data")
+
+        if status == 200:
+            rows.append({
+                "Code": code,
+                "HTTP": 200,
+                "Statut": "OK — secours",
+                "Matchs": len((data or {}).get("matches", [])),
+                "Détail": "Requête compétition utilisée en secours",
+            })
+        elif status == 401:
+            rows.append({
+                "Code": code,
+                "HTTP": 401,
+                "Statut": "Clé non authentifiée",
+                "Matchs": 0,
+                "Détail": detail or "Token refusé",
+            })
+            break
+        elif status == 403:
+            rows.append({
+                "Code": code,
+                "HTTP": 403,
+                "Statut": "Non autorisé",
+                "Matchs": 0,
+                "Détail": detail or "Ressource non disponible pour ce compte",
+            })
+        elif status == 429:
+            rows.append({
+                "Code": code,
+                "HTTP": 429,
+                "Statut": "Limite atteinte",
+                "Matchs": 0,
+                "Détail": detail or "Quota dépassé",
+            })
+            break
+        else:
+            rows.append({
+                "Code": code,
+                "HTTP": status,
+                "Statut": "Erreur",
+                "Matchs": 0,
+                "Détail": detail,
+            })
+
+    return rows
 
 # ============================================================
 # HISTORIQUE
@@ -1420,8 +1522,8 @@ competition_codes = [
 
 with st.expander("🔧 DIAGNOSTIC FOOTBALL-DATA.ORG"):
     st.caption(
-        "Ce diagnostic teste chaque compétition séparément. "
-        "Il n'utilise pas la requête groupée qui provoquait HTTP 400."
+        "Ce diagnostic utilise d'abord UNE seule requête sur la date, puis filtre les compétitions localement. "
+        "Il n'utilise jamais le filtre groupé qui provoquait HTTP 400."
     )
 
     if st.button(
@@ -1479,7 +1581,7 @@ if st.button(
 
         st.info(
             "💡 Vérifie la date et les compétitions. "
-            "Le problème HTTP 400 du filtre groupé a été supprimé."
+            "La requête groupée est supprimée : la date est chargée une seule fois, puis filtrée localement."
         )
 
         st.session_state.pop(
