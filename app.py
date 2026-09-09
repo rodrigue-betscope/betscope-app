@@ -68,34 +68,30 @@ def football_get(endpoint, params=None):
 
 
 def fetch_matches(selected_date, competition_codes):
+    # On récupère tous les matchs de la date sans bloquer par l'API
     params = {
         "dateFrom": selected_date.isoformat(),
         "dateTo": selected_date.isoformat()
     }
-    if competition_codes:
-        params["competitions"] = ",".join(competition_codes)
 
     data = football_get("/matches", params)
     if not data:
         return []
 
     matches = data.get("matches", [])
-    if not matches and competition_codes:
-        fallback_data = football_get("/matches", {
-            "dateFrom": selected_date.isoformat(),
-            "dateTo": selected_date.isoformat()
-        })
-        if fallback_data:
-            all_matches = fallback_data.get("matches", [])
-            matches = [
-                m for m in all_matches 
-                if m.get("competition", {}).get("code") in competition_codes
-            ]
+
+    # Filtrage local en Python pour contourner les restrictions du plan gratuit
+    if competition_codes:
+        matches = [
+            m for m in matches 
+            if m.get("competition", {}).get("code") in competition_codes
+        ]
+
     return matches
 
 
 # ============================================================
-# INTERFACE STREAMLIT PRINCIPALE (MOBILE FRIENDLY)
+# INTERFACE STREAMLIT PRINCIPALE
 # ============================================================
 
 def main():
