@@ -7,21 +7,17 @@
 #   - SerpApi / Google : contexte, blessures, suspensions,
 #     statistiques détaillées et événements disponibles sur le Web
 #
-# CORRECTION PRINCIPALE :
-#   L'ancien code envoyait une seule requête /v4/matches avec
-#   "competitions=PL,PD,BL1,...". Sur certains comptes/configurations
-#   football-data.org cette combinaison renvoie HTTP 400.
-#
-#   Cette version interroge chaque compétition séparément avec :
-#   /v4/competitions/{CODE}/matches
-#   puis fusionne les résultats.
-#
-# Cela évite le HTTP 400 lié au filtre "competitions".
+# CORRECTIONS PRINCIPALES :
+#   1) Une seule requête /v4/matches pour la date, puis filtrage local.
+#   2) dateTo est le lendemain : football-data.org traite dateTo comme
+#      une borne de fin et un intervalle dateFrom == dateTo provoque HTTP 400.
+#   3) Le diagnostic réutilise le même cache : aucun appel répété.
+#   4) Un secours par compétition n'est utilisé qu'en cas d'échec de la requête globale.
 # ============================================================
 
 import math
 import re
-from datetime import date
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -226,11 +222,12 @@ def get_matches_date_once(selected_date):
     localement selon les compétitions choisies par l'utilisateur.
     """
     date_str = selected_date.isoformat()
+    date_to = (selected_date + timedelta(days=1)).isoformat()
     result = football_status(
         "/matches",
         {
             "dateFrom": date_str,
-            "dateTo": date_str,
+            "dateTo": date_to,
         },
     )
     return result
@@ -244,6 +241,7 @@ def get_matches_by_competition_fallback(selected_date, competition_codes):
     sont mémorisées. Ce chemin ne sert pas au fonctionnement normal.
     """
     date_str = selected_date.isoformat()
+    date_to = (selected_date + timedelta(days=1)).isoformat()
     rows = []
 
     for code in competition_codes:
@@ -251,7 +249,7 @@ def get_matches_by_competition_fallback(selected_date, competition_codes):
             f"/competitions/{code}/matches",
             {
                 "dateFrom": date_str,
-                "dateTo": date_str,
+                "dateTo": date_to,
             },
         )
         rows.append((code, result))
