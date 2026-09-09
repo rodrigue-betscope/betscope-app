@@ -9,10 +9,12 @@
 #
 # CORRECTIONS PRINCIPALES :
 #   1) Une seule requête /v4/matches pour la date, puis filtrage local.
-#   2) dateTo est le lendemain : football-data.org traite dateTo comme
-#      une borne de fin et un intervalle dateFrom == dateTo provoque HTTP 400.
-#   3) Le diagnostic réutilise le même cache : aucun appel répété.
-#   4) Un secours par compétition n'est utilisé qu'en cas d'échec de la requête globale.
+#   2) Pour la date du jour, /v4/matches est appelé SANS filtre de date,
+#      puis les matchs sont filtrés localement. Cela évite tout problème lié
+#      aux filtres dateFrom/dateTo.
+#   3) Pour une autre date, le code utilise les compétitions sélectionnées
+#      avec le filtre season=AAAA, puis filtre la date localement.
+#   4) Diagnostic et recherche réutilisent exactement les mêmes résultats en cache.
 # ============================================================
 
 import math
@@ -104,6 +106,7 @@ def _football_request(endpoint, params_items=()):
             timeout=25,
         )
 
+        raw_text = response.text or ""
         try:
             payload = response.json()
         except ValueError:
@@ -112,11 +115,17 @@ def _football_request(endpoint, params_items=()):
         error = ""
         if isinstance(payload, dict):
             error = str(payload.get("error", "") or "")
+        if not error and raw_text and response.status_code != 200:
+            error = raw_text[:500]
 
         return {
             "status": response.status_code,
             "data": payload if response.status_code == 200 else None,
             "error": error,
+            "raw": raw_text[:500],
+            "authenticated_client": response.headers.get("X-Authenticated-Client", ""),
+            "remaining": response.headers.get("X-Requests-Available-Minute", ""),
+            "reset": response.headers.get("X-RequestCounter-Reset", ""),
         }
 
     except requests.RequestException as exc:
@@ -214,50 +223,51 @@ def serp_search(query, num=8):
 # ============================================================
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_matches_date_once(selected_date):
-    """Une seule requête pour récupérer les matchs de la date.
+def get_matches_date_once(selected_date, competition_codes=()):
+    """Charge les matchs sans dépendre du filtre dateFrom/dateTo.
 
-    On n'envoie PLUS le filtre `competitions=PL,PD,...`.
-    L'API accepte dateFrom/dateTo sur /v4/matches ; on filtre ensuite
-    localement selon les compétitions choisies par l'utilisateur.
+    - Si la date sélectionnée est aujourd'hui : une seule requête /matches
+      sans paramètres, puis filtrage local.
+    - Pour une autre date : une requête par compétition sélectionnée avec
+      SEASON uniquement, puis filtrage local sur utcDate.
+
+    Cette stratégie évite de renvoyer les paramètres dateFrom/dateTo qui
+    provoquent actuellement HTTP 400 dans l'environnement de l'utilisateur.
     """
-    date_str = selected_date.isoformat()
-    date_to = (selected_date + timedelta(days=1)).isoformat()
-    result = football_status(
-        "/matches",
-        {
-            "dateFrom": date_str,
-            "dateTo": date_to,
-        },
-    )
-    return result
+    codes = tuple(competition_codes or ())
+    target = selected_date.isoformat()
 
+    # Cas principal : aujourd'hui -> une seule requête globale.
+    if selected_date == date.today():
+        return {
+            "mode": "today_global",
+            "target_date": target,
+            "results": [
+                ("ALL", _football_request("/matches", ()))
+            ],
+        }
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_matches_by_competition_fallback(selected_date, competition_codes):
-    """Secours uniquement si /v4/matches sans filtre échoue.
-
-    Chaque compétition est alors interrogée une seule fois et les réponses
-    sont mémorisées. Ce chemin ne sert pas au fonctionnement normal.
-    """
-    date_str = selected_date.isoformat()
-    date_to = (selected_date + timedelta(days=1)).isoformat()
-    rows = []
-
-    for code in competition_codes:
-        result = football_status(
-            f"/competitions/{code}/matches",
-            {
-                "dateFrom": date_str,
-                "dateTo": date_to,
-            },
-        )
-        rows.append((code, result))
-
-        if result["status"] in (401, 429):
+    # Autre date -> saison par compétition, puis filtrage local.
+    season = str(selected_date.year)
+    results = []
+    for code in codes:
+        results.append((
+            code,
+            _football_request(
+                f"/competitions/{code}/matches",
+                (("season", season),),
+            ),
+        ))
+        # Ne jamais gaspiller le quota après une erreur d'authentification
+        # ou de limitation.
+        if results[-1][1]["status"] in (401, 429):
             break
 
-    return rows
+    return {
+        "mode": "season_by_competition",
+        "target_date": target,
+        "results": results,
+    }
 
 
 def _filter_matches_by_competition(matches, competition_codes):
@@ -293,124 +303,105 @@ def _filter_matches_by_competition(matches, competition_codes):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_matches(selected_date, competition_codes):
-    """Récupère les matchs sans répéter les appels réseau."""
-    if not competition_codes:
+    """Récupère les matchs une seule fois et filtre localement."""
+    codes = tuple(competition_codes or ())
+    if not codes:
         return []
 
-    result = get_matches_date_once(selected_date)
-
-    if result["status"] == 200:
-        return _filter_matches_by_competition(
-            (result.get("data") or {}).get("matches", []),
-            competition_codes,
-        )
-
-    # Secours uniquement en cas d'échec de /matches.
-    fallback = get_matches_by_competition_fallback(
-        selected_date,
-        tuple(competition_codes),
-    )
-
+    bundle = get_matches_date_once(selected_date, codes)
+    target = bundle["target_date"]
     all_matches = []
-    for code, item in fallback:
-        if item["status"] == 200:
-            all_matches.extend(
-                (item.get("data") or {}).get("matches", [])
-            )
 
-    return _filter_matches_by_competition(
-        all_matches,
-        competition_codes,
-    )
+    for code, result in bundle["results"]:
+        if result["status"] != 200:
+            continue
+        all_matches.extend((result.get("data") or {}).get("matches", []))
 
+    # Filtrage strict de la date + compétition.
+    wanted = set(codes)
+    selected = []
+    seen = set()
+    for match in all_matches:
+        mcode = match.get("competition", {}).get("code")
+        mdate = match.get("utcDate", "")[:10]
+        if mcode not in wanted or mdate != target:
+            continue
 
-# ============================================================
-# DIAGNOSTIC API — RÉUTILISE EXACTEMENT LE MÊME CACHE
-# ============================================================
+        key = match.get("id") or (
+            match.get("utcDate", ""),
+            match.get("homeTeam", {}).get("id"),
+            match.get("awayTeam", {}).get("id"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(match)
+
+    return sorted(selected, key=lambda m: m.get("utcDate", ""))
+
 
 def diagnostic_competitions(selected_date, competition_codes):
-    """Diagnostic qui ne relance pas les requêtes déjà effectuées."""
-    if not competition_codes:
+    """Diagnostic fidèle au même bundle mis en cache que la recherche."""
+    codes = tuple(competition_codes or ())
+    if not codes:
         return []
 
-    result = get_matches_date_once(selected_date)
-    date_str = selected_date.isoformat()
-
-    if result["status"] == 200:
-        all_matches = (result.get("data") or {}).get("matches", [])
-        rows = []
-
-        for code in competition_codes:
-            count = sum(
-                1
-                for match in all_matches
-                if match.get("competition", {}).get("code") == code
-                and match.get("utcDate", "")[:10] == date_str
-            )
-            rows.append({
-                "Code": code,
-                "HTTP": 200,
-                "Statut": "OK — 1 requête globale",
-                "Matchs": count,
-                "Détail": "Filtrage local, aucun appel supplémentaire",
-            })
-
-        return rows
-
-    # Si la requête globale échoue, afficher la cause exacte.
-    fallback = get_matches_by_competition_fallback(
-        selected_date,
-        tuple(competition_codes),
-    )
+    bundle = get_matches_date_once(selected_date, codes)
+    target = bundle["target_date"]
     rows = []
 
-    for code, item in fallback:
-        status = item["status"]
-        detail = item.get("error", "")
-        data = item.get("data")
+    for request_code, result in bundle["results"]:
+        status = result["status"]
+        detail = result.get("error", "")
+        data = result.get("data") or {}
+        matches = data.get("matches", [])
 
-        if status == 200:
-            rows.append({
-                "Code": code,
-                "HTTP": 200,
-                "Statut": "OK — secours",
-                "Matchs": len((data or {}).get("matches", [])),
-                "Détail": "Requête compétition utilisée en secours",
-            })
-        elif status == 401:
-            rows.append({
-                "Code": code,
-                "HTTP": 401,
-                "Statut": "Clé non authentifiée",
-                "Matchs": 0,
-                "Détail": detail or "Token refusé",
-            })
-            break
-        elif status == 403:
-            rows.append({
-                "Code": code,
-                "HTTP": 403,
-                "Statut": "Non autorisé",
-                "Matchs": 0,
-                "Détail": detail or "Ressource non disponible pour ce compte",
-            })
-        elif status == 429:
-            rows.append({
-                "Code": code,
-                "HTTP": 429,
-                "Statut": "Limite atteinte",
-                "Matchs": 0,
-                "Détail": detail or "Quota dépassé",
-            })
-            break
-        else:
-            rows.append({
-                "Code": code,
-                "HTTP": status,
-                "Statut": "Erreur",
-                "Matchs": 0,
-                "Détail": detail,
-            })
+        if request_code == "ALL":
+            for code in codes:
+                count = sum(
+                    1
+                    for match in matches
+                    if match.get("competition", {}).get("code") == code
+                    and match.get("utcDate", "")[:10] == target
+                )
+                rows.append({
+                    "Code": code,
+                    "HTTP": status,
+                    "Statut": "OK — requête unique" if status == 200 else "Erreur",
+                    "Matchs": count if status == 200 else 0,
+                    "Détail": (
+                        "Aucun filtre date ; filtrage local"
+                        if status == 200
+                        else (detail or "Réponse API sans détail")
+                    ),
+                    "Client API": result.get("authenticated_client", ""),
+                    "Appels restants": result.get("remaining", ""),
+                })
+            continue
+
+        count = sum(
+            1
+            for match in matches
+            if match.get("competition", {}).get("code") == request_code
+            and match.get("utcDate", "")[:10] == target
+        )
+        rows.append({
+            "Code": request_code,
+            "HTTP": status,
+            "Statut": "OK — saison + filtrage local" if status == 200 else (
+                "Clé non authentifiée" if status == 401 else
+                "Limite atteinte" if status == 429 else
+                "Erreur"
+            ),
+            "Matchs": count if status == 200 else 0,
+            "Détail": (
+                "Filtre season=%s ; date filtrée localement" % selected_date.year
+                if status == 200
+                else (detail or "Réponse API sans détail")
+            ),
+            "Client API": result.get("authenticated_client", ""),
+            "Appels restants": result.get("remaining", ""),
+        })
 
     return rows
 
@@ -1520,8 +1511,7 @@ competition_codes = [
 
 with st.expander("🔧 DIAGNOSTIC FOOTBALL-DATA.ORG"):
     st.caption(
-        "Ce diagnostic utilise d'abord UNE seule requête sur la date, puis filtre les compétitions localement. "
-        "Il n'utilise jamais le filtre groupé qui provoquait HTTP 400."
+        "Ce diagnostic utilise une requête unique pour la date du jour, sans dateFrom/dateTo. Pour une autre date, il utilise season=AAAA par compétition puis filtre la date localement. Il n'utilise jamais le filtre groupé."
     )
 
     if st.button(
@@ -1564,7 +1554,7 @@ if st.button(
         st.stop()
 
     with st.spinner(
-        "🔎 Recherche compétition par compétition..."
+        "🔎 Chargement des matchs sans filtre date fragile..."
     ):
         matches = fetch_matches(
             selected_date,
@@ -1578,8 +1568,7 @@ if st.button(
         )
 
         st.info(
-            "💡 Vérifie la date et les compétitions. "
-            "La requête groupée est supprimée : la date est chargée une seule fois, puis filtrée localement."
+            "💡 La recherche n'utilise plus dateFrom/dateTo. Pour aujourd'hui, /matches est appelé sans paramètre ; pour une autre date, la saison est chargée puis la date est filtrée localement."
         )
 
         st.session_state.pop(
