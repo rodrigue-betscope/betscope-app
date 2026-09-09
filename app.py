@@ -54,18 +54,23 @@ SERPAPI_KEY = "6680e04a0cf677964822ad771410a129eec409d735f6e8536ecbaae276e9c7c6"
 API_BASE = "https://api.football-data.org/v4"
 SERP_URL = "https://serpapi.com/search.json"
 
-COMPETITIONS = {
-    "Premier League": "PL",
-    "LaLiga": "PD",
-    "Bundesliga": "BL1",
-    "Serie A": "SA",
-    "Ligue 1": "FL1",
-    "Champions League": "CL",
-    "Eredivisie": "DED",
-    "Primeira Liga": "PPL",
-    "Championship": "ELC",
-    "Brasileirão": "BSA",
-}
+with col2:
+
+    selected_competitions = st.multiselect(
+        "🏆 Compétitions",
+        list(COMPETITIONS.keys()),
+        default=[
+            "Premier League",
+            "LaLiga",
+            "Bundesliga",
+            "Serie A",
+            "Ligue 1",
+            "Champions League",
+            "Eredivisie",
+            "Primeira Liga",
+            "Championship"
+        ]
+    )
 
 st.set_page_config(
     page_title="Rodrigue Pro Football AI V10",
