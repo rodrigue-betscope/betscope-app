@@ -31,7 +31,7 @@ import streamlit as st
 # CONFIGURATION
 # ============================================================
 
-FOOTBALL_DATA_KEY = "ca5b8e71be93da1827e148ee1551a9b0"
+FOOTBALL_DATA_KEY = "d212fb8b550d4756b16521dbe73b708d"
 SERPAPI_KEY = "6680e04a0cf677964822ad771410a129eec409d735f6e8536ecbaae276e9c7c6"
 
 API_BASE = "https://api.football-data.org/v4"
