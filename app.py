@@ -31,8 +31,8 @@ import streamlit as st
 # CONFIGURATION
 # ============================================================
 
-FOOTBALL_DATA_KEY = "d212fb8b550d4756b16521dbe73b708d"
-SERPER_API_KEY = "Cc3ab2e2bcc254efd9fb445a12a0815aa189a043"
+FOOTBALL_DATA_KEY = st.secrets.get("FOOTBALL_DATA_KEY", "d212fb8b550d4756b16521dbe73...")
+SERPER_API_KEY = st.secrets.get("SERPER_API_KEY", "Cc3ab2e2bcc254efd9fb445a12a0815aa189a043")
 
 # Priorité à Streamlit Secrets si la clé y est configurée.
 # Fallback : clé fournie pour cette version du programme.
