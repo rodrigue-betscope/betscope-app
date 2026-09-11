@@ -33,13 +33,33 @@ import streamlit as st
 
 FOOTBALL_DATA_KEY = st.secrets["FOOTBALL_DATA_KEY"]
 SERPER_API_KEY = st.secrets["SERPER_API_KEY"]
+# Priorité à Streamlit Secrets si la clé y est configurée.
+# Fallback : clé fournie pour cette version du programme.
+try:
+    SERPER_API_KEY = st.secrets.get("SERPER_API_KEY", SERPER_API_KEY)
+except Exception:
+    pass
 
 API_BASE = "https://api.football-data.org/v4"
 SERPER_URL = "https://google.serper.dev/search"
 
+# Moteur de secours pour les statistiques football détaillées.
+# Il évite que la section Tirs/Posssession/Corners/etc. dépende
+# entièrement des snippets Google/Serper.
+SOFASCORE_BASES = [
+    "https://api.sofascore.app/api/v1",
+    "https://api.sofascore.com/api/v1",
+    "https://www.sofascore.com/api/v1",
+]
 
-API_BASE = "https://api.football-data.org/v4"
-SERPER_URL = "https://google.serper.dev/search"
+SOFASCORE_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
+        "Chrome/128.0 Mobile Safari/537.36"
+    ),
+    "Accept": "application/json,text/plain,*/*",
+    "Referer": "https://www.sofascore.com/",
+}
 
 COMPETITIONS = {
     "Premier League": "PL",
@@ -221,13 +241,11 @@ def football_status(endpoint, params=None):
 # ============================================================
 
 def serper_search(query, num=8):
-    """Recherche Google via l'API Serper.
+    """Recherche Google via Serper, sans masquer l'erreur réelle."""
+    global SERPER_LAST_ERROR
 
-    Serper utilise POST + JSON avec la clé dans X-API-KEY.
-    Le format des résultats organiques est normalisé pour que
-    le reste de l'application conserve la même structure.
-    """
     if not SERPER_API_KEY:
+        SERPER_LAST_ERROR = "Clé SERPER_API_KEY absente."
         return []
 
     payload = {
@@ -249,13 +267,301 @@ def serper_search(query, num=8):
         )
 
         if response.status_code != 200:
+            try:
+                body = response.json()
+                detail = body.get("message") or body.get("error") or body.get("msg")
+            except ValueError:
+                detail = response.text[:180]
+            SERPER_LAST_ERROR = (
+                f"HTTP {response.status_code}"
+                + (f" — {detail}" if detail else "")
+            )
             return []
 
         data = response.json()
-        return data.get("organic", [])
+        organic = data.get("organic", [])
+        if not isinstance(organic, list):
+            SERPER_LAST_ERROR = "Réponse Serper invalide : champ organic absent/invalide."
+            return []
 
-    except (requests.RequestException, ValueError):
+        SERPER_LAST_ERROR = ""
+        return organic
+
+    except requests.RequestException as exc:
+        SERPER_LAST_ERROR = f"Connexion Serper impossible : {exc}"
         return []
+    except ValueError as exc:
+        SERPER_LAST_ERROR = f"JSON Serper invalide : {exc}"
+        return []
+
+
+SERPER_LAST_ERROR = ""
+
+
+def sofascore_get(path, params=None):
+    """GET robuste vers les endpoints publics SofaScore avec plusieurs bases."""
+    for base in SOFASCORE_BASES:
+        url = base.rstrip("/") + "/" + path.lstrip("/")
+        try:
+            response = SESSION.get(
+                url,
+                params=params or {},
+                headers=SOFASCORE_HEADERS,
+                timeout=15,
+            )
+            if response.status_code != 200:
+                continue
+            data = response.json()
+            if isinstance(data, dict):
+                return data
+        except (requests.RequestException, ValueError):
+            continue
+    return {}
+
+
+def _norm_name(value):
+    value = _normalise_search_text(value).lower()
+    value = re.sub(r"[^a-z0-9àâäçéèêëîïôöùûüÿñæœ ]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _walk_team_candidates(obj):
+    """Extrait souplement les candidats team d'une réponse search/all."""
+    found = []
+
+    if isinstance(obj, dict):
+        name = obj.get("name") or obj.get("shortName")
+        obj_type = str(obj.get("type", "")).lower()
+        if name and (obj_type == "team" or obj.get("team") is True):
+            team_id = obj.get("id")
+            if team_id:
+                found.append({"id": team_id, "name": str(name)})
+        for value in obj.values():
+            found.extend(_walk_team_candidates(value))
+
+    elif isinstance(obj, list):
+        for item in obj:
+            found.extend(_walk_team_candidates(item))
+
+    return found
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def find_sofascore_team_id(team_name):
+    """Trouve l'identifiant SofaScore correspondant au nom football."""
+    clean = _normalise_search_text(team_name)
+    if not clean:
+        return None
+
+    data = sofascore_get("search/all", {"q": clean})
+    candidates = _walk_team_candidates(data)
+
+    # Quelques réponses peuvent ne pas mettre type=team : accepter alors
+    # les objets contenant un id + name + slug dans results.
+    if not candidates:
+        def fallback_walk(obj):
+            out = []
+            if isinstance(obj, dict):
+                if obj.get("id") and obj.get("name") and obj.get("slug"):
+                    out.append({"id": obj["id"], "name": str(obj["name"])})
+                for v in obj.values():
+                    out.extend(fallback_walk(v))
+            elif isinstance(obj, list):
+                for v in obj:
+                    out.extend(fallback_walk(v))
+            return out
+        candidates = fallback_walk(data)
+
+    target = _norm_name(clean)
+    best = None
+    best_score = -1.0
+    for candidate in candidates:
+        cand_name = _norm_name(candidate.get("name", ""))
+        if not cand_name:
+            continue
+        if cand_name == target:
+            return int(candidate["id"])
+        score = SequenceMatcher(None, target, cand_name).ratio()
+        if target in cand_name or cand_name in target:
+            score += 0.25
+        if score > best_score:
+            best_score = score
+            best = candidate
+
+    if best and best_score >= 0.55:
+        try:
+            return int(best["id"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_sofascore_last_events(team_id, pages=2):
+    events = []
+    for page in range(max(1, pages)):
+        data = sofascore_get(f"team/{int(team_id)}/events/last/{page}")
+        page_events = data.get("events", []) if isinstance(data, dict) else []
+        if not isinstance(page_events, list):
+            break
+        events.extend(page_events)
+        if not data.get("hasNextPage"):
+            break
+
+    unique = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_id = event.get("id")
+        status = event.get("status", {}) or {}
+        if event_id and status.get("type") == "finished":
+            unique[event_id] = event
+    return list(unique.values())[:8]
+
+
+def _parse_stat_value(value):
+    if value is None:
+        return None, False
+    text = str(value).strip().replace("%", "").replace(",", ".")
+    try:
+        return float(text), "%" in str(value)
+    except ValueError:
+        match = re.search(r"\d+(?:[.,]\d+)?", text)
+        if not match:
+            return None, False
+        try:
+            return float(match.group(0).replace(",", ".")), "%" in str(value)
+        except ValueError:
+            return None, False
+
+
+STAT_ITEM_ALIASES = {
+    "corners": ["corner", "corner kicks", "corners"],
+    "cartons": ["yellow cards", "red cards", "yellow card", "red card"],
+    "tirs": ["total shots", "shots", "shots total"],
+    "tirs_cadres": ["shots on target", "shots on goal"],
+    "possession": ["ball possession", "possession"],
+    "fautes": ["fouls", "foul"],
+    "hors_jeu": ["offsides", "offside"],
+}
+
+
+def _stat_name_matches(item_name, stat_name):
+    normalized = _norm_name(item_name)
+
+    # Ne pas confondre "tirs" avec "tirs cadrés".
+    if stat_name == "tirs" and (
+        "on target" in normalized
+        or "on goal" in normalized
+        or "cadr" in normalized
+    ):
+        return False
+
+    return any(
+        alias in normalized
+        for alias in STAT_ITEM_ALIASES.get(stat_name, [])
+    )
+
+
+def _extract_event_stat_items(data, stat_name, side):
+    values = []
+    if not isinstance(data, dict):
+        return values
+
+    blocks = data.get("statistics", [])
+    if not isinstance(blocks, list):
+        return values
+
+    for block in blocks:
+        if str(block.get("period", "")).upper() != "ALL":
+            continue
+        for group in block.get("groups", []) or []:
+            for item in group.get("statisticsItems", []) or []:
+                item_name = item.get("name", "")
+                if not _stat_name_matches(item_name, stat_name):
+                    continue
+                raw = item.get(side)
+                value, percent = _parse_stat_value(raw)
+                if value is not None:
+                    values.append({
+                        "value": value,
+                        "percent": percent or stat_name == "possession",
+                        "raw": str(raw),
+                        "item_name": item_name,
+                    })
+                # Un seul item pertinent par match pour la statistique demandée.
+                break
+    return values
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def sofascore_team_detailed_stats(team_name):
+    """Calcule les moyennes des 8 derniers matchs finis d'un club."""
+    team_id = find_sofascore_team_id(team_name)
+    if not team_id:
+        return {}
+
+    events = fetch_sofascore_last_events(team_id, pages=2)
+    if not events:
+        return {}
+
+    output = {key: [] for key in STAT_QUERY_TYPES}
+    seen_events = 0
+
+    for event in events:
+        home_team = event.get("homeTeam", {}) or {}
+        away_team = event.get("awayTeam", {}) or {}
+        home_id = home_team.get("id")
+        away_id = away_team.get("id")
+        if team_id == home_id:
+            side = "home"
+        elif team_id == away_id:
+            side = "away"
+        else:
+            continue
+
+        stats_data = sofascore_get(f"event/{event.get('id')}/statistics")
+        if not stats_data:
+            continue
+
+        seen_events += 1
+        for stat_name in STAT_QUERY_TYPES:
+            vals = _extract_event_stat_items(stats_data, stat_name, side)
+            if vals:
+                output[stat_name].append({
+                    **vals[0],
+                    "event_id": event.get("id"),
+                    "opponent": (
+                        away_team.get("name")
+                        if side == "home"
+                        else home_team.get("name")
+                    ),
+                })
+
+        # Les 6 premiers matchs avec stats suffisent pour les moyennes.
+        if seen_events >= 6:
+            break
+
+    result = {}
+    for stat_name, values in output.items():
+        if not values:
+            continue
+        average = sum(v["value"] for v in values) / len(values)
+        percent = any(v.get("percent") for v in values)
+        unit = " %" if percent else ""
+        result[stat_name] = {
+            "average": round(average, 2),
+            "matches": len(values),
+            "values": values,
+            "title": f"Moyenne {stat_name.replace('_', ' ')} — {team_name}",
+            "snippet": (
+                f"Moyenne sur {len(values)} matchs récents : "
+                f"{average:.2f}{unit}. Données SofaScore."
+            ),
+        }
+
+    return result
+
 
 
 # ============================================================
@@ -917,69 +1223,74 @@ def _serper_result_text(result):
 
 
 def search_detailed_stats(team_name):
-    """Recherche les statistiques détaillées avec des requêtes souples.
-
-    Au lieu d'imposer une formulation anglaise précise, on envoie une requête
-    française naturelle et quelques synonymes. Les résultats sont ensuite
-    dédoublonnés. La fonction reste volontairement prudente : elle collecte
-    les signaux trouvés mais n'invente jamais une statistique absente.
-    """
+    """Récupère les stats réelles : SofaScore d'abord, Serper en secours."""
     all_results = {}
     clean_team = _normalise_search_text(team_name)
 
-    for stat_name, keywords in STAT_QUERY_TYPES.items():
-        collected = []
+    # 1) Source structurée : beaucoup plus fiable que l'interprétation de snippets.
+    structured = sofascore_team_detailed_stats(clean_team)
+    for stat_name in STAT_QUERY_TYPES:
+        all_results[stat_name] = []
+        item = structured.get(stat_name)
+        if item:
+            all_results[stat_name].append({
+                "title": item["title"],
+                "snippet": item["snippet"],
+                "link": "https://www.sofascore.com/",
+                "stat_name": stat_name,
+                "search_text": item["snippet"],
+                "values": [
+                    {
+                        "value": item["average"],
+                        "percent": stat_name == "possession",
+                        "raw": str(item["average"]),
+                    }
+                ],
+                "source": "sofascore",
+            })
 
-        # Deux recherches maximum par statistique : on limite les appels
-        # Serper tout en couvrant plusieurs formulations linguistiques.
-        query_groups = [keywords[:3], keywords[3:]]
-        query_groups = [group for group in query_groups if group]
+    # 2) Serper uniquement pour compléter les statistiques manquantes.
+    missing = [k for k in STAT_QUERY_TYPES if not all_results[k]]
+    if missing:
+        for stat_name in missing:
+            keywords = STAT_QUERY_TYPES[stat_name]
+            query_groups = [keywords[:3], keywords[3:]]
+            query_groups = [group for group in query_groups if group]
 
-        for group in query_groups:
-            synonym_query = " OR ".join(f'"{kw}"' for kw in group)
-            query = (
-                f'"{clean_team}" football statistiques {synonym_query} '
-                f'"{stat_name.replace("_", " ")}"'
-            )
-
-            results = serper_search(query, num=7)
-
-            for result in results:
-                if not isinstance(result, dict):
-                    continue
-
-                title = _normalise_search_text(result.get("title", ""))
-                snippet = _normalise_search_text(
-                    result.get("snippet") or result.get("description") or ""
+            collected = []
+            for group in query_groups:
+                synonym_query = " OR ".join(f'"{kw}"' for kw in group)
+                query = (
+                    f'"{clean_team}" football statistiques {synonym_query} '
+                    f'"{stat_name.replace("_", " ")}"'
                 )
-                link = result.get("link", "") or ""
+                results = serper_search(query, num=7)
+                for result in results:
+                    if not isinstance(result, dict):
+                        continue
+                    title = _normalise_search_text(result.get("title", ""))
+                    snippet = _normalise_search_text(
+                        result.get("snippet") or result.get("description") or ""
+                    )
+                    if title or snippet:
+                        collected.append({
+                            "title": title,
+                            "snippet": snippet,
+                            "link": result.get("link", "") or "",
+                            "stat_name": stat_name,
+                            "search_text": _serper_result_text(result),
+                            "source": "serper",
+                        })
 
-                # On conserve uniquement des résultats ayant réellement du
-                # texte exploitable.
-                if not title and not snippet:
-                    continue
-
-                collected.append({
-                    "title": title,
-                    "snippet": snippet,
-                    "link": link,
-                    "stat_name": stat_name,
-                    "search_text": _serper_result_text(result),
-                })
-
-        # Dédoublonnage robuste : certains résultats diffèrent seulement
-        # par la casse ou quelques espaces.
-        unique = {}
-        for item in collected:
-            key = re.sub(
-                r"\s+",
-                " ",
-                (item["title"] + " " + item["snippet"]).lower(),
-            ).strip()
-            if key:
-                unique[key] = item
-
-        all_results[stat_name] = list(unique.values())[:12]
+            unique = {}
+            for item in collected:
+                key = re.sub(
+                    r"\s+", " ",
+                    (item["title"] + " " + item["snippet"]).lower(),
+                ).strip()
+                if key:
+                    unique[key] = item
+            all_results[stat_name].extend(list(unique.values())[:8])
 
     return all_results
 
@@ -1099,7 +1410,7 @@ def summarize_stat_results(results):
         )
         stat_name = item.get("stat_name", "")
 
-        extracted = extract_stat_values(text, stat_name)
+        extracted = item.get("values") or extract_stat_values(text, stat_name)
         numbers.extend(extracted)
 
         signals.append({
@@ -1651,8 +1962,10 @@ def display_detailed_stats(title, stats):
 
         if not data.get("available", False):
             st.caption(
-                "Donnée non trouvée dans les résultats disponibles."
+                "Donnée non trouvée dans les sources disponibles."
             )
+            if SERPER_LAST_ERROR:
+                st.caption("ℹ️ Serper : " + SERPER_LAST_ERROR)
             continue
 
         signals = data.get("signals", [])
@@ -1672,6 +1985,18 @@ def display_detailed_stats(title, stats):
             # Conserver l'ordre et supprimer les doublons.
             detected = list(dict.fromkeys(detected))[:8]
             st.success("📊 Valeurs détectées : " + " · ".join(detected))
+
+        sources = sorted({
+            str(signal.get("source", "")).lower()
+            for signal in signals[:5]
+            if signal.get("source")
+        })
+        if sources:
+            source_label = ", ".join(
+                "SofaScore" if src == "sofascore" else "Serper" if src == "serper" else src
+                for src in sources
+            )
+            st.caption("🔎 Source : " + source_label)
 
         for signal in signals[:3]:
             st.write("• " + signal["title"])
