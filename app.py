@@ -1,6 +1,6 @@
 
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI — V10 ULTIMATE — VERSION CORRIGÉE
+# RODRIGUE PRO FOOTBALL AI — V10 ULTIMATE — V14 STATS MULTI-SOURCES
 # ============================================================
 # Sources :
 #   - football-data.org : matchs, résultats, classement
@@ -67,6 +67,33 @@ SOFASCORE_BASES = [
     "https://www.sofascore.com/api/v1",
     "https://api.sofascore.com/api/v1",
 ]
+
+# FotMob : deuxième moteur de statistiques structurées, sans clé API.
+# Il sert de secours lorsque SofaScore est bloqué par le WAF/TLS.
+FOTMOB_BASE = "https://www.fotmob.com/api"
+FOTMOB_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
+        "Chrome/128.0 Mobile Safari/537.36"
+    ),
+    "Accept": "application/json,text/plain,*/*",
+    "Referer": "https://www.fotmob.com/",
+}
+FOTMOB_LAST_ERROR = ""
+
+# IDs de compétitions FotMob courantes.
+FOTMOB_LEAGUE_IDS = {
+    "PL": 47,
+    "PD": 87,
+    "BL1": 54,
+    "SA": 55,
+    "FL1": 53,
+    "CL": 42,
+    "DED": 57,
+    "PPL": 61,
+    "ELC": 48,
+    "BSA": 268,
+}
 
 SOFASCORE_HEADERS = {
     "User-Agent": (
@@ -350,6 +377,231 @@ def sofascore_get(path, params=None):
 
     SOFASCORE_LAST_ERROR = last_error or "Aucune réponse SofaScore exploitable."
     return {}
+
+
+def fotmob_get(path, params=None):
+    """GET FotMob sans clé API, avec diagnostic compact."""
+    global FOTMOB_LAST_ERROR
+    url = FOTMOB_BASE.rstrip("/") + "/" + path.lstrip("/")
+    try:
+        response = SESSION.get(
+            url,
+            params=params or {},
+            headers=FOTMOB_HEADERS,
+            timeout=20,
+        )
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, dict):
+                FOTMOB_LAST_ERROR = ""
+                return data
+        FOTMOB_LAST_ERROR = f"HTTP {response.status_code}"
+    except Exception as exc:
+        FOTMOB_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+    return {}
+
+
+def _fotmob_find_team_id(team_name):
+    clean = _normalise_search_text(team_name)
+    if not clean:
+        return None
+    data = fotmob_get("data/search/suggest", {"term": clean, "hits": 20, "lang": "en,fr,nl"})
+    candidates = []
+    def walk(obj):
+        if isinstance(obj, dict):
+            obj_type = str(obj.get("type", "")).lower()
+            name = obj.get("name") or obj.get("teamName")
+            ident = obj.get("id") or obj.get("teamId")
+            if name and ident and ("team" in obj_type or "club" in obj_type or obj.get("teamId")):
+                candidates.append((str(name), ident))
+            for v in obj.values(): walk(v)
+        elif isinstance(obj, list):
+            for v in obj: walk(v)
+    walk(data)
+    target = _norm_name(clean)
+    best_id, best_score = None, 0.0
+    for name, ident in candidates:
+        score = SequenceMatcher(None, target, _norm_name(name)).ratio()
+        if target in _norm_name(name) or _norm_name(name) in target:
+            score += 0.25
+        if score > best_score:
+            best_score, best_id = score, ident
+    try:
+        return int(best_id) if best_id and best_score >= 0.55 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _fotmob_match_list_from_league(competition_code, selected_date=None):
+    """Récupère les matchs d'une saison FotMob et les filtre localement."""
+    league_id = FOTMOB_LEAGUE_IDS.get(competition_code)
+    if not league_id:
+        return []
+    season = selected_date.year if selected_date else date.today().year
+    data = fotmob_get("data/leagues", {"id": league_id, "season": season})
+    matches = (((data.get("matches") or {}).get("allMatches")) or [])
+    if not isinstance(matches, list):
+        return []
+    return matches
+
+
+def _fotmob_match_team_ids(match):
+    home = match.get("home", {}) or {}
+    away = match.get("away", {}) or {}
+    return home.get("id"), away.get("id")
+
+
+def _fotmob_match_date(match):
+    status = match.get("status", {}) or {}
+    utc = status.get("utcTime") or match.get("utcTime") or ""
+    return str(utc)[:10]
+
+
+def _fotmob_find_recent_team_matches(team_name, competition_code, selected_date=None, limit=8):
+    """Trouve les derniers matchs terminés d'une équipe dans sa compétition."""
+    team_id = _fotmob_find_team_id(team_name)
+    matches = _fotmob_match_list_from_league(competition_code, selected_date)
+    if not matches:
+        return []
+    target = _norm_name(team_name)
+    candidates = []
+    for m in matches:
+        if not isinstance(m, dict):
+            continue
+        home = m.get("home", {}) or {}
+        away = m.get("away", {}) or {}
+        home_name = _norm_name(home.get("name", ""))
+        away_name = _norm_name(away.get("name", ""))
+        ids = _fotmob_match_team_ids(m)
+        belongs = False
+        if team_id and team_id in ids:
+            belongs = True
+        elif target and (target == home_name or target == away_name or target in home_name or target in away_name):
+            belongs = True
+        if not belongs:
+            continue
+        status = m.get("status", {}) or {}
+        if not status.get("finished"):
+            continue
+        d = _fotmob_match_date(m)
+        if selected_date and d and d >= selected_date.isoformat():
+            continue
+        candidates.append(m)
+    candidates.sort(key=lambda x: _fotmob_match_date(x), reverse=True)
+    return candidates[:limit]
+
+
+def _fotmob_stat_value_pair(item):
+    """Lit les formats de stats FotMob les plus courants."""
+    if not isinstance(item, dict):
+        return None, None
+    vals = item.get("stats") or item.get("values") or item.get("value")
+    if isinstance(vals, list) and len(vals) >= 2:
+        return _parse_stat_value(vals[0])[0], _parse_stat_value(vals[1])[0]
+    home = item.get("home")
+    away = item.get("away")
+    if home is not None or away is not None:
+        return _parse_stat_value(home)[0], _parse_stat_value(away)[0]
+    return None, None
+
+
+def _walk_fotmob_stats(obj):
+    """Aplati récursivement les objets/listes de stats FotMob."""
+    out = []
+    if isinstance(obj, dict):
+        if any(k in obj for k in ("title", "name", "label")):
+            out.append(obj)
+        for v in obj.values():
+            out.extend(_walk_fotmob_stats(v))
+    elif isinstance(obj, list):
+        for v in obj:
+            out.extend(_walk_fotmob_stats(v))
+    return out
+
+
+def _fotmob_stat_alias_match(label, stat_name):
+    n = _norm_name(label)
+    aliases = {
+        "corners": ["corners", "corner kicks"],
+        "cartons": ["yellow cards", "red cards", "yellow card", "red card"],
+        "tirs": ["shots", "total shots", "shots total"],
+        "tirs_cadres": ["shots on target", "shots on goal"],
+        "possession": ["possession", "ball possession"],
+        "fautes": ["fouls", "foul"],
+        "hors_jeu": ["offsides", "offside"],
+    }
+    if stat_name == "tirs" and ("on target" in n or "on goal" in n):
+        return False
+    return any(a in n for a in aliases.get(stat_name, []))
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fotmob_team_detailed_stats(team_name, competition_code, selected_date=None):
+    """Moyennes réelles sur les derniers matchs terminés via FotMob."""
+    matches = _fotmob_find_recent_team_matches(team_name, competition_code, selected_date, 8)
+    if not matches:
+        return {}
+    output = {k: [] for k in STAT_QUERY_TYPES}
+    for match in matches:
+        match_id = match.get("id")
+        if not match_id:
+            continue
+        detail = fotmob_get("data/matchDetails", {"matchId": match_id})
+        if not detail:
+            continue
+        home = match.get("home", {}) or {}
+        away = match.get("away", {}) or {}
+        team_id = _fotmob_find_team_id(team_name)
+        if team_id and home.get("id") == team_id:
+            side_index = 0
+        elif team_id and away.get("id") == team_id:
+            side_index = 1
+        else:
+            target = _norm_name(team_name)
+            side_index = 0 if target in _norm_name(home.get("name", "")) else 1
+        stats_root = ((detail.get("content") or {}).get("stats") or detail.get("stats") or {})
+        items = _walk_fotmob_stats(stats_root)
+        for stat_name in STAT_QUERY_TYPES:
+            if stat_name == "cartons":
+                # Cherche jaunes + rouges séparément et additionne.
+                total = 0.0
+                found = False
+                for item in items:
+                    label = str(item.get("title") or item.get("name") or item.get("label") or "")
+                    n = _norm_name(label)
+                    if "yellow card" not in n and "red card" not in n:
+                        continue
+                    hp, ap = _fotmob_stat_value_pair(item)
+                    value = hp if side_index == 0 else ap
+                    if value is not None:
+                        total += value
+                        found = True
+                if found:
+                    output[stat_name].append(total)
+                continue
+            found_value = None
+            for item in items:
+                label = str(item.get("title") or item.get("name") or item.get("label") or "")
+                if not _fotmob_stat_alias_match(label, stat_name):
+                    continue
+                hp, ap = _fotmob_stat_value_pair(item)
+                value = hp if side_index == 0 else ap
+                if value is not None:
+                    found_value = value
+                    break
+            if found_value is not None:
+                output[stat_name].append(found_value)
+    result = {}
+    for stat_name, vals in output.items():
+        if vals:
+            avg = sum(vals) / len(vals)
+            result[stat_name] = {
+                "average": round(avg, 2),
+                "matches": len(vals),
+                "title": f"Moyenne {stat_name.replace('_', ' ')} — {team_name}",
+                "snippet": f"Moyenne sur {len(vals)} matchs récents : {avg:.2f}{' %' if stat_name == 'possession' else ''}. Données FotMob.",
+            }
+    return result
 
 
 def _norm_name(value):
@@ -1407,7 +1659,7 @@ def _serper_result_text(result):
     return _normalise_search_text(" ".join(p for p in parts if p))
 
 
-def search_detailed_stats(team_name, match_date=None):
+def search_detailed_stats(team_name, match_date=None, competition_code=None):
     """Récupère les stats réelles.
 
     SofaScore est prioritaire. Pour le match analysé, on peut retrouver
@@ -1456,7 +1708,35 @@ def search_detailed_stats(team_name, match_date=None):
                 "source": "sofascore",
             })
 
-    # 2) Serper est volontairement désactivé tant que sa clé renvoie 403.
+    # 2) FotMob : deuxième source structurée, sans clé, si SofaScore ne renvoie rien.
+    missing = [k for k in STAT_QUERY_TYPES if not all_results[k]]
+    if missing and competition_code:
+        try:
+            selected_for_fotmob = selected
+            fotmob_structured = fotmob_team_detailed_stats(
+                clean_team, competition_code, selected_for_fotmob
+            )
+            for stat_name in missing:
+                item = fotmob_structured.get(stat_name)
+                if item:
+                    all_results[stat_name].append({
+                        "title": item["title"],
+                        "snippet": item["snippet"],
+                        "link": "https://www.fotmob.com/",
+                        "stat_name": stat_name,
+                        "search_text": item["snippet"],
+                        "values": [{
+                            "value": item["average"],
+                            "percent": stat_name == "possession",
+                            "raw": str(item["average"]),
+                        }],
+                        "source": "fotmob",
+                    })
+        except Exception as exc:
+            global FOTMOB_LAST_ERROR
+            FOTMOB_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+
+    # 3) Serper est volontairement désactivé tant que sa clé renvoie 403.
     missing = [k for k in STAT_QUERY_TYPES if not all_results[k]]
     if USE_SERPER_FALLBACK and missing:
         for stat_name in missing:
@@ -2066,6 +2346,13 @@ def analyze_match(match):
         away_absences,
     )
 
+    # Stabilisation : en début de saison, quelques matchs peuvent produire
+    # des lambdas irréalistes. On conserve le signal sans laisser le modèle
+    # dépasser des bornes de scoring raisonnables avant d'avoir un échantillon
+    # plus large.
+    home_lambda = max(0.25, min(float(home_lambda), 3.20))
+    away_lambda = max(0.20, min(float(away_lambda), 2.50))
+
     # Modèle.
     matrix = poisson_matrix(
         home_lambda,
@@ -2093,11 +2380,13 @@ def analyze_match(match):
     home_stats_raw = search_detailed_stats(
         home_name,
         match_date,
+        competition_code,
     )
 
     away_stats_raw = search_detailed_stats(
         away_name,
         match_date,
+        competition_code,
     )
 
     home_stats = {
@@ -2198,7 +2487,7 @@ def display_detailed_stats(title, stats):
         })
         if sources:
             source_label = ", ".join(
-                "SofaScore" if src == "sofascore" else "Serper" if src == "serper" else src
+                "SofaScore" if src == "sofascore" else "FotMob" if src == "fotmob" else "Serper" if src == "serper" else src
                 for src in sources
             )
             st.caption("🔎 Source : " + source_label)
@@ -2223,6 +2512,8 @@ def display_stats_source_diagnostic():
         )
     if SOFASCORE_LAST_ERROR:
         st.caption("ℹ️ SofaScore : " + SOFASCORE_LAST_ERROR)
+    if FOTMOB_LAST_ERROR:
+        st.caption("ℹ️ FotMob : " + FOTMOB_LAST_ERROR)
     if USE_SERPER_FALLBACK and SERPER_LAST_ERROR:
         st.caption("ℹ️ Serper : " + SERPER_LAST_ERROR)
 
