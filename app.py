@@ -1289,25 +1289,257 @@ def human_analysis(
             "un match à faible total de buts."
         )
     else:
-        goals = "Le total de buts reste équilibré."
+def human_analysis(
+    home,
+    away,
+    markets,
+    scores,
+    htft,
+    home_form,
+    away_form,
+    home_lambda,
+    away_lambda,
+):
+    # --------------------------------------------------------
+    # Récupération sécurisée des marchés
+    # --------------------------------------------------------
+    p1 = float(markets.get("1", 0.0))
+    px = float(markets.get("X", 0.0))
+    p2 = float(markets.get("2", 0.0))
 
-    if markets["BTTS Oui"] >= 0.60:
+    results = {
+        "1": p1,
+        "X": px,
+        "2": p2,
+    }
+
+    # --------------------------------------------------------
+    # Résultat principal
+    # --------------------------------------------------------
+    main_result = max(
+        results,
+        key=results.get,
+    )
+
+    # --------------------------------------------------------
+    # Score exact sécurisé
+    # --------------------------------------------------------
+    if scores and len(scores) > 0:
+        best_score = scores[0][0]
+        best_score_probability = scores[0][1]
+    else:
+        best_score = "N/A"
+        best_score_probability = 0.0
+
+    # --------------------------------------------------------
+    # MT/FT sécurisé
+    # --------------------------------------------------------
+    if htft and len(htft) > 0:
+        best_htft = htft[0][0]
+        best_htft_probability = htft[0][1]
+    else:
+        best_htft = "N/A"
+        best_htft_probability = 0.0
+
+    # --------------------------------------------------------
+    # Forme sécurisée
+    # --------------------------------------------------------
+    home_form_score = float(
+        home_form.get("form_score", 0.0)
+    )
+
+    away_form_score = float(
+        away_form.get("form_score", 0.0)
+    )
+
+    # ========================================================
+    # LECTURE HUMAINE — 1X2
+    # ========================================================
+
+    if (
+        abs(p1 - p2) < 0.08
+        and px >= 0.27
+    ):
+        reading = (
+            "Les deux équipes sont proches. "
+            "Le scénario du match nul est à surveiller."
+        )
+
+    elif (
+        p1 > p2
+        and home_form_score >= away_form_score
+    ):
+        reading = (
+            "Le modèle et la dynamique récente "
+            "convergent vers l'équipe à domicile."
+        )
+
+    elif (
+        p2 > p1
+        and away_form_score >= home_form_score
+    ):
+        reading = (
+            "L'équipe extérieure possède "
+            "un signal statistique supérieur."
+        )
+
+    else:
+        reading = (
+            "Les signaux sont partagés. "
+            "Une couverture est préférable au 1X2 sec."
+        )
+
+    # ========================================================
+    # ANALYSE DES BUTS
+    # ========================================================
+
+    over25 = float(
+        markets.get("Over 2.5", 0.0)
+    )
+
+    under25 = float(
+        markets.get("Under 2.5", 0.0)
+    )
+
+    if over25 >= 0.60:
+        goals = (
+            "Le scénario d'au moins 3 buts "
+            "est dominant dans le modèle."
+        )
+        goals_prediction = "Over 2.5"
+
+    elif under25 >= 0.60:
+        goals = (
+            "Le modèle privilégie "
+            "un match à faible total de buts."
+        )
+        goals_prediction = "Under 2.5"
+
+    else:
+        goals = (
+            "Le total de buts reste équilibré."
+        )
+
+        goals_prediction = (
+            "Over/Under 2.5 équilibré"
+        )
+
+    # ========================================================
+    # ANALYSE BTTS
+    # ========================================================
+
+    btts_yes = float(
+        markets.get("BTTS Oui", 0.0)
+    )
+
+    btts_no = float(
+        markets.get("BTTS Non", 0.0)
+    )
+
+    if btts_yes >= 0.60:
         btts = (
             "Les deux équipes ont un signal favorable "
             "pour marquer."
         )
-    elif markets["BTTS Non"] >= 0.60:
-        btts = "Une des deux équipes pourrait rester muette."
+        btts_prediction = "BTTS Oui"
+
+    elif btts_no >= 0.60:
+        btts = (
+            "Une des deux équipes pourrait "
+            "rester muette."
+        )
+        btts_prediction = "BTTS Non"
+
     else:
-        btts = "Le BTTS est difficile à départager."
+        btts = (
+            "Le BTTS est difficile à départager."
+        )
+        btts_prediction = "BTTS équilibré"
+
+    # ========================================================
+    # DOUBLE CHANCE
+    # ========================================================
+
+    double_chance = None
+    double_chance_probability = 0.0
+
+    if p1 >= px and p1 >= p2:
+        double_chance = "1X"
+        double_chance_probability = p1 + px
+
+    elif p2 >= p1 and p2 >= px:
+        double_chance = "X2"
+        double_chance_probability = px + p2
+
+    else:
+        double_chance = "12"
+        double_chance_probability = p1 + p2
+
+    # ========================================================
+    # PRONOSTIC FINAL
+    # ========================================================
+
+    if main_result == "1":
+        final_prediction = f"{home} gagne"
+
+    elif main_result == "2":
+        final_prediction = f"{away} gagne"
+
+    else:
+        final_prediction = "Match nul"
+
+    # ========================================================
+    # NIVEAU DE CONFIANCE
+    # ========================================================
+
+    main_probability = results[main_result]
+
+    if main_probability >= 0.65:
+        confidence = "FORTE"
+
+    elif main_probability >= 0.55:
+        confidence = "BONNE"
+
+    elif main_probability >= 0.45:
+        confidence = "MOYENNE"
+
+    else:
+        confidence = "FAIBLE"
+
+    # ========================================================
+    # RETOUR COMPLET
+    # ========================================================
 
     return {
+        # Résultat principal
         "main_result": main_result,
+        "final_prediction": final_prediction,
+        "main_probability": main_probability,
+        "confidence": confidence,
+
+        # Score exact
         "best_score": best_score,
+        "best_score_probability": best_score_probability,
+
+        # MT/FT
         "best_htft": best_htft,
+        "best_htft_probability": best_htft_probability,
+
+        # Lecture humaine
         "reading": reading,
         "goals": goals,
         "btts": btts,
+
+        # Pronostics complémentaires
+        "goals_prediction": goals_prediction,
+        "btts_prediction": btts_prediction,
+        "double_chance": double_chance,
+        "double_chance_probability": double_chance_probability,
+
+        # Probabilités 1X2
+        "home_probability": p1,
+        "draw_probability": px,
+        "away_probability": p2,
     }
 
 
@@ -1415,87 +1647,364 @@ def analyze_match(match):
     home_lambda, away_lambda = contextual_adjustment(
         home_lambda,
         away_lambda,
+def analyze_match(match):
+    home = match.get("homeTeam", {})
+    away = match.get("awayTeam", {})
+
+    home_id = home.get("id")
+    away_id = away.get("id")
+
+    home_name = home.get("name", "Domicile")
+    away_name = away.get("name", "Extérieur")
+
+    competition_data = match.get("competition", {})
+
+    competition = competition_data.get("name", "")
+    competition_code = competition_data.get("code")
+
+    # --------------------------------------------------------
+    # HISTORIQUE
+    # --------------------------------------------------------
+
+    home_history = fetch_team_history(
+        home_id,
+        12,
+    )
+
+    away_history = fetch_team_history(
+        away_id,
+        12,
+    )
+
+    home_form = analyze_form(
+        home_history,
+        home_id,
+        8,
+    )
+
+    away_form = analyze_form(
+        away_history,
+        away_id,
+        8,
+    )
+
+    home_split = analyze_home_away(
+        home_history,
+        home_id,
+        True,
+        8,
+    )
+
+    away_split = analyze_home_away(
+        away_history,
+        away_id,
+        False,
+        8,
+    )
+
+    # --------------------------------------------------------
+    # CLASSEMENT
+    # --------------------------------------------------------
+
+    table = []
+
+    if competition_code:
+        table = fetch_standings(
+            competition_code
+        )
+
+    home_standing = get_standing(
+        table,
+        home_id,
+    )
+
+    away_standing = get_standing(
+        table,
+        away_id,
+    )
+
+    # --------------------------------------------------------
+    # LAMBDAS
+    # --------------------------------------------------------
+
+    home_lambda, away_lambda = build_lambdas(
+        home_form,
+        away_form,
+        home_split,
+        away_split,
+        home_standing,
+        away_standing,
+    )
+
+    # --------------------------------------------------------
+    # DATE DU MATCH
+    # --------------------------------------------------------
+
+    match_date = match.get(
+        "utcDate",
+        "",
+    )[:10]
+
+    # --------------------------------------------------------
+    # ABSENCES — SERPAPI
+    # --------------------------------------------------------
+
+    try:
+        home_absences_raw = search_absences(
+            home_name,
+            match_date,
+        )
+    except Exception:
+        home_absences_raw = []
+
+    try:
+        away_absences_raw = search_absences(
+            away_name,
+            match_date,
+        )
+    except Exception:
+        away_absences_raw = []
+
+    home_absences = classify_absences(
+        home_absences_raw
+    )
+
+    away_absences = classify_absences(
+        away_absences_raw
+    )
+
+    # --------------------------------------------------------
+    # AJUSTEMENT CONTEXTUEL
+    # --------------------------------------------------------
+
+    home_lambda, away_lambda = contextual_adjustment(
+        home_lambda,
+        away_lambda,
         home_absences,
         away_absences,
     )
 
-    # Modèle.
+    # --------------------------------------------------------
+    # MODÈLE DE POISSON
+    # --------------------------------------------------------
+
     matrix = poisson_matrix(
         home_lambda,
         away_lambda,
     )
 
-    markets = calculate_markets(matrix)
+    # --------------------------------------------------------
+    # MARCHÉS
+    # --------------------------------------------------------
+
+    markets = calculate_markets(
+        matrix
+    )
+
+    # --------------------------------------------------------
+    # SCORES EXACTS
+    # --------------------------------------------------------
 
     scores = exact_scores(
         matrix,
         10,
     )
 
+    # --------------------------------------------------------
+    # MI-TEMPS
+    # --------------------------------------------------------
+
     ht = half_time_model(
         home_lambda,
         away_lambda,
     )
+
+    # --------------------------------------------------------
+    # MI-TEMPS / FIN DE MATCH
+    # --------------------------------------------------------
 
     htft = htft_model(
         home_lambda,
         away_lambda,
     )
 
-    # Statistiques Web.
-    home_stats_raw = search_detailed_stats(
-        home_name
-    )
+    # --------------------------------------------------------
+    # STATISTIQUES WEB — SERPAPI
+    #
+    # IMPORTANT :
+    # SerpAPI ne doit jamais bloquer le pronostic final.
+    # --------------------------------------------------------
 
-    away_stats_raw = search_detailed_stats(
-        away_name
-    )
+    home_stats = {}
+    away_stats = {}
 
-    home_stats = {
-        key: summarize_stat_results(value)
-        for key, value in home_stats_raw.items()
-    }
+    try:
+        home_stats_raw = search_detailed_stats(
+            home_name
+        )
 
-    away_stats = {
-        key: summarize_stat_results(value)
-        for key, value in away_stats_raw.items()
-    }
+        if isinstance(
+            home_stats_raw,
+            dict,
+        ):
+            home_stats = {
+                key: summarize_stat_results(
+                    value
+                )
+                for key, value
+                in home_stats_raw.items()
+            }
 
-    verdict = human_analysis(
-        home_name,
-        away_name,
-        markets,
-        scores,
-        htft,
-        home_form,
-        away_form,
-        home_lambda,
-        away_lambda,
-    )
+    except Exception:
+        home_stats = {}
+
+    try:
+        away_stats_raw = search_detailed_stats(
+            away_name
+        )
+
+        if isinstance(
+            away_stats_raw,
+            dict,
+        ):
+            away_stats = {
+                key: summarize_stat_results(
+                    value
+                )
+                for key, value
+                in away_stats_raw.items()
+            }
+
+    except Exception:
+        away_stats = {}
+
+    # --------------------------------------------------------
+    # ANALYSE HUMAINE
+    # --------------------------------------------------------
+
+    try:
+        verdict = human_analysis(
+            home_name,
+            away_name,
+            markets,
+            scores,
+            htft,
+            home_form,
+            away_form,
+            home_lambda,
+            away_lambda,
+        )
+
+    except Exception as error:
+        verdict = {
+            "main_result": max(
+                markets,
+                key=markets.get,
+            ),
+            "final_prediction": "Analyse indisponible",
+            "main_probability": 0.0,
+            "confidence": "FAIBLE",
+            "best_score": (
+                scores[0][0]
+                if scores
+                else "N/A"
+            ),
+            "best_score_probability": (
+                scores[0][1]
+                if scores
+                else 0.0
+            ),
+            "best_htft": (
+                htft[0][0]
+                if htft
+                else "N/A"
+            ),
+            "best_htft_probability": (
+                htft[0][1]
+                if htft
+                else 0.0
+            ),
+            "reading": (
+                "Les données disponibles "
+                "ne permettent pas une lecture humaine complète."
+            ),
+            "goals": "",
+            "btts": "",
+            "goals_prediction": "",
+            "btts_prediction": "",
+            "double_chance": "",
+            "double_chance_probability": 0.0,
+            "home_probability": markets.get(
+                "1",
+                0.0,
+            ),
+            "draw_probability": markets.get(
+                "X",
+                0.0,
+            ),
+            "away_probability": markets.get(
+                "2",
+                0.0,
+            ),
+            "error": str(error),
+        }
+
+    # --------------------------------------------------------
+    # RÉSULTAT FINAL
+    # --------------------------------------------------------
 
     return {
         "home": home_name,
         "away": away_name,
         "competition": competition,
+
         "home_form": home_form,
         "away_form": away_form,
+
         "home_split": home_split,
         "away_split": away_split,
+
         "home_standing": home_standing,
         "away_standing": away_standing,
+
         "home_lambda": home_lambda,
         "away_lambda": away_lambda,
+
+        "matrix": matrix,
+
         "markets": markets,
+
         "scores": scores,
+
         "ht": ht,
+
         "htft": htft,
+
         "home_absences": home_absences,
         "away_absences": away_absences,
+
         "home_stats": home_stats,
         "away_stats": away_stats,
-        "verdict": verdict,
-    }
 
+        # PRONOSTIC FINAL
+        "verdict": verdict,
+
+        # Accès direct pratique
+        "final_prediction": verdict.get(
+            "final_prediction",
+            "",
+        ),
+
+        "confidence": verdict.get(
+            "confidence",
+            "",
+        ),
+
+        "main_result": verdict.get(
+            "main_result",
+            "",
+        ),
+    }
 
 # ============================================================
 # AFFICHAGE STATISTIQUES
