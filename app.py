@@ -1291,6 +1291,13 @@ def human_analysis(
     else:
 def human_analysis(
     home,
+
+    # ============================================================
+# ANALYSE HUMAINE
+# ============================================================
+
+def human_analysis(
+    home,
     away,
     markets,
     scores,
@@ -1300,9 +1307,6 @@ def human_analysis(
     home_lambda,
     away_lambda,
 ):
-    # --------------------------------------------------------
-    # Récupération sécurisée des marchés
-    # --------------------------------------------------------
     p1 = float(markets.get("1", 0.0))
     px = float(markets.get("X", 0.0))
     p2 = float(markets.get("2", 0.0))
@@ -1313,37 +1317,25 @@ def human_analysis(
         "2": p2,
     }
 
-    # --------------------------------------------------------
-    # Résultat principal
-    # --------------------------------------------------------
     main_result = max(
         results,
         key=results.get,
     )
 
-    # --------------------------------------------------------
-    # Score exact sécurisé
-    # --------------------------------------------------------
-    if scores and len(scores) > 0:
+    if scores:
         best_score = scores[0][0]
         best_score_probability = scores[0][1]
     else:
         best_score = "N/A"
         best_score_probability = 0.0
 
-    # --------------------------------------------------------
-    # MT/FT sécurisé
-    # --------------------------------------------------------
-    if htft and len(htft) > 0:
+    if htft:
         best_htft = htft[0][0]
         best_htft_probability = htft[0][1]
     else:
         best_htft = "N/A"
         best_htft_probability = 0.0
 
-    # --------------------------------------------------------
-    # Forme sécurisée
-    # --------------------------------------------------------
     home_form_score = float(
         home_form.get("form_score", 0.0)
     )
@@ -1351,10 +1343,6 @@ def human_analysis(
     away_form_score = float(
         away_form.get("form_score", 0.0)
     )
-
-    # ========================================================
-    # LECTURE HUMAINE — 1X2
-    # ========================================================
 
     if (
         abs(p1 - p2) < 0.08
@@ -1389,10 +1377,113 @@ def human_analysis(
             "Une couverture est préférable au 1X2 sec."
         )
 
-    # ========================================================
-    # ANALYSE DES BUTS
-    # ========================================================
+    over25 = float(
+        markets.get("Over 2.5", 0.0)
+    )
 
+    under25 = float(
+        markets.get("Under 2.5", 0.0)
+    )
+
+    if over25 >= 0.60:
+        goals = (
+            "Le scénario d'au moins 3 buts "
+            "est dominant dans le modèle."
+        )
+        goals_prediction = "Over 2.5"
+
+    elif under25 >= 0.60:
+        goals = (
+            "Le modèle privilégie "
+            "un match à faible total de buts."
+        )
+        goals_prediction = "Under 2.5"
+
+    else:
+        goals = "Le total de buts reste équilibré."
+        goals_prediction = "Over/Under 2.5 équilibré"
+
+    btts_yes = float(
+        markets.get("BTTS Oui", 0.0)
+    )
+
+    btts_no = float(
+        markets.get("BTTS Non", 0.0)
+    )
+
+    if btts_yes >= 0.60:
+        btts = (
+            "Les deux équipes ont un signal favorable "
+            "pour marquer."
+        )
+        btts_prediction = "BTTS Oui"
+
+    elif btts_no >= 0.60:
+        btts = (
+            "Une des deux équipes pourrait "
+            "rester muette."
+        )
+        btts_prediction = "BTTS Non"
+
+    else:
+        btts = "Le BTTS est difficile à départager."
+        btts_prediction = "BTTS équilibré"
+
+    if p1 >= px and p1 >= p2:
+        double_chance = "1X"
+        double_chance_probability = p1 + px
+
+    elif p2 >= p1 and p2 >= px:
+        double_chance = "X2"
+        double_chance_probability = px + p2
+
+    else:
+        double_chance = "12"
+        double_chance_probability = p1 + p2
+
+    if main_result == "1":
+        final_prediction = f"{home} gagne"
+
+    elif main_result == "2":
+        final_prediction = f"{away} gagne"
+
+    else:
+        final_prediction = "Match nul"
+
+    main_probability = results[main_result]
+
+    if main_probability >= 0.65:
+        confidence = "FORTE"
+
+    elif main_probability >= 0.55:
+        confidence = "BONNE"
+
+    elif main_probability >= 0.45:
+        confidence = "MOYENNE"
+
+    else:
+        confidence = "FAIBLE"
+
+    return {
+        "main_result": main_result,
+        "final_prediction": final_prediction,
+        "main_probability": main_probability,
+        "confidence": confidence,
+        "best_score": best_score,
+        "best_score_probability": best_score_probability,
+        "best_htft": best_htft,
+        "best_htft_probability": best_htft_probability,
+        "reading": reading,
+        "goals": goals,
+        "btts": btts,
+        "goals_prediction": goals_prediction,
+        "btts_prediction": btts_prediction,
+        "double_chance": double_chance,
+        "double_chance_probability": double_chance_probability,
+        "home_probability": p1,
+        "draw_probability": px,
+        "away_probability": p2,
+    }
     over25 = float(
         markets.get("Over 2.5", 0.0)
     )
