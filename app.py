@@ -1,3 +1,6 @@
+# Démarrage Pydroid 3 / terminal :
+# streamlit run Rodrigue_Pro_Football_AI_V15_404_STATS_FIX.py --server.address 0.0.0.0 --server.port 8501
+#
 
 # ============================================================
 # RODRIGUE PRO FOOTBALL AI — V10 ULTIMATE — V14 STATS MULTI-SOURCES
@@ -489,6 +492,17 @@ def _fotmob_find_recent_team_matches(team_name, competition_code, selected_date=
         candidates.append(m)
     candidates.sort(key=lambda x: _fotmob_match_date(x), reverse=True)
     return candidates[:limit]
+
+
+def _safe_float(value):
+    try:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        return float(str(value).replace("%", "").replace(",", ".").strip())
+    except Exception:
+        return None
 
 
 def _fotmob_stat_value_pair(item):
@@ -1660,127 +1674,41 @@ def _serper_result_text(result):
 
 
 def search_detailed_stats(team_name, match_date=None, competition_code=None):
-    """Récupère les stats réelles.
-
-    SofaScore est prioritaire. Pour le match analysé, on peut retrouver
-    directement l'ID de l'équipe depuis le calendrier SofaScore du jour,
-    ce qui évite de dépendre de search/all.
     """
-    all_results = {}
-    clean_team = _normalise_search_text(team_name)
+    Source prioritaire: FotMob (moyennes réelles des derniers matchs terminés).
+    Source secondaire: SofaScore si disponible.
+    Serper est volontairement désactivé car la clé précédente retournait HTTP 403.
+    """
+    global FOTMOB_LAST_ERROR, SOFASCORE_LAST_ERROR
 
-    # 1) Source structurée.
-    if match_date:
-        try:
-            selected = date.fromisoformat(str(match_date)[:10])
-        except ValueError:
-            selected = None
-    else:
-        selected = None
-
-    team_id = _known_sofascore_team_id(clean_team)
-    if not team_id and selected:
-        team_id = find_sofascore_team_id_from_date(clean_team, selected)
-
-    if team_id:
-        structured = sofascore_team_detailed_stats_by_id(
-            clean_team, int(team_id)
+    # FotMob en premier: il ne dépend pas de curl_cffi et expose les statistiques
+    # détaillées des matchs terminés.
+    try:
+        fot = fotmob_team_detailed_stats(
+            team_name,
+            competition_code=competition_code,
+            selected_date=match_date,
         )
-    else:
-        structured = sofascore_team_detailed_stats(clean_team)
-    for stat_name in STAT_QUERY_TYPES:
-        all_results[stat_name] = []
-        item = structured.get(stat_name)
-        if item:
-            all_results[stat_name].append({
-                "title": item["title"],
-                "snippet": item["snippet"],
-                "link": "https://www.sofascore.com/",
-                "stat_name": stat_name,
-                "search_text": item["snippet"],
-                "values": [
-                    {
-                        "value": item["average"],
-                        "percent": stat_name == "possession",
-                        "raw": str(item["average"]),
-                    }
-                ],
-                "source": "sofascore",
-            })
+        if fot and any(v is not None for v in fot.values()):
+            fot["_source"] = "FotMob"
+            return fot
+    except Exception as exc:
+        FOTMOB_LAST_ERROR = str(exc)
 
-    # 2) FotMob : deuxième source structurée, sans clé, si SofaScore ne renvoie rien.
-    missing = [k for k in STAT_QUERY_TYPES if not all_results[k]]
-    if missing and competition_code:
-        try:
-            selected_for_fotmob = selected
-            fotmob_structured = fotmob_team_detailed_stats(
-                clean_team, competition_code, selected_for_fotmob
-            )
-            for stat_name in missing:
-                item = fotmob_structured.get(stat_name)
-                if item:
-                    all_results[stat_name].append({
-                        "title": item["title"],
-                        "snippet": item["snippet"],
-                        "link": "https://www.fotmob.com/",
-                        "stat_name": stat_name,
-                        "search_text": item["snippet"],
-                        "values": [{
-                            "value": item["average"],
-                            "percent": stat_name == "possession",
-                            "raw": str(item["average"]),
-                        }],
-                        "source": "fotmob",
-                    })
-        except Exception as exc:
-            global FOTMOB_LAST_ERROR
-            FOTMOB_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+    # SofaScore comme secours.
+    try:
+        team_id = _known_sofascore_team_id(team_name)
+        if not team_id and match_date:
+            team_id = find_sofascore_team_id_from_date(team_name, match_date)
+        if team_id:
+            sofa = sofascore_team_detailed_stats_by_id(team_name, team_id)
+            if sofa and any(v is not None for v in sofa.values()):
+                sofa["_source"] = "SofaScore"
+                return sofa
+    except Exception as exc:
+        SOFASCORE_LAST_ERROR = str(exc)
 
-    # 3) Serper est volontairement désactivé tant que sa clé renvoie 403.
-    missing = [k for k in STAT_QUERY_TYPES if not all_results[k]]
-    if USE_SERPER_FALLBACK and missing:
-        for stat_name in missing:
-            keywords = STAT_QUERY_TYPES[stat_name]
-            query_groups = [keywords[:3], keywords[3:]]
-            query_groups = [group for group in query_groups if group]
-
-            collected = []
-            for group in query_groups:
-                synonym_query = " OR ".join(f'"{kw}"' for kw in group)
-                query = (
-                    f'"{clean_team}" football statistiques {synonym_query} '
-                    f'"{stat_name.replace("_", " ")}"'
-                )
-                results = serper_search(query, num=7)
-                for result in results:
-                    if not isinstance(result, dict):
-                        continue
-                    title = _normalise_search_text(result.get("title", ""))
-                    snippet = _normalise_search_text(
-                        result.get("snippet") or result.get("description") or ""
-                    )
-                    if title or snippet:
-                        collected.append({
-                            "title": title,
-                            "snippet": snippet,
-                            "link": result.get("link", "") or "",
-                            "stat_name": stat_name,
-                            "search_text": _serper_result_text(result),
-                            "source": "serper",
-                        })
-
-            unique = {}
-            for item in collected:
-                key = re.sub(
-                    r"\s+", " ",
-                    (item["title"] + " " + item["snippet"]).lower(),
-                ).strip()
-                if key:
-                    unique[key] = item
-            all_results[stat_name].extend(list(unique.values())[:8])
-
-    return all_results
-
+    return {}
 
 # ============================================================
 # EXTRACTION DE NOMBRES — VERSION SOUPLE
