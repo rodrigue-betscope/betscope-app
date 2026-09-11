@@ -1,13 +1,10 @@
-# Démarrage Pydroid 3 / terminal :
-# streamlit run Rodrigue_Pro_Football_AI_V17_FINAL_DATETIME_FIX.py --server.address 0.0.0.0 --server.port 8501
-#
 
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI — V18 FOOTBALL-DATA ONLY — V14 STATS MULTI-SOURCES
+# RODRIGUE PRO FOOTBALL AI — V10 ULTIMATE — VERSION CORRIGÉE
 # ============================================================
 # Sources :
 #   - football-data.org : matchs, résultats, classement
-#   - Serper / Google : contexte, blessures, suspensions,
+#   - SerpApi / Google : contexte, blessures, suspensions,
 #     statistiques détaillées et événements disponibles sur le Web
 #
 # CORRECTIONS PRINCIPALES :
@@ -22,90 +19,23 @@
 
 import math
 import re
-from difflib import SequenceMatcher
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
 
-# curl_cffi est optionnel mais fortement recommandé sur Android/Pydroid :
-# il reproduit une empreinte TLS navigateur et évite certains 403 SofaScore.
-try:
-    from curl_cffi import requests as curl_requests
-except ImportError:
-    curl_requests = None
-
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 
-FOOTBALL_DATA_KEY = "d212fb8b550d4756b16521dbe73b708d"
-SERPER_API_KEY = "Cc3ab2e2bcc254efd9fb445a12a0815aa189a043"
-
-# Priorité à Streamlit Secrets si la clé y est configurée.
-# Fallback : clé fournie pour cette version du programme.
-try:
-    SERPER_API_KEY = st.secrets.get("SERPER_API_KEY", SERPER_API_KEY)
-except Exception:
-    pass
+FOOTBALL_DATA_KEY = st.secrets["FOOTBALL_DATA_KEY"]
+SERPAPI_KEY = st.secrets["SERPAPI_KEY"]
 
 API_BASE = "https://api.football-data.org/v4"
-SERPER_URL = "https://google.serper.dev/search"
-
-# Serper est désactivé par défaut : la clé actuellement fournie renvoie HTTP 403.
-# Les statistiques détaillées utilisent SofaScore directement.
-USE_SERPER_FALLBACK = False
-SERPER_LAST_ERROR = ""
-SOFASCORE_LAST_ERROR = ""
-
-# Moteur de secours pour les statistiques football détaillées.
-# Il évite que la section Tirs/Posssession/Corners/etc. dépende
-# entièrement des snippets Google/Serper.
-SOFASCORE_BASES = [
-    # Le miroir .app est souvent plus tolérant depuis un téléphone.
-    "https://api.sofascore.app/api/v1",
-    "https://www.sofascore.com/api/v1",
-    "https://api.sofascore.com/api/v1",
-]
-
-# FotMob : deuxième moteur de statistiques structurées, sans clé API.
-# Il sert de secours lorsque SofaScore est bloqué par le WAF/TLS.
-FOTMOB_BASE = "https://www.fotmob.com/api"
-FOTMOB_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
-        "Chrome/128.0 Mobile Safari/537.36"
-    ),
-    "Accept": "application/json,text/plain,*/*",
-    "Referer": "https://www.fotmob.com/",
-}
-FOTMOB_LAST_ERROR = ""
-
-# IDs de compétitions FotMob courantes.
-FOTMOB_LEAGUE_IDS = {
-    "PL": 47,
-    "PD": 87,
-    "BL1": 54,
-    "SA": 55,
-    "FL1": 53,
-    "CL": 42,
-    "DED": 57,
-    "PPL": 61,
-    "ELC": 48,
-    "BSA": 268,
-}
-
-SOFASCORE_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
-        "Chrome/128.0 Mobile Safari/537.36"
-    ),
-    "Accept": "application/json,text/plain,*/*",
-    "Referer": "https://www.sofascore.com/",
-}
+SERP_URL = "https://serpapi.com/search.json"
 
 COMPETITIONS = {
     "Premier League": "PL",
@@ -121,7 +51,7 @@ COMPETITIONS = {
 }
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI V18",
+    page_title="Rodrigue Pro Football AI V10",
     page_icon="⚽",
     layout="wide",
 )
@@ -283,754 +213,34 @@ def football_status(endpoint, params=None):
 
 
 # ============================================================
-# SERPER / GOOGLE
+# SERPAPI
 # ============================================================
 
-def serper_search(query, num=8):
-    """Recherche Google via Serper, sans masquer l'erreur réelle."""
-    global SERPER_LAST_ERROR
-
-    if not SERPER_API_KEY:
-        SERPER_LAST_ERROR = "Clé SERPER_API_KEY absente."
-        return []
-
-    payload = {
+def serp_search(query, num=8):
+    params = {
+        "engine": "google",
         "q": query,
-        "gl": "cm",
+        "api_key": SERPAPI_KEY,
         "hl": "fr",
+        "gl": "cm",
         "num": num,
     }
 
     try:
-        response = SESSION.post(
-            SERPER_URL,
-            headers={
-                "X-API-KEY": SERPER_API_KEY,
-                "Content-Type": "application/json",
-            },
-            json=payload,
+        response = SESSION.get(
+            SERP_URL,
+            params=params,
             timeout=25,
         )
 
         if response.status_code != 200:
-            try:
-                body = response.json()
-                detail = body.get("message") or body.get("error") or body.get("msg")
-            except ValueError:
-                detail = response.text[:180]
-            SERPER_LAST_ERROR = (
-                f"HTTP {response.status_code}"
-                + (f" — {detail}" if detail else "")
-            )
             return []
 
         data = response.json()
-        organic = data.get("organic", [])
-        if not isinstance(organic, list):
-            SERPER_LAST_ERROR = "Réponse Serper invalide : champ organic absent/invalide."
-            return []
+        return data.get("organic_results", [])
 
-        SERPER_LAST_ERROR = ""
-        return organic
-
-    except requests.RequestException as exc:
-        SERPER_LAST_ERROR = f"Connexion Serper impossible : {exc}"
+    except (requests.RequestException, ValueError):
         return []
-    except ValueError as exc:
-        SERPER_LAST_ERROR = f"JSON Serper invalide : {exc}"
-        return []
-
-
-SERPER_LAST_ERROR = ""
-
-
-def sofascore_get(path, params=None):
-    """GET robuste vers SofaScore avec empreinte navigateur si curl_cffi est installé."""
-    global SOFASCORE_LAST_ERROR
-    last_error = ""
-
-    for base in SOFASCORE_BASES:
-        url = base.rstrip("/") + "/" + path.lstrip("/")
-        try:
-            if curl_requests is not None:
-                response = curl_requests.get(
-                    url,
-                    params=params or {},
-                    headers=SOFASCORE_HEADERS,
-                    timeout=20,
-                    impersonate="chrome",
-                )
-            else:
-                response = SESSION.get(
-                    url,
-                    params=params or {},
-                    headers=SOFASCORE_HEADERS,
-                    timeout=20,
-                )
-
-            if response.status_code == 200:
-                data = response.json()
-                if isinstance(data, dict):
-                    SOFASCORE_LAST_ERROR = ""
-                    return data
-
-            last_error = f"{base}: HTTP {response.status_code}"
-        except Exception as exc:
-            last_error = f"{base}: {type(exc).__name__}: {exc}"
-
-    SOFASCORE_LAST_ERROR = last_error or "Aucune réponse SofaScore exploitable."
-    return {}
-
-
-def fotmob_get(path, params=None):
-    """GET FotMob sans clé API, avec diagnostic compact."""
-    global FOTMOB_LAST_ERROR
-    url = FOTMOB_BASE.rstrip("/") + "/" + path.lstrip("/")
-    try:
-        response = SESSION.get(
-            url,
-            params=params or {},
-            headers=FOTMOB_HEADERS,
-            timeout=20,
-        )
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, dict):
-                FOTMOB_LAST_ERROR = ""
-                return data
-        FOTMOB_LAST_ERROR = f"HTTP {response.status_code}"
-    except Exception as exc:
-        FOTMOB_LAST_ERROR = f"{type(exc).__name__}: {exc}"
-    return {}
-
-
-
-def _coerce_date(value):
-    """Convertit proprement une date ISO/string en datetime.date."""
-    if value is None or value == "":
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except (TypeError, ValueError):
-        return None
-
-def _fotmob_find_team_id(team_name):
-    clean = _normalise_search_text(team_name)
-    if not clean:
-        return None
-    data = fotmob_get("data/search/suggest", {"term": clean, "hits": 20, "lang": "en,fr,nl"})
-    candidates = []
-    def walk(obj):
-        if isinstance(obj, dict):
-            obj_type = str(obj.get("type", "")).lower()
-            name = obj.get("name") or obj.get("teamName")
-            ident = obj.get("id") or obj.get("teamId")
-            if name and ident and ("team" in obj_type or "club" in obj_type or obj.get("teamId")):
-                candidates.append((str(name), ident))
-            for v in obj.values(): walk(v)
-        elif isinstance(obj, list):
-            for v in obj: walk(v)
-    walk(data)
-    target = _norm_name(clean)
-    best_id, best_score = None, 0.0
-    for name, ident in candidates:
-        score = SequenceMatcher(None, target, _norm_name(name)).ratio()
-        if target in _norm_name(name) or _norm_name(name) in target:
-            score += 0.25
-        if score > best_score:
-            best_score, best_id = score, ident
-    try:
-        return int(best_id) if best_id and best_score >= 0.55 else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _fotmob_match_list_from_league(competition_code, selected_date=None):
-    """Récupère les matchs d'une saison FotMob et les filtre localement."""
-    selected_date = _coerce_date(selected_date)
-    league_id = FOTMOB_LEAGUE_IDS.get(competition_code)
-    if not league_id:
-        return []
-    season = selected_date.year if selected_date else date.today().year
-    data = fotmob_get("data/leagues", {"id": league_id, "season": season})
-    matches = (((data.get("matches") or {}).get("allMatches")) or [])
-    if not isinstance(matches, list):
-        return []
-    return matches
-
-
-def _fotmob_match_team_ids(match):
-    home = match.get("home", {}) or {}
-    away = match.get("away", {}) or {}
-    return home.get("id"), away.get("id")
-
-
-def _fotmob_match_date(match):
-    status = match.get("status", {}) or {}
-    utc = status.get("utcTime") or match.get("utcTime") or ""
-    return str(utc)[:10]
-
-
-def _fotmob_find_recent_team_matches(team_name, competition_code, selected_date=None, limit=8):
-    """Trouve les derniers matchs terminés d'une équipe dans sa compétition."""
-    selected_date = _coerce_date(selected_date)
-    team_id = _fotmob_find_team_id(team_name)
-    matches = _fotmob_match_list_from_league(competition_code, selected_date)
-    if not matches:
-        return []
-    target = _norm_name(team_name)
-    candidates = []
-    for m in matches:
-        if not isinstance(m, dict):
-            continue
-        home = m.get("home", {}) or {}
-        away = m.get("away", {}) or {}
-        home_name = _norm_name(home.get("name", ""))
-        away_name = _norm_name(away.get("name", ""))
-        ids = _fotmob_match_team_ids(m)
-        belongs = False
-        if team_id and team_id in ids:
-            belongs = True
-        elif target and (target == home_name or target == away_name or target in home_name or target in away_name):
-            belongs = True
-        if not belongs:
-            continue
-        status = m.get("status", {}) or {}
-        if not status.get("finished"):
-            continue
-        d = _fotmob_match_date(m)
-        if selected_date and d and d >= selected_date.isoformat():
-            continue
-        candidates.append(m)
-    candidates.sort(key=lambda x: _fotmob_match_date(x), reverse=True)
-    return candidates[:limit]
-
-
-def _safe_float(value):
-    try:
-        if value is None:
-            return None
-        if isinstance(value, bool):
-            return None
-        return float(str(value).replace("%", "").replace(",", ".").strip())
-    except Exception:
-        return None
-
-
-def _fotmob_stat_value_pair(item):
-    """Lit les formats de stats FotMob les plus courants."""
-    if not isinstance(item, dict):
-        return None, None
-    vals = item.get("stats") or item.get("values") or item.get("value")
-    if isinstance(vals, list) and len(vals) >= 2:
-        return _parse_stat_value(vals[0])[0], _parse_stat_value(vals[1])[0]
-    home = item.get("home")
-    away = item.get("away")
-    if home is not None or away is not None:
-        return _parse_stat_value(home)[0], _parse_stat_value(away)[0]
-    return None, None
-
-
-def _walk_fotmob_stats(obj):
-    """Aplati récursivement les objets/listes de stats FotMob."""
-    out = []
-    if isinstance(obj, dict):
-        if any(k in obj for k in ("title", "name", "label")):
-            out.append(obj)
-        for v in obj.values():
-            out.extend(_walk_fotmob_stats(v))
-    elif isinstance(obj, list):
-        for v in obj:
-            out.extend(_walk_fotmob_stats(v))
-    return out
-
-
-def _fotmob_stat_alias_match(label, stat_name):
-    n = _norm_name(label)
-    aliases = {
-        "corners": ["corners", "corner kicks"],
-        "cartons": ["yellow cards", "red cards", "yellow card", "red card"],
-        "tirs": ["shots", "total shots", "shots total"],
-        "tirs_cadres": ["shots on target", "shots on goal"],
-        "possession": ["possession", "ball possession"],
-        "fautes": ["fouls", "foul"],
-        "hors_jeu": ["offsides", "offside"],
-    }
-    if stat_name == "tirs" and ("on target" in n or "on goal" in n):
-        return False
-    return any(a in n for a in aliases.get(stat_name, []))
-
-
-@st.cache_data(ttl=600, show_spinner=False)
-def fotmob_team_detailed_stats(team_name, competition_code, selected_date=None):
-    """Moyennes réelles sur les derniers matchs terminés via FotMob."""
-    selected_date = _coerce_date(selected_date)
-    matches = _fotmob_find_recent_team_matches(team_name, competition_code, selected_date, 8)
-    if not matches:
-        return {}
-    output = {k: [] for k in STAT_QUERY_TYPES}
-    for match in matches:
-        match_id = match.get("id")
-        if not match_id:
-            continue
-        detail = fotmob_get("data/matchDetails", {"matchId": match_id})
-        if not detail:
-            continue
-        home = match.get("home", {}) or {}
-        away = match.get("away", {}) or {}
-        team_id = _fotmob_find_team_id(team_name)
-        if team_id and home.get("id") == team_id:
-            side_index = 0
-        elif team_id and away.get("id") == team_id:
-            side_index = 1
-        else:
-            target = _norm_name(team_name)
-            side_index = 0 if target in _norm_name(home.get("name", "")) else 1
-        stats_root = ((detail.get("content") or {}).get("stats") or detail.get("stats") or {})
-        items = _walk_fotmob_stats(stats_root)
-        for stat_name in STAT_QUERY_TYPES:
-            if stat_name == "cartons":
-                # Cherche jaunes + rouges séparément et additionne.
-                total = 0.0
-                found = False
-                for item in items:
-                    label = str(item.get("title") or item.get("name") or item.get("label") or "")
-                    n = _norm_name(label)
-                    if "yellow card" not in n and "red card" not in n:
-                        continue
-                    hp, ap = _fotmob_stat_value_pair(item)
-                    value = hp if side_index == 0 else ap
-                    if value is not None:
-                        total += value
-                        found = True
-                if found:
-                    output[stat_name].append(total)
-                continue
-            found_value = None
-            for item in items:
-                label = str(item.get("title") or item.get("name") or item.get("label") or "")
-                if not _fotmob_stat_alias_match(label, stat_name):
-                    continue
-                hp, ap = _fotmob_stat_value_pair(item)
-                value = hp if side_index == 0 else ap
-                if value is not None:
-                    found_value = value
-                    break
-            if found_value is not None:
-                output[stat_name].append(found_value)
-    result = {}
-    for stat_name, vals in output.items():
-        if vals:
-            avg = sum(vals) / len(vals)
-            result[stat_name] = {
-                "average": round(avg, 2),
-                "matches": len(vals),
-                "title": f"Moyenne {stat_name.replace('_', ' ')} — {team_name}",
-                "snippet": f"Moyenne sur {len(vals)} matchs récents : {avg:.2f}{' %' if stat_name == 'possession' else ''}. Données FotMob.",
-            }
-    return result
-
-
-def _norm_name(value):
-    value = _normalise_search_text(value).lower()
-    value = re.sub(r"[^a-z0-9àâäçéèêëîïôöùûüÿñæœ ]+", " ", value)
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def _walk_team_candidates(obj):
-    """Extrait souplement les candidats team d'une réponse search/all."""
-    found = []
-
-    if isinstance(obj, dict):
-        name = obj.get("name") or obj.get("shortName")
-        obj_type = str(obj.get("type", "")).lower()
-        if name and (obj_type == "team" or obj.get("team") is True):
-            team_id = obj.get("id")
-            if team_id:
-                found.append({"id": team_id, "name": str(name)})
-        for value in obj.values():
-            found.extend(_walk_team_candidates(value))
-
-    elif isinstance(obj, list):
-        for item in obj:
-            found.extend(_walk_team_candidates(item))
-
-    return found
-
-
-# Identifiants SofaScore vérifiés pour les équipes rencontrées fréquemment.
-# Le moteur tente d'abord cette table, puis la recherche API.
-SOFASCORE_TEAM_IDS = {
-    "az": 2950,
-    "az alkmaar": 2950,
-    "willem ii": 2961,
-    "willem ii tilburg": 2961,
-}
-
-
-def _known_sofascore_team_id(team_name):
-    key = _norm_name(team_name)
-    if key in SOFASCORE_TEAM_IDS:
-        return SOFASCORE_TEAM_IDS[key]
-    # Correspondance souple pour "Willem II Tilburg", "AZ", etc.
-    for alias, team_id in SOFASCORE_TEAM_IDS.items():
-        if alias in key or key in alias:
-            return team_id
-    return None
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def find_sofascore_team_id(team_name):
-    """Trouve l'identifiant SofaScore correspondant au nom football."""
-    clean = _normalise_search_text(team_name)
-    if not clean:
-        return None
-
-    known = _known_sofascore_team_id(clean)
-    if known:
-        return int(known)
-
-    data = sofascore_get("search/all", {"q": clean})
-    candidates = _walk_team_candidates(data)
-
-    # Quelques réponses peuvent ne pas mettre type=team : accepter alors
-    # les objets contenant un id + name + slug dans results.
-    if not candidates:
-        def fallback_walk(obj):
-            out = []
-            if isinstance(obj, dict):
-                if obj.get("id") and obj.get("name") and obj.get("slug"):
-                    out.append({"id": obj["id"], "name": str(obj["name"])})
-                for v in obj.values():
-                    out.extend(fallback_walk(v))
-            elif isinstance(obj, list):
-                for v in obj:
-                    out.extend(fallback_walk(v))
-            return out
-        candidates = fallback_walk(data)
-
-    target = _norm_name(clean)
-    best = None
-    best_score = -1.0
-    for candidate in candidates:
-        cand_name = _norm_name(candidate.get("name", ""))
-        if not cand_name:
-            continue
-        if cand_name == target:
-            return int(candidate["id"])
-        score = SequenceMatcher(None, target, cand_name).ratio()
-        if target in cand_name or cand_name in target:
-            score += 0.25
-        if score > best_score:
-            best_score = score
-            best = candidate
-
-    if best and best_score >= 0.55:
-        try:
-            return int(best["id"])
-        except (TypeError, ValueError):
-            return None
-    return None
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def find_sofascore_team_id_from_date(team_name, selected_date):
-    """Trouve n'importe quelle équipe du match du jour sans passer par search/all."""
-    selected_date = _coerce_date(selected_date)
-    clean = _norm_name(team_name)
-    if not clean:
-        return None
-
-    data = sofascore_get(
-        f"sport/football/scheduled-events/{selected_date.isoformat()}"
-    )
-    events = data.get("events", []) if isinstance(data, dict) else []
-    best_id = None
-    best_score = 0.0
-
-    for event in events:
-        for side in ("homeTeam", "awayTeam"):
-            team = event.get(side, {}) or {}
-            name = _norm_name(team.get("name", ""))
-            team_id = team.get("id")
-            if not name or not team_id:
-                continue
-            if name == clean:
-                return int(team_id)
-            score = SequenceMatcher(None, clean, name).ratio()
-            if clean in name or name in clean:
-                score += 0.25
-            if score > best_score:
-                best_score = score
-                best_id = team_id
-
-    if best_id and best_score >= 0.55:
-        return int(best_id)
-    return None
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_sofascore_last_events(team_id, pages=2):
-    events = []
-    for page in range(max(1, pages)):
-        data = sofascore_get(f"team/{int(team_id)}/events/last/{page}")
-        page_events = data.get("events", []) if isinstance(data, dict) else []
-        if not isinstance(page_events, list):
-            break
-        events.extend(page_events)
-        if not data.get("hasNextPage"):
-            break
-
-    unique = {}
-    for event in events:
-        if not isinstance(event, dict):
-            continue
-        event_id = event.get("id")
-        status = event.get("status", {}) or {}
-        if event_id and status.get("type") == "finished":
-            unique[event_id] = event
-    return list(unique.values())[:8]
-
-
-def _parse_stat_value(value):
-    if value is None:
-        return None, False
-    text = str(value).strip().replace("%", "").replace(",", ".")
-    try:
-        return float(text), "%" in str(value)
-    except ValueError:
-        match = re.search(r"\d+(?:[.,]\d+)?", text)
-        if not match:
-            return None, False
-        try:
-            return float(match.group(0).replace(",", ".")), "%" in str(value)
-        except ValueError:
-            return None, False
-
-
-STAT_ITEM_ALIASES = {
-    "corners": ["corner", "corner kicks", "corners"],
-    "cartons": ["yellow cards", "red cards", "yellow card", "red card"],
-    "tirs": ["total shots", "shots", "shots total"],
-    "tirs_cadres": ["shots on target", "shots on goal"],
-    "possession": ["ball possession", "possession"],
-    "fautes": ["fouls", "foul"],
-    "hors_jeu": ["offsides", "offside"],
-}
-
-
-def _stat_name_matches(item_name, stat_name):
-    normalized = _norm_name(item_name)
-
-    # Ne pas confondre "tirs" avec "tirs cadrés".
-    if stat_name == "tirs" and (
-        "on target" in normalized
-        or "on goal" in normalized
-        or "cadr" in normalized
-    ):
-        return False
-
-    return any(
-        alias in normalized
-        for alias in STAT_ITEM_ALIASES.get(stat_name, [])
-    )
-
-
-def _extract_event_stat_items(data, stat_name, side):
-    """Extrait une statistique réelle d'un match SofaScore."""
-    values = []
-    if not isinstance(data, dict):
-        return values
-
-    blocks = data.get("statistics", [])
-    if not isinstance(blocks, list):
-        return values
-
-    # Les cartons sont parfois séparés en jaunes et rouges.
-    if stat_name == "cartons":
-        total = 0.0
-        found = False
-        raw_parts = []
-        for block in blocks:
-            if str(block.get("period", "")).upper() != "ALL":
-                continue
-            for group in block.get("groups", []) or []:
-                for item in group.get("statisticsItems", []) or []:
-                    name = _norm_name(item.get("name", ""))
-                    if "yellow card" not in name and "red card" not in name:
-                        continue
-                    raw = item.get(side)
-                    value, _ = _parse_stat_value(raw)
-                    if value is not None:
-                        total += value
-                        found = True
-                        raw_parts.append(f"{item.get('name')}: {raw}")
-        if found:
-            return [{
-                "value": total,
-                "percent": False,
-                "raw": " + ".join(raw_parts),
-                "item_name": "Total cartons",
-            }]
-        return values
-
-    for block in blocks:
-        if str(block.get("period", "")).upper() != "ALL":
-            continue
-        for group in block.get("groups", []) or []:
-            for item in group.get("statisticsItems", []) or []:
-                item_name = item.get("name", "")
-                if not _stat_name_matches(item_name, stat_name):
-                    continue
-                raw = item.get(side)
-                value, percent = _parse_stat_value(raw)
-                if value is not None:
-                    values.append({
-                        "value": value,
-                        "percent": percent or stat_name == "possession",
-                        "raw": str(raw),
-                        "item_name": item_name,
-                    })
-                return values
-    return values
-
-
-@st.cache_data(ttl=600, show_spinner=False)
-def sofascore_team_detailed_stats_by_id(team_name, team_id):
-    """Version directe : évite toute recherche de nom avant les statistiques."""
-    events = fetch_sofascore_last_events(int(team_id), pages=2)
-    if not events:
-        return {}
-
-    output = {key: [] for key in STAT_QUERY_TYPES}
-    seen_events = 0
-
-    for event in events:
-        home_team = event.get("homeTeam", {}) or {}
-        away_team = event.get("awayTeam", {}) or {}
-        home_id = home_team.get("id")
-        away_id = away_team.get("id")
-
-        if int(team_id) == home_id:
-            side = "home"
-        elif int(team_id) == away_id:
-            side = "away"
-        else:
-            continue
-
-        stats_data = sofascore_get(f"event/{event.get('id')}/statistics")
-        if not stats_data:
-            continue
-
-        seen_events += 1
-        for stat_name in STAT_QUERY_TYPES:
-            vals = _extract_event_stat_items(stats_data, stat_name, side)
-            if vals:
-                output[stat_name].append({
-                    **vals[0],
-                    "event_id": event.get("id"),
-                    "opponent": (
-                        away_team.get("name")
-                        if side == "home"
-                        else home_team.get("name")
-                    ),
-                })
-
-        if seen_events >= 6:
-            break
-
-    result = {}
-    for stat_name, values in output.items():
-        if not values:
-            continue
-        average = sum(v["value"] for v in values) / len(values)
-        is_percent = any(v.get("percent") for v in values)
-        unit = " %" if is_percent else ""
-        result[stat_name] = {
-            "average": round(average, 2),
-            "matches": len(values),
-            "values": values,
-            "title": f"Moyenne {stat_name.replace('_', ' ')} — {team_name}",
-            "snippet": (
-                f"Moyenne sur {len(values)} matchs récents : "
-                f"{average:.2f}{unit}. Données SofaScore."
-            ),
-        }
-    return result
-
-
-@st.cache_data(ttl=600, show_spinner=False)
-def sofascore_team_detailed_stats(team_name):
-    """Calcule les moyennes des 8 derniers matchs finis d'un club."""
-    team_id = find_sofascore_team_id(team_name)
-    if not team_id:
-        return {}
-
-    events = fetch_sofascore_last_events(team_id, pages=2)
-    if not events:
-        return {}
-
-    output = {key: [] for key in STAT_QUERY_TYPES}
-    seen_events = 0
-
-    for event in events:
-        home_team = event.get("homeTeam", {}) or {}
-        away_team = event.get("awayTeam", {}) or {}
-        home_id = home_team.get("id")
-        away_id = away_team.get("id")
-        if team_id == home_id:
-            side = "home"
-        elif team_id == away_id:
-            side = "away"
-        else:
-            continue
-
-        stats_data = sofascore_get(f"event/{event.get('id')}/statistics")
-        if not stats_data:
-            continue
-
-        seen_events += 1
-        for stat_name in STAT_QUERY_TYPES:
-            vals = _extract_event_stat_items(stats_data, stat_name, side)
-            if vals:
-                output[stat_name].append({
-                    **vals[0],
-                    "event_id": event.get("id"),
-                    "opponent": (
-                        away_team.get("name")
-                        if side == "home"
-                        else home_team.get("name")
-                    ),
-                })
-
-        # Les 6 premiers matchs avec stats suffisent pour les moyennes.
-        if seen_events >= 6:
-            break
-
-    result = {}
-    for stat_name, values in output.items():
-        if not values:
-            continue
-        average = sum(v["value"] for v in values) / len(values)
-        percent = any(v.get("percent") for v in values)
-        unit = " %" if percent else ""
-        result[stat_name] = {
-            "average": round(average, 2),
-            "matches": len(values),
-            "values": values,
-            "title": f"Moyenne {stat_name.replace('_', ' ')} — {team_name}",
-            "snippet": (
-                f"Moyenne sur {len(values)} matchs récents : "
-                f"{average:.2f}{unit}. Données SofaScore."
-            ),
-        }
-
-    return result
-
 
 
 # ============================================================
@@ -1611,355 +821,75 @@ def htft_model(home_lambda, away_lambda):
 # ============================================================
 
 STAT_QUERY_TYPES = {
-    # Requêtes volontairement souples : Google/Serper peut renvoyer des
-    # pages francophones, anglophones ou des fiches statistiques locales.
-    "corners": [
-        "corners",
-        "coups de coin",
-        "corners par match",
-        "moyenne corners",
-    ],
-    "cartons": [
-        "cartons",
-        "cartons jaunes",
-        "cartons rouges",
-        "avertissements",
-        "cartons par match",
-    ],
-    "tirs": [
-        "tirs",
-        "tirs tentés",
-        "shots",
-        "frappes",
-        "tirs par match",
-    ],
-    "tirs_cadres": [
-        "tirs cadrés",
-        "tirs au but",
-        "frappes cadrées",
-        "shots on target",
-        "tirs cadrés par match",
-    ],
-    "possession": [
-        "possession",
-        "possession moyenne",
-        "pourcentage de possession",
-        "possession de balle",
-    ],
-    "fautes": [
-        "fautes",
-        "fautes commises",
-        "fautes par match",
-        "fouls",
-    ],
-    "hors_jeu": [
-        "hors-jeu",
-        "hors jeu",
-        "hors-jeu par match",
-        "offsides",
-    ],
+    "corners": ["corners", "corner stats"],
+    "cartons": ["yellow cards", "red cards", "cartons"],
+    "tirs": ["shots", "tirs"],
+    "tirs_cadres": ["shots on target", "tirs cadrés"],
+    "possession": ["possession"],
+    "fautes": ["fouls", "fautes"],
+    "hors_jeu": ["offsides", "hors jeu"],
 }
 
 
-def _normalise_search_text(text):
-    """Normalise légèrement le texte sans supprimer les chiffres utiles."""
-    if not text:
-        return ""
-    text = str(text).replace("\u00a0", " ")
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+def search_detailed_stats(team_name):
+    all_results = {}
 
+    for stat_name, keywords in STAT_QUERY_TYPES.items():
+        collected = []
 
-def _serper_result_text(result):
-    """Assemble les champs utiles d'un résultat Serper."""
-    parts = [
-        result.get("title", ""),
-        result.get("snippet", ""),
-        result.get("description", ""),
-        result.get("publicationInfo", ""),
-    ]
-
-    # Certains résultats Serper peuvent contenir un richSnippet/attributes.
-    rich = result.get("richSnippet", {})
-    if isinstance(rich, dict):
-        for value in rich.values():
-            if isinstance(value, (str, int, float)):
-                parts.append(str(value))
-            elif isinstance(value, dict):
-                parts.extend(str(v) for v in value.values() if isinstance(v, (str, int, float)))
-
-    return _normalise_search_text(" ".join(p for p in parts if p))
-
-
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def fetch_match_statistics(match_id):
-    """Statistiques officielles d'un match via football-data.org."""
-    if not match_id:
-        return None, ""
-
-    result = football_status(f"/matches/{int(match_id)}")
-
-    if not result or result.get("status") != 200:
-        status = result.get("status", 0) if result else 0
-        detail = result.get("error", "") if result else ""
-        return None, f"HTTP {status} {detail}".strip()
-
-    data = result.get("data") or {}
-    home_stats = (data.get("homeTeam") or {}).get("statistics") or {}
-    away_stats = (data.get("awayTeam") or {}).get("statistics") or {}
-
-    if not home_stats and not away_stats:
-        return None, (
-            "Aucune statistique détaillée retournée par football-data.org. "
-            "Le Statistic Add-On peut être nécessaire."
-        )
-
-    return {
-        "homeTeam": data.get("homeTeam") or {},
-        "awayTeam": data.get("awayTeam") or {},
-        "home_stats": home_stats,
-        "away_stats": away_stats,
-    }, ""
-
-
-def _official_empty_stat():
-    return {
-        "available": False,
-        "signals": [],
-        "_source": "football-data.org",
-    }
-
-
-def _official_stat(value, percent_value=False):
-    if value is None:
-        return _official_empty_stat()
-
-    return {
-        "available": True,
-        "signals": [{
-            "source": "football-data.org",
-            "title": (
-                f"football-data.org : {value}"
-                + ("%" if percent_value else "")
-            ),
-            "snippet": "Moyenne calculée sur les derniers matchs terminés.",
-            "values": [{
-                "value": value,
-                "percent": percent_value,
-            }],
-        }],
-        "_source": "football-data.org",
-    }
-
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def football_data_team_detailed_stats(team_id, limit=3):
-    """Moyennes réelles des statistiques des derniers matchs terminés."""
-    keys = [
-        "corners",
-        "cartons",
-        "tirs",
-        "tirs_cadres",
-        "possession",
-        "fautes",
-        "hors_jeu",
-    ]
-    output = {key: _official_empty_stat() for key in keys}
-
-    history = fetch_team_history(team_id, 8)
-    finished = [
-        match for match in history
-        if match.get("status") == "FINISHED" and match.get("id")
-    ][:max(1, int(limit))]
-
-    if not finished:
-        return output, "Aucun match terminé exploitable."
-
-    values = {key: [] for key in keys}
-    errors = []
-
-    for match in finished:
-        detail, error = fetch_match_statistics(match.get("id"))
-
-        if error:
-            errors.append(error)
-        if not detail:
-            continue
-
-        home_team = detail.get("homeTeam") or {}
-        away_team = detail.get("awayTeam") or {}
-
-        if team_id == home_team.get("id"):
-            stats = detail.get("home_stats") or {}
-        elif team_id == away_team.get("id"):
-            stats = detail.get("away_stats") or {}
-        else:
-            continue
-
-        mapping = {
-            "corners": "corner_kicks",
-            "tirs": "shots",
-            "tirs_cadres": "shots_on_goal",
-            "possession": "ball_possession",
-            "fautes": "fouls",
-            "hors_jeu": "offsides",
-        }
-
-        for key, api_key in mapping.items():
-            value = safe_float(stats.get(api_key))
-            if value is not None:
-                values[key].append(value)
-
-        if any(
-            field in stats
-            for field in ("yellow_cards", "yellow_red_cards", "red_cards")
-        ):
-            yellow = safe_float(stats.get("yellow_cards")) or 0
-            yellow_red = safe_float(stats.get("yellow_red_cards")) or 0
-            red = safe_float(stats.get("red_cards")) or 0
-            values["cartons"].append(yellow + yellow_red + red)
-
-    for key, numbers in values.items():
-        if numbers:
-            average = sum(numbers) / len(numbers)
-            output[key] = _official_stat(
-                round(average, 1 if key == "possession" else 2),
-                percent_value=(key == "possession"),
+        for keyword in keywords:
+            query = (
+                f'"{team_name}" football '
+                f'{keyword} statistics'
             )
 
-    if not any(item["available"] for item in output.values()):
-        return output, (
-            errors[0]
-            if errors
-            else "Aucune statistique détaillée exploitable."
-        )
+            results = serp_search(query, num=5)
 
-    return output, ""
+            for result in results:
+                collected.append({
+                    "title": result.get("title", ""),
+                    "snippet": result.get("snippet", ""),
+                    "link": result.get("link", ""),
+                })
 
+        unique = {}
 
-def search_detailed_stats(
-    team_name,
-    match_date=None,
-    competition_code=None,
-    team_id=None,
-):
-    """V18 : source unique = football-data.org."""
-    if not team_id:
-        empty = {
-            key: _official_empty_stat()
-            for key in (
-                "corners",
-                "cartons",
-                "tirs",
-                "tirs_cadres",
-                "possession",
-                "fautes",
-                "hors_jeu",
+        for item in collected:
+            key = (
+                item["title"],
+                item["snippet"],
             )
-        }
-        return empty, "ID équipe football-data.org manquant."
+            unique[key] = item
 
-    return football_data_team_detailed_stats(team_id, limit=3)
+        all_results[stat_name] = list(
+            unique.values()
+        )[:10]
+
+    return all_results
 
 
 # ============================================================
-# EXTRACTION DE NOMBRES — VERSION SOUPLE
-
+# EXTRACTION DE NOMBRES
 # ============================================================
 
 def extract_numbers(text):
-    """Extrait les nombres utiles malgré les formats FR/EN.
-
-    Gère notamment : 12,4 ; 12.4 ; 55 % ; 55,2% ; 8 ; 8,0.
-    Les dates et nombres collés à des lettres sont ignorés autant que
-    possible pour réduire les faux positifs provenant des snippets.
-    """
-    text = _normalise_search_text(text)
     if not text:
         return []
 
-    pattern = r"(?<![\w])\d{1,3}(?:[\s.]\d{3})*(?:[.,]\d+)?\s*%?"
-    raw_values = re.findall(pattern, text)
+    pattern = r"(?<!\w)(\d+(?:[.,]\d+)?)(?!\w)"
+    values = re.findall(pattern, text)
+
     numbers = []
 
-    for raw in raw_values:
-        value = raw.strip()
-        is_percent = "%" in value
-        value = value.replace("%", "").replace(" ", "")
-
-        # Pour les nombres de type 1.234, on traite le point comme séparateur
-        # de milliers seulement lorsqu'il est suivi de trois chiffres.
-        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", value):
-            value = value.replace(".", "")
-        else:
-            value = value.replace(",", ".")
-
+    for value in values:
         try:
-            number_value = float(value)
+            numbers.append(
+                float(value.replace(",", "."))
+            )
         except (TypeError, ValueError):
-            continue
-
-        # Eviter les années/dates fréquentes dans les snippets.
-        if 1900 <= number_value <= 2100 and not is_percent:
-            continue
-
-        numbers.append({
-            "value": number_value,
-            "percent": is_percent,
-            "raw": raw.strip(),
-        })
+            pass
 
     return numbers
-
-
-def extract_stat_values(text, stat_name):
-    """Extrait en priorité les nombres proches des mots de la statistique."""
-    text = _normalise_search_text(text)
-    if not text:
-        return []
-
-    aliases = {
-        "corners": r"corners?|coups? de coin|corner",
-        "cartons": r"cartons?|jaunes?|rouges?|avertissements?",
-        "tirs": r"tirs?|frappes?|shots?",
-        "tirs_cadres": r"tirs? cadr[ée]s?|tirs? au but|shots? on target",
-        "possession": r"possession(?: de balle)?",
-        "fautes": r"fautes?|fouls?",
-        "hors_jeu": r"hors[- ]jeu|offsides?",
-    }
-
-    alias = aliases.get(stat_name, r"statistiques?")
-    number_pattern = r"\d{1,3}(?:[\s.]\d{3})*(?:[.,]\d+)?\s*%?"
-    values = []
-
-    # Recherche des nombres dans une fenêtre autour du mot-clé.
-    contextual = re.compile(
-        rf"(?:{alias}).{{0,80}}?({number_pattern})"
-        rf"|({number_pattern}).{{0,80}}?(?:{alias})",
-        re.IGNORECASE,
-    )
-
-    for match in contextual.finditer(text):
-        raw = next((group for group in match.groups() if group), None)
-        if raw:
-            values.extend(extract_numbers(raw))
-
-    # Fallback : si aucun nombre n'est proche du mot-clé, utiliser les
-    # nombres généraux du snippet.
-    if not values:
-        values = extract_numbers(text)
-
-    # Dédoublonnage tout en gardant l'information %.
-    unique = []
-    seen = set()
-    for item in values:
-        key = (item["value"], item["percent"])
-        if key not in seen:
-            seen.add(key)
-            unique.append(item)
-
-    return unique[:12]
 
 
 def summarize_stat_results(results):
@@ -1974,34 +904,26 @@ def summarize_stat_results(results):
     numbers = []
 
     for item in results:
-        text = item.get("search_text") or (
-            item.get("title", "") + " " + item.get("snippet", "")
+        text = (
+            item["title"]
+            + " "
+            + item["snippet"]
         )
-        stat_name = item.get("stat_name", "")
 
-        extracted = item.get("values") or extract_stat_values(text, stat_name)
-        numbers.extend(extracted)
+        numbers.extend(
+            extract_numbers(text)
+        )
 
         signals.append({
-            "title": item.get("title", ""),
-            "snippet": item.get("snippet", ""),
-            "link": item.get("link", ""),
-            "values": extracted,
+            "title": item["title"],
+            "snippet": item["snippet"],
+            "link": item["link"],
         })
 
-    # Uniques globales pour éviter de répéter les mêmes valeurs.
-    unique_numbers = []
-    seen_numbers = set()
-    for item in numbers:
-        key = (item["value"], item["percent"])
-        if key not in seen_numbers:
-            seen_numbers.add(key)
-            unique_numbers.append(item)
-
     return {
-        "available": bool(signals),
+        "available": True,
         "signals": signals,
-        "numbers": unique_numbers[:20],
+        "numbers": numbers,
     }
 
 
@@ -2021,7 +943,7 @@ def search_absences(team_name, match_date):
     collected = []
 
     for query in queries:
-        results = serper_search(query, 6)
+        results = serp_search(query, 6)
 
         for result in results:
             collected.append({
@@ -2325,10 +1247,6 @@ def human_analysis(
 # ============================================================
 
 def analyze_match(match):
-    global FOTMOB_LAST_ERROR, SOFASCORE_LAST_ERROR
-    FOTMOB_LAST_ERROR = ""
-    SOFASCORE_LAST_ERROR = ""
-
     home = match.get("homeTeam", {})
     away = match.get("awayTeam", {})
 
@@ -2401,9 +1319,10 @@ def analyze_match(match):
         away_standing,
     )
 
-    match_date = _coerce_date(
-        match.get("utcDate", "")
-    )
+    match_date = match.get(
+        "utcDate",
+        "",
+    )[:10]
 
     # Absences.
     home_absences_raw = search_absences(
@@ -2431,13 +1350,6 @@ def analyze_match(match):
         away_absences,
     )
 
-    # Stabilisation : en début de saison, quelques matchs peuvent produire
-    # des lambdas irréalistes. On conserve le signal sans laisser le modèle
-    # dépasser des bornes de scoring raisonnables avant d'avoir un échantillon
-    # plus large.
-    home_lambda = max(0.25, min(float(home_lambda), 3.20))
-    away_lambda = max(0.20, min(float(away_lambda), 2.50))
-
     # Modèle.
     matrix = poisson_matrix(
         home_lambda,
@@ -2462,19 +1374,23 @@ def analyze_match(match):
     )
 
     # Statistiques Web.
-    home_stats, home_stats_error = search_detailed_stats(
-        home_name,
-        match_date,
-        competition_code,
-        team_id=home_id,
+    home_stats_raw = search_detailed_stats(
+        home_name
     )
 
-    away_stats, away_stats_error = search_detailed_stats(
-        away_name,
-        match_date,
-        competition_code,
-        team_id=away_id,
+    away_stats_raw = search_detailed_stats(
+        away_name
     )
+
+    home_stats = {
+        key: summarize_stat_results(value)
+        for key, value in home_stats_raw.items()
+    }
+
+    away_stats = {
+        key: summarize_stat_results(value)
+        for key, value in away_stats_raw.items()
+    }
 
     verdict = human_analysis(
         home_name,
@@ -2508,8 +1424,6 @@ def analyze_match(match):
         "away_absences": away_absences,
         "home_stats": home_stats,
         "away_stats": away_stats,
-        "home_stats_error": home_stats_error,
-        "away_stats_error": away_stats_error,
         "verdict": verdict,
     }
 
@@ -2538,7 +1452,9 @@ def display_detailed_stats(title, stats):
         st.markdown(f"**{label}**")
 
         if not data.get("available", False):
-            st.caption("Donnée réelle non disponible pour cette statistique.")
+            st.caption(
+                "Donnée non trouvée dans les résultats disponibles."
+            )
             continue
 
         signals = data.get("signals", [])
@@ -2547,47 +1463,11 @@ def display_detailed_stats(title, stats):
             st.caption("Aucun signal exploitable.")
             continue
 
-        # Affiche d'abord les valeurs réellement détectées dans les snippets.
-        detected = []
-        for signal in signals[:5]:
-            for value in signal.get("values", []):
-                suffix = " %" if value.get("percent") else ""
-                detected.append(f"{value.get("value")}{suffix}")
-
-        if detected:
-            # Conserver l'ordre et supprimer les doublons.
-            detected = list(dict.fromkeys(detected))[:8]
-            st.success("📊 Valeurs détectées : " + " · ".join(detected))
-
-        sources = sorted({
-            str(signal.get("source", "")).lower()
-            for signal in signals[:5]
-            if signal.get("source")
-        })
-        if sources:
-            source_label = ", ".join(
-                "SofaScore" if src == "sofascore" else "FotMob" if src == "fotmob" else "Serper" if src == "serper" else src
-                for src in sources
-            )
-            st.caption("🔎 Source : " + source_label)
-
         for signal in signals[:3]:
             st.write("• " + signal["title"])
 
             if signal["snippet"]:
                 st.caption(signal["snippet"])
-
-
-# ============================================================
-# DIAGNOSTIC DES SOURCES STATS
-# ============================================================
-
-def display_stats_source_diagnostic():
-    st.info(
-        "🟢 Source unique : football-data.org. "
-        "Les statistiques détaillées utilisent les derniers matchs "
-        "terminés de l'équipe."
-    )
 
 
 # ============================================================
@@ -3171,19 +2051,6 @@ if "matches_v10" in st.session_state:
                         result["away_stats"],
                     )
 
-                display_stats_source_diagnostic()
-
-                if result.get("home_stats_error"):
-                    st.caption(
-                        "ℹ️ Statistiques domicile : "
-                        + result["home_stats_error"]
-                    )
-                if result.get("away_stats_error"):
-                    st.caption(
-                        "ℹ️ Statistiques extérieur : "
-                        + result["away_stats_error"]
-                    )
-
                 # =================================================
                 # ABSENCES
                 # =================================================
@@ -3325,7 +2192,7 @@ if "matches_v10" in st.session_state:
                 )
 
                 st.caption(
-                    "Rodrigue Pro Football AI V18 — "
+                    "Rodrigue Pro Football AI V10 — "
                     "les données absentes ne sont pas remplacées "
                     "par des valeurs artificielles."
                 )
