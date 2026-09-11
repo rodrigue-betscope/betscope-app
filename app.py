@@ -628,35 +628,104 @@ def analyze_home_away(matches, team_id, home=True, last_n=8):
 # ============================================================
 
 def poisson_probability(lam, goals):
-    if lam <= 0:
+    try:
+        lam = float(lam)
+        goals = int(goals)
+    except (TypeError, ValueError, OverflowError):
         return 0.0
 
-    return (
-        math.exp(-lam)
-        * (lam ** goals)
-        / math.factorial(goals)
-    )
+    if not math.isfinite(lam) or lam < 0:
+        return 0.0
+
+    if goals < 0:
+        return 0.0
+
+    # Cas λ = 0
+    if lam == 0.0:
+        return 1.0 if goals == 0 else 0.0
+
+    try:
+        log_probability = (
+            -lam
+            + goals * math.log(lam)
+            - math.lgamma(goals + 1)
+        )
+
+        probability = math.exp(log_probability)
+
+    except (ValueError, OverflowError):
+        return 0.0
+
+    if not math.isfinite(probability):
+        return 0.0
+
+    return max(0.0, min(1.0, probability))
 
 
 def poisson_matrix(home_lambda, away_lambda, max_goals=7):
-    matrix = np.zeros(
-        (max_goals + 1, max_goals + 1)
+    try:
+        home_lambda = float(home_lambda)
+        away_lambda = float(away_lambda)
+        max_goals = int(max_goals)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(
+            "Paramètres Poisson invalides."
+        )
+
+    if not math.isfinite(home_lambda) or home_lambda < 0:
+        raise ValueError("home_lambda invalide.")
+
+    if not math.isfinite(away_lambda) or away_lambda < 0:
+        raise ValueError("away_lambda invalide.")
+
+    if max_goals < 1:
+        raise ValueError("max_goals doit être >= 1.")
+
+    # Probabilités de buts de chaque équipe
+    home_probs = np.array([
+        poisson_probability(home_lambda, h)
+        for h in range(max_goals + 1)
+    ], dtype=float)
+
+    away_probs = np.array([
+        poisson_probability(away_lambda, a)
+        for a in range(max_goals + 1)
+    ], dtype=float)
+
+    # Matrice des scores exacts
+    matrix = np.outer(home_probs, away_probs)
+
+    # Nettoyage des valeurs numériques
+    matrix = np.nan_to_num(
+        matrix,
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0
     )
 
-    for h in range(max_goals + 1):
-        for a in range(max_goals + 1):
-            matrix[h, a] = (
-                poisson_probability(home_lambda, h)
-                * poisson_probability(away_lambda, a)
-            )
+    matrix = np.maximum(matrix, 0.0)
 
-    total = matrix.sum()
+    # Normalisation
+    total = float(matrix.sum())
 
-    if total > 0:
-        matrix /= total
+    if total <= 0.0 or not math.isfinite(total):
+        raise ValueError(
+            "Matrice de Poisson invalide."
+        )
+
+    matrix /= total
+
+    # Contrôle final
+    final_total = float(matrix.sum())
+
+    if final_total <= 0.0 or not math.isfinite(final_total):
+        raise ValueError(
+            "Erreur de normalisation de la matrice."
+        )
+
+    matrix /= final_total
 
     return matrix
-
 
 # ============================================================
 # MARCHÉS
