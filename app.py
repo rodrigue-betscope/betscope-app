@@ -1,5 +1,5 @@
 # Démarrage Pydroid 3 / terminal :
-# streamlit run Rodrigue_Pro_Football_AI_V15_404_STATS_FIX.py --server.address 0.0.0.0 --server.port 8501
+# streamlit run Rodrigue_Pro_Football_AI_V17_FINAL_DATETIME_FIX.py --server.address 0.0.0.0 --server.port 8501
 #
 
 # ============================================================
@@ -23,7 +23,7 @@
 import math
 import re
 from difflib import SequenceMatcher
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pandas as pd
