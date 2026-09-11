@@ -4,7 +4,7 @@
 # ============================================================
 # Sources :
 #   - football-data.org : matchs, résultats, classement
-#   - SerpApi / Google : contexte, blessures, suspensions,
+#   - Serper / Google : contexte, blessures, suspensions,
 #     statistiques détaillées et événements disponibles sur le Web
 #
 # CORRECTIONS PRINCIPALES :
@@ -31,13 +31,18 @@ import streamlit as st
 # CONFIGURATION
 # ============================================================
 
-FOOTBALL_DATA_KEY = st.secrets["FOOTBALL_DATA_KEY"]
-SERPER_API_KEY = st.secrets["SERPER_API_KEY"]
+FOOTBALL_DATA_KEY = "d212fb8b550d4756b16521dbe73b708d"
+SERPER_API_KEY = "Cc3ab2e2bcc254efd9fb445a12a0815aa189a043"
 
+# Priorité à Streamlit Secrets si la clé y est configurée.
+# Fallback : clé fournie pour cette version du programme.
+try:
+    SERPER_API_KEY = st.secrets.get("SERPER_API_KEY", SERPER_API_KEY)
+except Exception:
+    pass
 
 API_BASE = "https://api.football-data.org/v4"
 SERPER_URL = "https://google.serper.dev/search"
-
 
 COMPETITIONS = {
     "Premier League": "PL",
@@ -215,34 +220,43 @@ def football_status(endpoint, params=None):
 
 
 # ============================================================
-# SERPER
+# SERPER / GOOGLE
 # ============================================================
 
 def serper_search(query, num=8):
-    headers = {
-        "X-API-KEY": SERPER_API_KEY,
-        "Content-Type": "application/json"
-    }
+    """Recherche Google via l'API Serper.
+
+    Serper utilise POST + JSON avec la clé dans X-API-KEY.
+    Le format des résultats organiques est normalisé pour que
+    le reste de l'application conserve la même structure.
+    """
+    if not SERPER_API_KEY:
+        return []
+
     payload = {
         "q": query,
         "gl": "cm",
         "hl": "fr",
-        "num": num
+        "num": num,
     }
+
     try:
         response = SESSION.post(
             SERPER_URL,
-            headers=headers,
+            headers={
+                "X-API-KEY": SERPER_API_KEY,
+                "Content-Type": "application/json",
+            },
             json=payload,
             timeout=25,
         )
-        
+
         if response.status_code != 200:
             return []
-            
+
         data = response.json()
         return data.get("organic", [])
-        
+
     except (requests.RequestException, ValueError):
         return []
 
@@ -634,27 +648,31 @@ def analyze_home_away(matches, team_id, home=True, last_n=8):
 def poisson_probability(lam, goals):
     if lam <= 0:
         return 0.0
+
     return (
         math.exp(-lam)
         * (lam ** goals)
         / math.factorial(goals)
     )
 
-def poisson_matrix(home_lambda, away_lambda, max_goals):
-    if home_lambda <= 0 or away_lambda <= 0:
-        return np.zeros((max_goals + 1, max_goals + 1))
-    
-    # Calcul vectoriel des probabilités pour l'équipe à domicile et à l'extérieur en une seule passe
-    h_probs = np.array([poisson_probability(home_lambda, h) for h in range(max_goals + 1)])
-    a_probs = np.array([poisson_probability(away_lambda, a) for a in range(max_goals + 1)])
-    
-    # Produit externe pour générer toute la matrice instantanément sans boucles imbriquées
-    matrix = np.outer(h_probs, a_probs)
-    
+
+def poisson_matrix(home_lambda, away_lambda, max_goals=7):
+    matrix = np.zeros(
+        (max_goals + 1, max_goals + 1)
+    )
+
+    for h in range(max_goals + 1):
+        for a in range(max_goals + 1):
+            matrix[h, a] = (
+                poisson_probability(home_lambda, h)
+                * poisson_probability(away_lambda, a)
+            )
+
     total = matrix.sum()
+
     if total > 0:
         matrix /= total
-        
+
     return matrix
 
 
@@ -843,7 +861,7 @@ def search_detailed_stats(team_name):
                 f'{keyword} statistics'
             )
 
-            results = serp_search(query, num=5)
+            results = serper_search(query, num=5)
 
             for result in results:
                 collected.append({
@@ -943,7 +961,7 @@ def search_absences(team_name, match_date):
     collected = []
 
     for query in queries:
-        results = serp_search(query, 6)
+        results = serper_search(query, 6)
 
         for result in results:
             collected.append({
@@ -1147,6 +1165,7 @@ def contextual_adjustment(
 # ============================================================
 # ANALYSE HUMAINE
 # ============================================================
+
 def human_analysis(
     home,
     away,
@@ -1176,64 +1195,60 @@ def human_analysis(
     best_score = scores[0][0]
     best_htft = htft[0][0]
 
-    # Analyse affinée avec la force offensive de Poisson (expected goals)
-    expected_total_goals = home_lambda + away_lambda
-
     if (
         abs(p1 - p2) < 0.08
         and px >= 0.27
     ):
         reading = (
-            f"Match très serré entre {home} et {away}. "
-            "Le scénario du match nul est fortement à surveiller."
+            "Les deux équipes sont proches. "
+            "Le scénario nul est à surveiller."
         )
     elif (
         p1 > p2
-        and home_form["form_score"] >= away_form["form_score"]
-        and home_lambda > away_lambda
+        and home_form["form_score"]
+        >= away_form["form_score"]
     ):
         reading = (
-            f"Avantage net pour {home} : la dynamique récente "
-            f"et le potentiel offensif (xG: {home_lambda:.2f}) convergent."
+            "Le modèle et la dynamique récente "
+            "convergent vers l'équipe à domicile."
         )
     elif (
         p2 > p1
-        and away_form["form_score"] >= home_form["form_score"]
-        and away_lambda > home_lambda
+        and away_form["form_score"]
+        >= home_form["form_score"]
     ):
         reading = (
-            f"Coup à jouer sur {away} : l'équipe extérieure montre "
-            f"un signal statistique et offensif supérieur (xG: {away_lambda:.2f}."
+            "L'équipe extérieure possède "
+            "un signal statistique supérieur."
         )
     else:
         reading = (
-            "Les signaux entre forme et modèle mathématique sont partagés. "
-            "La prudence est de mise sur le 1X2."
+            "Les signaux sont partagés. "
+            "Une couverture est préférable au 1X2 sec."
         )
 
-    # Intégration directe de Poisson (expected_total_goals) pour les buts
-    if markets["Over 2.5"] >= 0.60 or expected_total_goals >= 2.8:
+    if markets["Over 2.5"] >= 0.60:
         goals = (
-            f"Scénario offensif dominant (Total xG estimé à {expected_total_goals:.2f}). "
-            "Le match s'oriente vers au moins 3 buts."
+            "Le scénario d'au moins 3 buts "
+            "est dominant dans le modèle."
         )
-    elif markets["Under 2.5"] >= 0.60 or expected_total_goals <= 2.1:
+    elif markets["Under 2.5"] >= 0.60:
         goals = (
-            f"Rencontre fermée en vue (Total xG estimé à {expected_total_goals:.2f}). "
-            "Le modèle privilégie un faible total de buts."
+            "Le modèle privilégie "
+            "un match à faible total de buts."
         )
     else:
-        goals = "Le total de buts reste équilibré et incertain."
+        goals = "Le total de buts reste équilibré."
 
-    if markets["BTTS Oui"] >= 0.60 and home_lambda > 1.0 and away_lambda > 1.0:
+    if markets["BTTS Oui"] >= 0.60:
         btts = (
-            f"Les deux attaques ({home}: {home_lambda:.2f} xG, {away}: {away_lambda:.2f} xG) "
-            "ont un profil très favorable pour marquer."
+            "Les deux équipes ont un signal favorable "
+            "pour marquer."
         )
     elif markets["BTTS Non"] >= 0.60:
-        btts = "Profil déséquilibré : une des deux équipes pourrait rester muette."
+        btts = "Une des deux équipes pourrait rester muette."
     else:
-        btts = "Option 'Les deux équipes marquent' difficile à départager."
+        btts = "Le BTTS est difficile à départager."
 
     return {
         "main_result": main_result,
@@ -1243,8 +1258,6 @@ def human_analysis(
         "goals": goals,
         "btts": btts,
     }
-
-
 
 
 # ============================================================
