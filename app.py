@@ -31,8 +31,8 @@ import streamlit as st
 # CONFIGURATION
 # ============================================================
 
-FOOTBALL_DATA_KEY = st.secrets["FOOTBALL_DATA_KEY"]
-SERPER_API_KEY = st.secrets["SERPER_API_KEY"]
+FOOTBALL_DATA_KEY = "d212fb8b550d4756b16521dbe73b708d"
+SERPER_API_KEY = "Cc3ab2e2bcc254efd9fb445a12a0815aa189a043"
 
 # Priorité à Streamlit Secrets si la clé y est configurée.
 # Fallback : clé fournie pour cette version du programme.
@@ -839,75 +839,250 @@ def htft_model(home_lambda, away_lambda):
 # ============================================================
 
 STAT_QUERY_TYPES = {
-    "corners": ["corners", "corner stats"],
-    "cartons": ["yellow cards", "red cards", "cartons"],
-    "tirs": ["shots", "tirs"],
-    "tirs_cadres": ["shots on target", "tirs cadrés"],
-    "possession": ["possession"],
-    "fautes": ["fouls", "fautes"],
-    "hors_jeu": ["offsides", "hors jeu"],
+    # Requêtes volontairement souples : Google/Serper peut renvoyer des
+    # pages francophones, anglophones ou des fiches statistiques locales.
+    "corners": [
+        "corners",
+        "coups de coin",
+        "corners par match",
+        "moyenne corners",
+    ],
+    "cartons": [
+        "cartons",
+        "cartons jaunes",
+        "cartons rouges",
+        "avertissements",
+        "cartons par match",
+    ],
+    "tirs": [
+        "tirs",
+        "tirs tentés",
+        "shots",
+        "frappes",
+        "tirs par match",
+    ],
+    "tirs_cadres": [
+        "tirs cadrés",
+        "tirs au but",
+        "frappes cadrées",
+        "shots on target",
+        "tirs cadrés par match",
+    ],
+    "possession": [
+        "possession",
+        "possession moyenne",
+        "pourcentage de possession",
+        "possession de balle",
+    ],
+    "fautes": [
+        "fautes",
+        "fautes commises",
+        "fautes par match",
+        "fouls",
+    ],
+    "hors_jeu": [
+        "hors-jeu",
+        "hors jeu",
+        "hors-jeu par match",
+        "offsides",
+    ],
 }
 
 
+def _normalise_search_text(text):
+    """Normalise légèrement le texte sans supprimer les chiffres utiles."""
+    if not text:
+        return ""
+    text = str(text).replace("\u00a0", " ")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _serper_result_text(result):
+    """Assemble les champs utiles d'un résultat Serper."""
+    parts = [
+        result.get("title", ""),
+        result.get("snippet", ""),
+        result.get("description", ""),
+        result.get("publicationInfo", ""),
+    ]
+
+    # Certains résultats Serper peuvent contenir un richSnippet/attributes.
+    rich = result.get("richSnippet", {})
+    if isinstance(rich, dict):
+        for value in rich.values():
+            if isinstance(value, (str, int, float)):
+                parts.append(str(value))
+            elif isinstance(value, dict):
+                parts.extend(str(v) for v in value.values() if isinstance(v, (str, int, float)))
+
+    return _normalise_search_text(" ".join(p for p in parts if p))
+
+
 def search_detailed_stats(team_name):
+    """Recherche les statistiques détaillées avec des requêtes souples.
+
+    Au lieu d'imposer une formulation anglaise précise, on envoie une requête
+    française naturelle et quelques synonymes. Les résultats sont ensuite
+    dédoublonnés. La fonction reste volontairement prudente : elle collecte
+    les signaux trouvés mais n'invente jamais une statistique absente.
+    """
     all_results = {}
+    clean_team = _normalise_search_text(team_name)
 
     for stat_name, keywords in STAT_QUERY_TYPES.items():
         collected = []
 
-        for keyword in keywords:
+        # Deux recherches maximum par statistique : on limite les appels
+        # Serper tout en couvrant plusieurs formulations linguistiques.
+        query_groups = [keywords[:3], keywords[3:]]
+        query_groups = [group for group in query_groups if group]
+
+        for group in query_groups:
+            synonym_query = " OR ".join(f'"{kw}"' for kw in group)
             query = (
-                f'"{team_name}" football '
-                f'{keyword} statistics'
+                f'"{clean_team}" football statistiques {synonym_query} '
+                f'"{stat_name.replace("_", " ")}"'
             )
 
-            results = serper_search(query, num=5)
+            results = serper_search(query, num=7)
 
             for result in results:
+                if not isinstance(result, dict):
+                    continue
+
+                title = _normalise_search_text(result.get("title", ""))
+                snippet = _normalise_search_text(
+                    result.get("snippet") or result.get("description") or ""
+                )
+                link = result.get("link", "") or ""
+
+                # On conserve uniquement des résultats ayant réellement du
+                # texte exploitable.
+                if not title and not snippet:
+                    continue
+
                 collected.append({
-                    "title": result.get("title", ""),
-                    "snippet": result.get("snippet", ""),
-                    "link": result.get("link", ""),
+                    "title": title,
+                    "snippet": snippet,
+                    "link": link,
+                    "stat_name": stat_name,
+                    "search_text": _serper_result_text(result),
                 })
 
+        # Dédoublonnage robuste : certains résultats diffèrent seulement
+        # par la casse ou quelques espaces.
         unique = {}
-
         for item in collected:
-            key = (
-                item["title"],
-                item["snippet"],
-            )
-            unique[key] = item
+            key = re.sub(
+                r"\s+",
+                " ",
+                (item["title"] + " " + item["snippet"]).lower(),
+            ).strip()
+            if key:
+                unique[key] = item
 
-        all_results[stat_name] = list(
-            unique.values()
-        )[:10]
+        all_results[stat_name] = list(unique.values())[:12]
 
     return all_results
 
 
 # ============================================================
-# EXTRACTION DE NOMBRES
+# EXTRACTION DE NOMBRES — VERSION SOUPLE
 # ============================================================
 
 def extract_numbers(text):
+    """Extrait les nombres utiles malgré les formats FR/EN.
+
+    Gère notamment : 12,4 ; 12.4 ; 55 % ; 55,2% ; 8 ; 8,0.
+    Les dates et nombres collés à des lettres sont ignorés autant que
+    possible pour réduire les faux positifs provenant des snippets.
+    """
+    text = _normalise_search_text(text)
     if not text:
         return []
 
-    pattern = r"(?<!\w)(\d+(?:[.,]\d+)?)(?!\w)"
-    values = re.findall(pattern, text)
-
+    pattern = r"(?<![\w])\d{1,3}(?:[\s.]\d{3})*(?:[.,]\d+)?\s*%?"
+    raw_values = re.findall(pattern, text)
     numbers = []
 
-    for value in values:
+    for raw in raw_values:
+        value = raw.strip()
+        is_percent = "%" in value
+        value = value.replace("%", "").replace(" ", "")
+
+        # Pour les nombres de type 1.234, on traite le point comme séparateur
+        # de milliers seulement lorsqu'il est suivi de trois chiffres.
+        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", value):
+            value = value.replace(".", "")
+        else:
+            value = value.replace(",", ".")
+
         try:
-            numbers.append(
-                float(value.replace(",", "."))
-            )
+            number_value = float(value)
         except (TypeError, ValueError):
-            pass
+            continue
+
+        # Eviter les années/dates fréquentes dans les snippets.
+        if 1900 <= number_value <= 2100 and not is_percent:
+            continue
+
+        numbers.append({
+            "value": number_value,
+            "percent": is_percent,
+            "raw": raw.strip(),
+        })
 
     return numbers
+
+
+def extract_stat_values(text, stat_name):
+    """Extrait en priorité les nombres proches des mots de la statistique."""
+    text = _normalise_search_text(text)
+    if not text:
+        return []
+
+    aliases = {
+        "corners": r"corners?|coups? de coin|corner",
+        "cartons": r"cartons?|jaunes?|rouges?|avertissements?",
+        "tirs": r"tirs?|frappes?|shots?",
+        "tirs_cadres": r"tirs? cadr[ée]s?|tirs? au but|shots? on target",
+        "possession": r"possession(?: de balle)?",
+        "fautes": r"fautes?|fouls?",
+        "hors_jeu": r"hors[- ]jeu|offsides?",
+    }
+
+    alias = aliases.get(stat_name, r"statistiques?")
+    number_pattern = r"\d{1,3}(?:[\s.]\d{3})*(?:[.,]\d+)?\s*%?"
+    values = []
+
+    # Recherche des nombres dans une fenêtre autour du mot-clé.
+    contextual = re.compile(
+        rf"(?:{alias}).{{0,80}}?({number_pattern})"
+        rf"|({number_pattern}).{{0,80}}?(?:{alias})",
+        re.IGNORECASE,
+    )
+
+    for match in contextual.finditer(text):
+        raw = next((group for group in match.groups() if group), None)
+        if raw:
+            values.extend(extract_numbers(raw))
+
+    # Fallback : si aucun nombre n'est proche du mot-clé, utiliser les
+    # nombres généraux du snippet.
+    if not values:
+        values = extract_numbers(text)
+
+    # Dédoublonnage tout en gardant l'information %.
+    unique = []
+    seen = set()
+    for item in values:
+        key = (item["value"], item["percent"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+
+    return unique[:12]
 
 
 def summarize_stat_results(results):
@@ -922,26 +1097,34 @@ def summarize_stat_results(results):
     numbers = []
 
     for item in results:
-        text = (
-            item["title"]
-            + " "
-            + item["snippet"]
+        text = item.get("search_text") or (
+            item.get("title", "") + " " + item.get("snippet", "")
         )
+        stat_name = item.get("stat_name", "")
 
-        numbers.extend(
-            extract_numbers(text)
-        )
+        extracted = extract_stat_values(text, stat_name)
+        numbers.extend(extracted)
 
         signals.append({
-            "title": item["title"],
-            "snippet": item["snippet"],
-            "link": item["link"],
+            "title": item.get("title", ""),
+            "snippet": item.get("snippet", ""),
+            "link": item.get("link", ""),
+            "values": extracted,
         })
 
+    # Uniques globales pour éviter de répéter les mêmes valeurs.
+    unique_numbers = []
+    seen_numbers = set()
+    for item in numbers:
+        key = (item["value"], item["percent"])
+        if key not in seen_numbers:
+            seen_numbers.add(key)
+            unique_numbers.append(item)
+
     return {
-        "available": True,
+        "available": bool(signals),
         "signals": signals,
-        "numbers": numbers,
+        "numbers": unique_numbers[:20],
     }
 
 
@@ -1480,6 +1663,18 @@ def display_detailed_stats(title, stats):
         if not signals:
             st.caption("Aucun signal exploitable.")
             continue
+
+        # Affiche d'abord les valeurs réellement détectées dans les snippets.
+        detected = []
+        for signal in signals[:5]:
+            for value in signal.get("values", []):
+                suffix = " %" if value.get("percent") else ""
+                detected.append(f"{value.get("value")}{suffix}")
+
+        if detected:
+            # Conserver l'ordre et supprimer les doublons.
+            detected = list(dict.fromkeys(detected))[:8]
+            st.success("📊 Valeurs détectées : " + " · ".join(detected))
 
         for signal in signals[:3]:
             st.write("• " + signal["title"])
