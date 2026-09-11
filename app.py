@@ -19,6 +19,7 @@
 
 import math
 import re
+from difflib import SequenceMatcher
 from datetime import date, timedelta
 
 import numpy as np
@@ -31,8 +32,9 @@ import streamlit as st
 # CONFIGURATION
 # ============================================================
 
-FOOTBALL_DATA_KEY = st.secrets["FOOTBALL_DATA_KEY"]
-SERPER_API_KEY = st.secrets["SERPER_API_KEY"]
+FOOTBALL_DATA_KEY = "d212fb8b550d4756b16521dbe73b708d"
+SERPER_API_KEY = "Cc3ab2e2bcc254efd9fb445a12a0815aa189a043"
+
 # Priorité à Streamlit Secrets si la clé y est configurée.
 # Fallback : clé fournie pour cette version du programme.
 try:
@@ -47,9 +49,10 @@ SERPER_URL = "https://google.serper.dev/search"
 # Il évite que la section Tirs/Posssession/Corners/etc. dépende
 # entièrement des snippets Google/Serper.
 SOFASCORE_BASES = [
+    # Le miroir .app est souvent plus tolérant depuis un téléphone.
     "https://api.sofascore.app/api/v1",
-    "https://api.sofascore.com/api/v1",
     "https://www.sofascore.com/api/v1",
+    "https://api.sofascore.com/api/v1",
 ]
 
 SOFASCORE_HEADERS = {
@@ -346,12 +349,37 @@ def _walk_team_candidates(obj):
     return found
 
 
+# Identifiants SofaScore vérifiés pour les équipes rencontrées fréquemment.
+# Le moteur tente d'abord cette table, puis la recherche API.
+SOFASCORE_TEAM_IDS = {
+    "az": 2950,
+    "az alkmaar": 2950,
+    "willem ii": 2961,
+    "willem ii tilburg": 2961,
+}
+
+
+def _known_sofascore_team_id(team_name):
+    key = _norm_name(team_name)
+    if key in SOFASCORE_TEAM_IDS:
+        return SOFASCORE_TEAM_IDS[key]
+    # Correspondance souple pour "Willem II Tilburg", "AZ", etc.
+    for alias, team_id in SOFASCORE_TEAM_IDS.items():
+        if alias in key or key in alias:
+            return team_id
+    return None
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def find_sofascore_team_id(team_name):
     """Trouve l'identifiant SofaScore correspondant au nom football."""
     clean = _normalise_search_text(team_name)
     if not clean:
         return None
+
+    known = _known_sofascore_team_id(clean)
+    if known:
+        return int(known)
 
     data = sofascore_get("search/all", {"q": clean})
     candidates = _walk_team_candidates(data)
@@ -393,6 +421,41 @@ def find_sofascore_team_id(team_name):
             return int(best["id"])
         except (TypeError, ValueError):
             return None
+    return None
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def find_sofascore_team_id_from_date(team_name, selected_date):
+    """Trouve n'importe quelle équipe du match du jour sans passer par search/all."""
+    clean = _norm_name(team_name)
+    if not clean:
+        return None
+
+    data = sofascore_get(
+        f"sport/football/scheduled-events/{selected_date.isoformat()}"
+    )
+    events = data.get("events", []) if isinstance(data, dict) else []
+    best_id = None
+    best_score = 0.0
+
+    for event in events:
+        for side in ("homeTeam", "awayTeam"):
+            team = event.get(side, {}) or {}
+            name = _norm_name(team.get("name", ""))
+            team_id = team.get("id")
+            if not name or not team_id:
+                continue
+            if name == clean:
+                return int(team_id)
+            score = SequenceMatcher(None, clean, name).ratio()
+            if clean in name or name in clean:
+                score += 0.25
+            if score > best_score:
+                best_score = score
+                best_id = team_id
+
+    if best_id and best_score >= 0.55:
+        return int(best_id)
     return None
 
 
@@ -492,6 +555,70 @@ def _extract_event_stat_items(data, stat_name, side):
                 # Un seul item pertinent par match pour la statistique demandée.
                 break
     return values
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def sofascore_team_detailed_stats_by_id(team_name, team_id):
+    """Version directe : évite toute recherche de nom avant les statistiques."""
+    events = fetch_sofascore_last_events(int(team_id), pages=2)
+    if not events:
+        return {}
+
+    output = {key: [] for key in STAT_QUERY_TYPES}
+    seen_events = 0
+
+    for event in events:
+        home_team = event.get("homeTeam", {}) or {}
+        away_team = event.get("awayTeam", {}) or {}
+        home_id = home_team.get("id")
+        away_id = away_team.get("id")
+
+        if int(team_id) == home_id:
+            side = "home"
+        elif int(team_id) == away_id:
+            side = "away"
+        else:
+            continue
+
+        stats_data = sofascore_get(f"event/{event.get('id')}/statistics")
+        if not stats_data:
+            continue
+
+        seen_events += 1
+        for stat_name in STAT_QUERY_TYPES:
+            vals = _extract_event_stat_items(stats_data, stat_name, side)
+            if vals:
+                output[stat_name].append({
+                    **vals[0],
+                    "event_id": event.get("id"),
+                    "opponent": (
+                        away_team.get("name")
+                        if side == "home"
+                        else home_team.get("name")
+                    ),
+                })
+
+        if seen_events >= 6:
+            break
+
+    result = {}
+    for stat_name, values in output.items():
+        if not values:
+            continue
+        average = sum(v["value"] for v in values) / len(values)
+        is_percent = any(v.get("percent") for v in values)
+        unit = " %" if is_percent else ""
+        result[stat_name] = {
+            "average": round(average, 2),
+            "matches": len(values),
+            "values": values,
+            "title": f"Moyenne {stat_name.replace('_', ' ')} — {team_name}",
+            "snippet": (
+                f"Moyenne sur {len(values)} matchs récents : "
+                f"{average:.2f}{unit}. Données SofaScore."
+            ),
+        }
+    return result
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -1222,13 +1349,35 @@ def _serper_result_text(result):
     return _normalise_search_text(" ".join(p for p in parts if p))
 
 
-def search_detailed_stats(team_name):
-    """Récupère les stats réelles : SofaScore d'abord, Serper en secours."""
+def search_detailed_stats(team_name, match_date=None):
+    """Récupère les stats réelles.
+
+    SofaScore est prioritaire. Pour le match analysé, on peut retrouver
+    directement l'ID de l'équipe depuis le calendrier SofaScore du jour,
+    ce qui évite de dépendre de search/all.
+    """
     all_results = {}
     clean_team = _normalise_search_text(team_name)
 
-    # 1) Source structurée : beaucoup plus fiable que l'interprétation de snippets.
-    structured = sofascore_team_detailed_stats(clean_team)
+    # 1) Source structurée.
+    if match_date:
+        try:
+            selected = date.fromisoformat(str(match_date)[:10])
+        except ValueError:
+            selected = None
+    else:
+        selected = None
+
+    team_id = _known_sofascore_team_id(clean_team)
+    if not team_id and selected:
+        team_id = find_sofascore_team_id_from_date(clean_team, selected)
+
+    if team_id:
+        structured = sofascore_team_detailed_stats_by_id(
+            clean_team, int(team_id)
+        )
+    else:
+        structured = sofascore_team_detailed_stats(clean_team)
     for stat_name in STAT_QUERY_TYPES:
         all_results[stat_name] = []
         item = structured.get(stat_name)
