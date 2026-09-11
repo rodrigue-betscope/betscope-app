@@ -404,6 +404,20 @@ def fotmob_get(path, params=None):
     return {}
 
 
+
+def _coerce_date(value):
+    """Convertit proprement une date ISO/string en datetime.date."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
 def _fotmob_find_team_id(team_name):
     clean = _normalise_search_text(team_name)
     if not clean:
@@ -437,6 +451,7 @@ def _fotmob_find_team_id(team_name):
 
 def _fotmob_match_list_from_league(competition_code, selected_date=None):
     """Récupère les matchs d'une saison FotMob et les filtre localement."""
+    selected_date = _coerce_date(selected_date)
     league_id = FOTMOB_LEAGUE_IDS.get(competition_code)
     if not league_id:
         return []
@@ -462,6 +477,7 @@ def _fotmob_match_date(match):
 
 def _fotmob_find_recent_team_matches(team_name, competition_code, selected_date=None, limit=8):
     """Trouve les derniers matchs terminés d'une équipe dans sa compétition."""
+    selected_date = _coerce_date(selected_date)
     team_id = _fotmob_find_team_id(team_name)
     matches = _fotmob_match_list_from_league(competition_code, selected_date)
     if not matches:
@@ -552,6 +568,7 @@ def _fotmob_stat_alias_match(label, stat_name):
 @st.cache_data(ttl=600, show_spinner=False)
 def fotmob_team_detailed_stats(team_name, competition_code, selected_date=None):
     """Moyennes réelles sur les derniers matchs terminés via FotMob."""
+    selected_date = _coerce_date(selected_date)
     matches = _fotmob_find_recent_team_matches(team_name, competition_code, selected_date, 8)
     if not matches:
         return {}
@@ -723,6 +740,7 @@ def find_sofascore_team_id(team_name):
 @st.cache_data(ttl=300, show_spinner=False)
 def find_sofascore_team_id_from_date(team_name, selected_date):
     """Trouve n'importe quelle équipe du match du jour sans passer par search/all."""
+    selected_date = _coerce_date(selected_date)
     clean = _norm_name(team_name)
     if not clean:
         return None
@@ -1681,6 +1699,8 @@ def search_detailed_stats(team_name, match_date=None, competition_code=None):
     """
     global FOTMOB_LAST_ERROR, SOFASCORE_LAST_ERROR
 
+    match_date = _coerce_date(match_date)
+
     # FotMob en premier: il ne dépend pas de curl_cffi et expose les statistiques
     # détaillées des matchs terminés.
     try:
@@ -2171,6 +2191,10 @@ def human_analysis(
 # ============================================================
 
 def analyze_match(match):
+    global FOTMOB_LAST_ERROR, SOFASCORE_LAST_ERROR
+    FOTMOB_LAST_ERROR = ""
+    SOFASCORE_LAST_ERROR = ""
+
     home = match.get("homeTeam", {})
     away = match.get("awayTeam", {})
 
@@ -2243,10 +2267,9 @@ def analyze_match(match):
         away_standing,
     )
 
-    match_date = match.get(
-        "utcDate",
-        "",
-    )[:10]
+    match_date = _coerce_date(
+        match.get("utcDate", "")
+    )
 
     # Absences.
     home_absences_raw = search_absences(
