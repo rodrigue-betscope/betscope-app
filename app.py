@@ -32,10 +32,12 @@ import streamlit as st
 # ============================================================
 
 FOOTBALL_DATA_KEY = st.secrets["FOOTBALL_DATA_KEY"]
-SERPAPI_KEY = st.secrets["SERPAPI_KEY"]
+SERPER_API_KEY = st.secrets["SERPER_API_KEY"]
+
 
 API_BASE = "https://api.football-data.org/v4"
-SERP_URL = "https://serpapi.com/search.json"
+SERPER_URL = "https://google.serper.dev/search"
+
 
 COMPETITIONS = {
     "Premier League": "PL",
@@ -213,32 +215,34 @@ def football_status(endpoint, params=None):
 
 
 # ============================================================
-# SERPAPI
+# SERPER
 # ============================================================
 
-def serp_search(query, num=8):
-    params = {
-        "engine": "google",
-        "q": query,
-        "api_key": SERPAPI_KEY,
-        "hl": "fr",
-        "gl": "cm",
-        "num": num,
+def serper_search(query, num=8):
+    headers = {
+        "X-API-KEY": SERPER_API_KEY,
+        "Content-Type": "application/json"
     }
-
+    payload = {
+        "q": query,
+        "gl": "cm",
+        "hl": "fr",
+        "num": num
+    }
     try:
-        response = SESSION.get(
-            SERP_URL,
-            params=params,
+        response = SESSION.post(
+            SERPER_URL,
+            headers=headers,
+            json=payload,
             timeout=25,
         )
-
+        
         if response.status_code != 200:
             return []
-
+            
         data = response.json()
-        return data.get("organic_results", [])
-
+        return data.get("organic", [])
+        
     except (requests.RequestException, ValueError):
         return []
 
@@ -630,31 +634,27 @@ def analyze_home_away(matches, team_id, home=True, last_n=8):
 def poisson_probability(lam, goals):
     if lam <= 0:
         return 0.0
-
     return (
         math.exp(-lam)
         * (lam ** goals)
         / math.factorial(goals)
     )
 
-
-def poisson_matrix(home_lambda, away_lambda, max_goals=7):
-    matrix = np.zeros(
-        (max_goals + 1, max_goals + 1)
-    )
-
-    for h in range(max_goals + 1):
-        for a in range(max_goals + 1):
-            matrix[h, a] = (
-                poisson_probability(home_lambda, h)
-                * poisson_probability(away_lambda, a)
-            )
-
+def poisson_matrix(home_lambda, away_lambda, max_goals):
+    if home_lambda <= 0 or away_lambda <= 0:
+        return np.zeros((max_goals + 1, max_goals + 1))
+    
+    # Calcul vectoriel des probabilités pour l'équipe à domicile et à l'extérieur en une seule passe
+    h_probs = np.array([poisson_probability(home_lambda, h) for h in range(max_goals + 1)])
+    a_probs = np.array([poisson_probability(away_lambda, a) for a in range(max_goals + 1)])
+    
+    # Produit externe pour générer toute la matrice instantanément sans boucles imbriquées
+    matrix = np.outer(h_probs, a_probs)
+    
     total = matrix.sum()
-
     if total > 0:
         matrix /= total
-
+        
     return matrix
 
 
@@ -1147,7 +1147,6 @@ def contextual_adjustment(
 # ============================================================
 # ANALYSE HUMAINE
 # ============================================================
-
 def human_analysis(
     home,
     away,
@@ -1177,60 +1176,64 @@ def human_analysis(
     best_score = scores[0][0]
     best_htft = htft[0][0]
 
+    # Analyse affinée avec la force offensive de Poisson (expected goals)
+    expected_total_goals = home_lambda + away_lambda
+
     if (
         abs(p1 - p2) < 0.08
         and px >= 0.27
     ):
         reading = (
-            "Les deux équipes sont proches. "
-            "Le scénario nul est à surveiller."
+            f"Match très serré entre {home} et {away}. "
+            "Le scénario du match nul est fortement à surveiller."
         )
     elif (
         p1 > p2
-        and home_form["form_score"]
-        >= away_form["form_score"]
+        and home_form["form_score"] >= away_form["form_score"]
+        and home_lambda > away_lambda
     ):
         reading = (
-            "Le modèle et la dynamique récente "
-            "convergent vers l'équipe à domicile."
+            f"Avantage net pour {home} : la dynamique récente "
+            f"et le potentiel offensif (xG: {home_lambda:.2f}) convergent."
         )
     elif (
         p2 > p1
-        and away_form["form_score"]
-        >= home_form["form_score"]
+        and away_form["form_score"] >= home_form["form_score"]
+        and away_lambda > home_lambda
     ):
         reading = (
-            "L'équipe extérieure possède "
-            "un signal statistique supérieur."
+            f"Coup à jouer sur {away} : l'équipe extérieure montre "
+            f"un signal statistique et offensif supérieur (xG: {away_lambda:.2f}."
         )
     else:
         reading = (
-            "Les signaux sont partagés. "
-            "Une couverture est préférable au 1X2 sec."
+            "Les signaux entre forme et modèle mathématique sont partagés. "
+            "La prudence est de mise sur le 1X2."
         )
 
-    if markets["Over 2.5"] >= 0.60:
+    # Intégration directe de Poisson (expected_total_goals) pour les buts
+    if markets["Over 2.5"] >= 0.60 or expected_total_goals >= 2.8:
         goals = (
-            "Le scénario d'au moins 3 buts "
-            "est dominant dans le modèle."
+            f"Scénario offensif dominant (Total xG estimé à {expected_total_goals:.2f}). "
+            "Le match s'oriente vers au moins 3 buts."
         )
-    elif markets["Under 2.5"] >= 0.60:
+    elif markets["Under 2.5"] >= 0.60 or expected_total_goals <= 2.1:
         goals = (
-            "Le modèle privilégie "
-            "un match à faible total de buts."
+            f"Rencontre fermée en vue (Total xG estimé à {expected_total_goals:.2f}). "
+            "Le modèle privilégie un faible total de buts."
         )
     else:
-        goals = "Le total de buts reste équilibré."
+        goals = "Le total de buts reste équilibré et incertain."
 
-    if markets["BTTS Oui"] >= 0.60:
+    if markets["BTTS Oui"] >= 0.60 and home_lambda > 1.0 and away_lambda > 1.0:
         btts = (
-            "Les deux équipes ont un signal favorable "
-            "pour marquer."
+            f"Les deux attaques ({home}: {home_lambda:.2f} xG, {away}: {away_lambda:.2f} xG) "
+            "ont un profil très favorable pour marquer."
         )
     elif markets["BTTS Non"] >= 0.60:
-        btts = "Une des deux équipes pourrait rester muette."
+        btts = "Profil déséquilibré : une des deux équipes pourrait rester muette."
     else:
-        btts = "Le BTTS est difficile à départager."
+        btts = "Option 'Les deux équipes marquent' difficile à départager."
 
     return {
         "main_result": main_result,
@@ -1240,6 +1243,8 @@ def human_analysis(
         "goals": goals,
         "btts": btts,
     }
+
+
 
 
 # ============================================================
