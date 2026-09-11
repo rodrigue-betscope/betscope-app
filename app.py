@@ -3,7 +3,7 @@
 #
 
 # ============================================================
-# RODRIGUE PRO FOOTBALL AI — V10 ULTIMATE — V14 STATS MULTI-SOURCES
+# RODRIGUE PRO FOOTBALL AI — V18 FOOTBALL-DATA ONLY — V14 STATS MULTI-SOURCES
 # ============================================================
 # Sources :
 #   - football-data.org : matchs, résultats, classement
@@ -121,7 +121,7 @@ COMPETITIONS = {
 }
 
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI V10",
+    page_title="Rodrigue Pro Football AI V18",
     page_icon="⚽",
     layout="wide",
 )
@@ -1691,47 +1691,181 @@ def _serper_result_text(result):
     return _normalise_search_text(" ".join(p for p in parts if p))
 
 
-def search_detailed_stats(team_name, match_date=None, competition_code=None):
-    """
-    Source prioritaire: FotMob (moyennes réelles des derniers matchs terminés).
-    Source secondaire: SofaScore si disponible.
-    Serper est volontairement désactivé car la clé précédente retournait HTTP 403.
-    """
-    global FOTMOB_LAST_ERROR, SOFASCORE_LAST_ERROR
 
-    match_date = _coerce_date(match_date)
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_match_statistics(match_id):
+    """Statistiques officielles d'un match via football-data.org."""
+    if not match_id:
+        return None, ""
 
-    # FotMob en premier: il ne dépend pas de curl_cffi et expose les statistiques
-    # détaillées des matchs terminés.
-    try:
-        fot = fotmob_team_detailed_stats(
-            team_name,
-            competition_code=competition_code,
-            selected_date=match_date,
+    result = football_status(f"/matches/{int(match_id)}")
+
+    if not result or result.get("status") != 200:
+        status = result.get("status", 0) if result else 0
+        detail = result.get("error", "") if result else ""
+        return None, f"HTTP {status} {detail}".strip()
+
+    data = result.get("data") or {}
+    home_stats = (data.get("homeTeam") or {}).get("statistics") or {}
+    away_stats = (data.get("awayTeam") or {}).get("statistics") or {}
+
+    if not home_stats and not away_stats:
+        return None, (
+            "Aucune statistique détaillée retournée par football-data.org. "
+            "Le Statistic Add-On peut être nécessaire."
         )
-        if fot and any(v is not None for v in fot.values()):
-            fot["_source"] = "FotMob"
-            return fot
-    except Exception as exc:
-        FOTMOB_LAST_ERROR = str(exc)
 
-    # SofaScore comme secours.
-    try:
-        team_id = _known_sofascore_team_id(team_name)
-        if not team_id and match_date:
-            team_id = find_sofascore_team_id_from_date(team_name, match_date)
-        if team_id:
-            sofa = sofascore_team_detailed_stats_by_id(team_name, team_id)
-            if sofa and any(v is not None for v in sofa.values()):
-                sofa["_source"] = "SofaScore"
-                return sofa
-    except Exception as exc:
-        SOFASCORE_LAST_ERROR = str(exc)
+    return {
+        "homeTeam": data.get("homeTeam") or {},
+        "awayTeam": data.get("awayTeam") or {},
+        "home_stats": home_stats,
+        "away_stats": away_stats,
+    }, ""
 
-    return {}
+
+def _official_empty_stat():
+    return {
+        "available": False,
+        "signals": [],
+        "_source": "football-data.org",
+    }
+
+
+def _official_stat(value, percent_value=False):
+    if value is None:
+        return _official_empty_stat()
+
+    return {
+        "available": True,
+        "signals": [{
+            "source": "football-data.org",
+            "title": (
+                f"football-data.org : {value}"
+                + ("%" if percent_value else "")
+            ),
+            "snippet": "Moyenne calculée sur les derniers matchs terminés.",
+            "values": [{
+                "value": value,
+                "percent": percent_value,
+            }],
+        }],
+        "_source": "football-data.org",
+    }
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def football_data_team_detailed_stats(team_id, limit=3):
+    """Moyennes réelles des statistiques des derniers matchs terminés."""
+    keys = [
+        "corners",
+        "cartons",
+        "tirs",
+        "tirs_cadres",
+        "possession",
+        "fautes",
+        "hors_jeu",
+    ]
+    output = {key: _official_empty_stat() for key in keys}
+
+    history = fetch_team_history(team_id, 8)
+    finished = [
+        match for match in history
+        if match.get("status") == "FINISHED" and match.get("id")
+    ][:max(1, int(limit))]
+
+    if not finished:
+        return output, "Aucun match terminé exploitable."
+
+    values = {key: [] for key in keys}
+    errors = []
+
+    for match in finished:
+        detail, error = fetch_match_statistics(match.get("id"))
+
+        if error:
+            errors.append(error)
+        if not detail:
+            continue
+
+        home_team = detail.get("homeTeam") or {}
+        away_team = detail.get("awayTeam") or {}
+
+        if team_id == home_team.get("id"):
+            stats = detail.get("home_stats") or {}
+        elif team_id == away_team.get("id"):
+            stats = detail.get("away_stats") or {}
+        else:
+            continue
+
+        mapping = {
+            "corners": "corner_kicks",
+            "tirs": "shots",
+            "tirs_cadres": "shots_on_goal",
+            "possession": "ball_possession",
+            "fautes": "fouls",
+            "hors_jeu": "offsides",
+        }
+
+        for key, api_key in mapping.items():
+            value = safe_float(stats.get(api_key))
+            if value is not None:
+                values[key].append(value)
+
+        if any(
+            field in stats
+            for field in ("yellow_cards", "yellow_red_cards", "red_cards")
+        ):
+            yellow = safe_float(stats.get("yellow_cards")) or 0
+            yellow_red = safe_float(stats.get("yellow_red_cards")) or 0
+            red = safe_float(stats.get("red_cards")) or 0
+            values["cartons"].append(yellow + yellow_red + red)
+
+    for key, numbers in values.items():
+        if numbers:
+            average = sum(numbers) / len(numbers)
+            output[key] = _official_stat(
+                round(average, 1 if key == "possession" else 2),
+                percent_value=(key == "possession"),
+            )
+
+    if not any(item["available"] for item in output.values()):
+        return output, (
+            errors[0]
+            if errors
+            else "Aucune statistique détaillée exploitable."
+        )
+
+    return output, ""
+
+
+def search_detailed_stats(
+    team_name,
+    match_date=None,
+    competition_code=None,
+    team_id=None,
+):
+    """V18 : source unique = football-data.org."""
+    if not team_id:
+        empty = {
+            key: _official_empty_stat()
+            for key in (
+                "corners",
+                "cartons",
+                "tirs",
+                "tirs_cadres",
+                "possession",
+                "fautes",
+                "hors_jeu",
+            )
+        }
+        return empty, "ID équipe football-data.org manquant."
+
+    return football_data_team_detailed_stats(team_id, limit=3)
+
 
 # ============================================================
 # EXTRACTION DE NOMBRES — VERSION SOUPLE
+
 # ============================================================
 
 def extract_numbers(text):
@@ -2328,27 +2462,19 @@ def analyze_match(match):
     )
 
     # Statistiques Web.
-    home_stats_raw = search_detailed_stats(
+    home_stats, home_stats_error = search_detailed_stats(
         home_name,
         match_date,
         competition_code,
+        team_id=home_id,
     )
 
-    away_stats_raw = search_detailed_stats(
+    away_stats, away_stats_error = search_detailed_stats(
         away_name,
         match_date,
         competition_code,
+        team_id=away_id,
     )
-
-    home_stats = {
-        key: summarize_stat_results(value)
-        for key, value in home_stats_raw.items()
-    }
-
-    away_stats = {
-        key: summarize_stat_results(value)
-        for key, value in away_stats_raw.items()
-    }
 
     verdict = human_analysis(
         home_name,
@@ -2382,6 +2508,8 @@ def analyze_match(match):
         "away_absences": away_absences,
         "home_stats": home_stats,
         "away_stats": away_stats,
+        "home_stats_error": home_stats_error,
+        "away_stats_error": away_stats_error,
         "verdict": verdict,
     }
 
@@ -2455,18 +2583,11 @@ def display_detailed_stats(title, stats):
 # ============================================================
 
 def display_stats_source_diagnostic():
-    if curl_requests is None:
-        st.info(
-            "ℹ️ SofaScore : curl_cffi n'est pas installé. "
-            "Le programme utilise requests classique. Pour Pydroid 3, "
-            "installez curl_cffi afin d'améliorer l'accès aux données."
-        )
-    if SOFASCORE_LAST_ERROR:
-        st.caption("ℹ️ SofaScore : " + SOFASCORE_LAST_ERROR)
-    if FOTMOB_LAST_ERROR:
-        st.caption("ℹ️ FotMob : " + FOTMOB_LAST_ERROR)
-    if USE_SERPER_FALLBACK and SERPER_LAST_ERROR:
-        st.caption("ℹ️ Serper : " + SERPER_LAST_ERROR)
+    st.info(
+        "🟢 Source unique : football-data.org. "
+        "Les statistiques détaillées utilisent les derniers matchs "
+        "terminés de l'équipe."
+    )
 
 
 # ============================================================
@@ -3052,6 +3173,17 @@ if "matches_v10" in st.session_state:
 
                 display_stats_source_diagnostic()
 
+                if result.get("home_stats_error"):
+                    st.caption(
+                        "ℹ️ Statistiques domicile : "
+                        + result["home_stats_error"]
+                    )
+                if result.get("away_stats_error"):
+                    st.caption(
+                        "ℹ️ Statistiques extérieur : "
+                        + result["away_stats_error"]
+                    )
+
                 # =================================================
                 # ABSENCES
                 # =================================================
@@ -3193,7 +3325,7 @@ if "matches_v10" in st.session_state:
                 )
 
                 st.caption(
-                    "Rodrigue Pro Football AI V10 — "
+                    "Rodrigue Pro Football AI V18 — "
                     "les données absentes ne sont pas remplacées "
                     "par des valeurs artificielles."
                 )
