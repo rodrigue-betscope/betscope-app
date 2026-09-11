@@ -1636,17 +1636,6 @@ def analyze_match(match):
         match_date,
     )
 
-    home_absences = classify_absences(
-        home_absences_raw
-    )
-
-    away_absences = classify_absences(
-        away_absences_raw
-    )
-
-    home_lambda, away_lambda = contextual_adjustment(
-        home_lambda,
-        away_lambda,
 def analyze_match(match):
     home = match.get("homeTeam", {})
     away = match.get("awayTeam", {})
@@ -1723,6 +1712,288 @@ def analyze_match(match):
         away_id,
     )
 
+    # --------------------------------------------------------
+    # LAMBDAS
+    # --------------------------------------------------------
+
+    home_lambda, away_lambda = build_lambdas(
+        home_form,
+        away_form,
+        home_split,
+        away_split,
+        home_standing,
+        away_standing,
+    )
+
+    # --------------------------------------------------------
+    # DATE DU MATCH
+    # --------------------------------------------------------
+
+    match_date = match.get(
+        "utcDate",
+        "",
+    )[:10]
+
+    # --------------------------------------------------------
+    # ABSENCES — SERPAPI
+    # --------------------------------------------------------
+
+    try:
+        home_absences_raw = search_absences(
+            home_name,
+            match_date,
+        )
+    except Exception:
+        home_absences_raw = []
+
+    try:
+        away_absences_raw = search_absences(
+            away_name,
+            match_date,
+        )
+    except Exception:
+        away_absences_raw = []
+
+    home_absences = classify_absences(
+        home_absences_raw
+    )
+
+    away_absences = classify_absences(
+        away_absences_raw
+    )
+
+    # --------------------------------------------------------
+    # AJUSTEMENT CONTEXTUEL
+    # --------------------------------------------------------
+
+    home_lambda, away_lambda = contextual_adjustment(
+        home_lambda,
+        away_lambda,
+        home_absences,
+        away_absences,
+    )
+
+    # --------------------------------------------------------
+    # MODÈLE DE POISSON
+    # --------------------------------------------------------
+
+    matrix = poisson_matrix(
+        home_lambda,
+        away_lambda,
+    )
+
+    # --------------------------------------------------------
+    # MARCHÉS
+    # --------------------------------------------------------
+
+    markets = calculate_markets(
+        matrix
+    )
+
+    # --------------------------------------------------------
+    # SCORES EXACTS
+    # --------------------------------------------------------
+
+    scores = exact_scores(
+        matrix,
+        10,
+    )
+
+    # --------------------------------------------------------
+    # MI-TEMPS
+    # --------------------------------------------------------
+
+    ht = half_time_model(
+        home_lambda,
+        away_lambda,
+    )
+
+    # --------------------------------------------------------
+    # MI-TEMPS / FIN DE MATCH
+    # --------------------------------------------------------
+
+    htft = htft_model(
+        home_lambda,
+        away_lambda,
+    )
+
+    # --------------------------------------------------------
+    # STATISTIQUES WEB — SERPAPI
+    #
+    # IMPORTANT :
+    # SerpAPI ne doit jamais bloquer le pronostic final.
+    # --------------------------------------------------------
+
+    home_stats = {}
+    away_stats = {}
+
+    try:
+        home_stats_raw = search_detailed_stats(
+            home_name
+        )
+
+        if isinstance(
+            home_stats_raw,
+            dict,
+        ):
+            home_stats = {
+                key: summarize_stat_results(
+                    value
+                )
+                for key, value
+                in home_stats_raw.items()
+            }
+
+    except Exception:
+        home_stats = {}
+
+    try:
+        away_stats_raw = search_detailed_stats(
+            away_name
+        )
+
+        if isinstance(
+            away_stats_raw,
+            dict,
+        ):
+            away_stats = {
+                key: summarize_stat_results(
+                    value
+                )
+                for key, value
+                in away_stats_raw.items()
+            }
+
+    except Exception:
+        away_stats = {}
+
+    # --------------------------------------------------------
+    # ANALYSE HUMAINE
+    # --------------------------------------------------------
+
+    try:
+        verdict = human_analysis(
+            home_name,
+            away_name,
+            markets,
+            scores,
+            htft,
+            home_form,
+            away_form,
+            home_lambda,
+            away_lambda,
+        )
+
+    except Exception as error:
+        verdict = {
+            "main_result": max(
+                markets,
+                key=markets.get,
+            ),
+            "final_prediction": "Analyse indisponible",
+            "main_probability": 0.0,
+            "confidence": "FAIBLE",
+            "best_score": (
+                scores[0][0]
+                if scores
+                else "N/A"
+            ),
+            "best_score_probability": (
+                scores[0][1]
+                if scores
+                else 0.0
+            ),
+            "best_htft": (
+                htft[0][0]
+                if htft
+                else "N/A"
+            ),
+            "best_htft_probability": (
+                htft[0][1]
+                if htft
+                else 0.0
+            ),
+            "reading": (
+                "Les données disponibles "
+                "ne permettent pas une lecture humaine complète."
+            ),
+            "goals": "",
+            "btts": "",
+            "goals_prediction": "",
+            "btts_prediction": "",
+            "double_chance": "",
+            "double_chance_probability": 0.0,
+            "home_probability": markets.get(
+                "1",
+                0.0,
+            ),
+            "draw_probability": markets.get(
+                "X",
+                0.0,
+            ),
+            "away_probability": markets.get(
+                "2",
+                0.0,
+            ),
+            "error": str(error),
+        }
+
+    # --------------------------------------------------------
+    # RÉSULTAT FINAL
+    # --------------------------------------------------------
+
+    return {
+        "home": home_name,
+        "away": away_name,
+        "competition": competition,
+
+        "home_form": home_form,
+        "away_form": away_form,
+
+        "home_split": home_split,
+        "away_split": away_split,
+
+        "home_standing": home_standing,
+        "away_standing": away_standing,
+
+        "home_lambda": home_lambda,
+        "away_lambda": away_lambda,
+
+        "matrix": matrix,
+
+        "markets": markets,
+
+        "scores": scores,
+
+        "ht": ht,
+
+        "htft": htft,
+
+        "home_absences": home_absences,
+        "away_absences": away_absences,
+
+        "home_stats": home_stats,
+        "away_stats": away_stats,
+
+        # PRONOSTIC FINAL
+        "verdict": verdict,
+
+        # Accès direct pratique
+        "final_prediction": verdict.get(
+            "final_prediction",
+            "",
+        ),
+
+        "confidence": verdict.get(
+            "confidence",
+            "",
+        ),
+
+        "main_result": verdict.get(
+            "main_result",
+            "",
+        ),
+    }
     # --------------------------------------------------------
     # LAMBDAS
     # --------------------------------------------------------
