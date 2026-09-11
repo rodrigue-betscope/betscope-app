@@ -27,6 +27,13 @@ import pandas as pd
 import requests
 import streamlit as st
 
+# curl_cffi est optionnel mais fortement recommandé sur Android/Pydroid :
+# il reproduit une empreinte TLS navigateur et évite certains 403 SofaScore.
+try:
+    from curl_cffi import requests as curl_requests
+except ImportError:
+    curl_requests = None
+
 
 # ============================================================
 # CONFIGURATION
@@ -44,6 +51,12 @@ except Exception:
 
 API_BASE = "https://api.football-data.org/v4"
 SERPER_URL = "https://google.serper.dev/search"
+
+# Serper est désactivé par défaut : la clé actuellement fournie renvoie HTTP 403.
+# Les statistiques détaillées utilisent SofaScore directement.
+USE_SERPER_FALLBACK = False
+SERPER_LAST_ERROR = ""
+SOFASCORE_LAST_ERROR = ""
 
 # Moteur de secours pour les statistiques football détaillées.
 # Il évite que la section Tirs/Posssession/Corners/etc. dépende
@@ -302,23 +315,40 @@ SERPER_LAST_ERROR = ""
 
 
 def sofascore_get(path, params=None):
-    """GET robuste vers les endpoints publics SofaScore avec plusieurs bases."""
+    """GET robuste vers SofaScore avec empreinte navigateur si curl_cffi est installé."""
+    global SOFASCORE_LAST_ERROR
+    last_error = ""
+
     for base in SOFASCORE_BASES:
         url = base.rstrip("/") + "/" + path.lstrip("/")
         try:
-            response = SESSION.get(
-                url,
-                params=params or {},
-                headers=SOFASCORE_HEADERS,
-                timeout=15,
-            )
-            if response.status_code != 200:
-                continue
-            data = response.json()
-            if isinstance(data, dict):
-                return data
-        except (requests.RequestException, ValueError):
-            continue
+            if curl_requests is not None:
+                response = curl_requests.get(
+                    url,
+                    params=params or {},
+                    headers=SOFASCORE_HEADERS,
+                    timeout=20,
+                    impersonate="chrome",
+                )
+            else:
+                response = SESSION.get(
+                    url,
+                    params=params or {},
+                    headers=SOFASCORE_HEADERS,
+                    timeout=20,
+                )
+
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, dict):
+                    SOFASCORE_LAST_ERROR = ""
+                    return data
+
+            last_error = f"{base}: HTTP {response.status_code}"
+        except Exception as exc:
+            last_error = f"{base}: {type(exc).__name__}: {exc}"
+
+    SOFASCORE_LAST_ERROR = last_error or "Aucune réponse SofaScore exploitable."
     return {}
 
 
@@ -527,12 +557,41 @@ def _stat_name_matches(item_name, stat_name):
 
 
 def _extract_event_stat_items(data, stat_name, side):
+    """Extrait une statistique réelle d'un match SofaScore."""
     values = []
     if not isinstance(data, dict):
         return values
 
     blocks = data.get("statistics", [])
     if not isinstance(blocks, list):
+        return values
+
+    # Les cartons sont parfois séparés en jaunes et rouges.
+    if stat_name == "cartons":
+        total = 0.0
+        found = False
+        raw_parts = []
+        for block in blocks:
+            if str(block.get("period", "")).upper() != "ALL":
+                continue
+            for group in block.get("groups", []) or []:
+                for item in group.get("statisticsItems", []) or []:
+                    name = _norm_name(item.get("name", ""))
+                    if "yellow card" not in name and "red card" not in name:
+                        continue
+                    raw = item.get(side)
+                    value, _ = _parse_stat_value(raw)
+                    if value is not None:
+                        total += value
+                        found = True
+                        raw_parts.append(f"{item.get('name')}: {raw}")
+        if found:
+            return [{
+                "value": total,
+                "percent": False,
+                "raw": " + ".join(raw_parts),
+                "item_name": "Total cartons",
+            }]
         return values
 
     for block in blocks:
@@ -552,8 +611,7 @@ def _extract_event_stat_items(data, stat_name, side):
                         "raw": str(raw),
                         "item_name": item_name,
                     })
-                # Un seul item pertinent par match pour la statistique demandée.
-                break
+                return values
     return values
 
 
@@ -1398,9 +1456,9 @@ def search_detailed_stats(team_name, match_date=None):
                 "source": "sofascore",
             })
 
-    # 2) Serper uniquement pour compléter les statistiques manquantes.
+    # 2) Serper est volontairement désactivé tant que sa clé renvoie 403.
     missing = [k for k in STAT_QUERY_TYPES if not all_results[k]]
-    if missing:
+    if USE_SERPER_FALLBACK and missing:
         for stat_name in missing:
             keywords = STAT_QUERY_TYPES[stat_name]
             query_groups = [keywords[:3], keywords[3:]]
@@ -2033,11 +2091,13 @@ def analyze_match(match):
 
     # Statistiques Web.
     home_stats_raw = search_detailed_stats(
-        home_name
+        home_name,
+        match_date,
     )
 
     away_stats_raw = search_detailed_stats(
-        away_name
+        away_name,
+        match_date,
     )
 
     home_stats = {
@@ -2110,11 +2170,7 @@ def display_detailed_stats(title, stats):
         st.markdown(f"**{label}**")
 
         if not data.get("available", False):
-            st.caption(
-                "Donnée non trouvée dans les sources disponibles."
-            )
-            if SERPER_LAST_ERROR:
-                st.caption("ℹ️ Serper : " + SERPER_LAST_ERROR)
+            st.caption("Donnée réelle non disponible pour cette statistique.")
             continue
 
         signals = data.get("signals", [])
@@ -2152,6 +2208,23 @@ def display_detailed_stats(title, stats):
 
             if signal["snippet"]:
                 st.caption(signal["snippet"])
+
+
+# ============================================================
+# DIAGNOSTIC DES SOURCES STATS
+# ============================================================
+
+def display_stats_source_diagnostic():
+    if curl_requests is None:
+        st.info(
+            "ℹ️ SofaScore : curl_cffi n'est pas installé. "
+            "Le programme utilise requests classique. Pour Pydroid 3, "
+            "installez curl_cffi afin d'améliorer l'accès aux données."
+        )
+    if SOFASCORE_LAST_ERROR:
+        st.caption("ℹ️ SofaScore : " + SOFASCORE_LAST_ERROR)
+    if USE_SERPER_FALLBACK and SERPER_LAST_ERROR:
+        st.caption("ℹ️ Serper : " + SERPER_LAST_ERROR)
 
 
 # ============================================================
@@ -2734,6 +2807,8 @@ if "matches_v10" in st.session_state:
                         "✈️ " + result["away"],
                         result["away_stats"],
                     )
+
+                display_stats_source_diagnostic()
 
                 # =================================================
                 # ABSENCES
