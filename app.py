@@ -7,7 +7,7 @@ import requests
 import streamlit as st
 
 API_BASE = "https://api.football-data.org/v4"
-FOOTBALL_DATA_KEY = "d212fb8b550d4756b16521dbe73b708d"
+FOOTBALL_DATA_KEY = "e6bdfe3de8b24ba595262d336bea5446"
 COMPETITIONS = {
     "Premier League":"PL","LaLiga":"PD","Bundesliga":"BL1","Serie A":"SA",
     "Ligue 1":"FL1","Champions League":"CL","Eredivisie":"DED",
