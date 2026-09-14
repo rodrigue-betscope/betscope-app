@@ -998,17 +998,109 @@ def multi_backtest(code,years,token,max_eval=5000,warmup=30):
 # RECHERCHE DES MATCHS — VERSION CORRIGEE
 # ============================================================
 
-def find_matches(day,codes,token):
-    result=api("/matches",(("dateFrom",day.isoformat()),("dateTo",day.isoformat())),token)
-    if result["status"]!=200:
-        return [],{"status":result["status"],"error":result.get("error",""),"raw_count":0,"selected_count":0}
-    payload=result["data"] or {}
-    raw=payload.get("matches",[])
-    wanted=set(codes)
-    selected=[m for m in raw if m.get("competition",{}).get("code") in wanted]
+def find_matches(day, codes, token):
+    """Recherche robuste des matchs d'une date.
+
+    Stratégie:
+      1) endpoint global /matches avec dateFrom/dateTo;
+      2) si aucun match exploitable, endpoint /competitions/{code}/matches
+         pour chaque compétition sélectionnée;
+      3) dernier secours: /competitions/{code}/matches?dateFrom/dateTo
+         avec status=SCHEDULED si nécessaire.
+
+    On ne considère jamais un résultat vide comme une preuve qu'il n'y a
+    pas de matchs: le diagnostic conserve chaque étape et son HTTP status.
+    """
+    day_s = day.isoformat()
+    wanted = set(codes or [])
+    attempts = []
+    raw_global = []
+    selected = []
+
+    # --------------------------------------------------------
+    # 1) Recherche globale par date
+    # --------------------------------------------------------
+    result = api(
+        "/matches",
+        (("dateFrom", day_s), ("dateTo", day_s)),
+        token,
+    )
+    attempts.append({
+        "endpoint": "/matches",
+        "status": result.get("status", 0),
+        "count": len((result.get("data") or {}).get("matches", []))
+        if result.get("status") == 200 else 0,
+        "error": result.get("error", ""),
+    })
+
+    if result.get("status") == 200:
+        raw_global = (result.get("data") or {}).get("matches", []) or []
+        selected = [
+            m for m in raw_global
+            if m.get("competition", {}).get("code") in wanted
+        ]
+
+    # --------------------------------------------------------
+    # 2) Fallback compétition par compétition
+    # --------------------------------------------------------
+    fallback_matches = []
+    if not selected:
+        for code in codes or []:
+            r = api(
+                f"/competitions/{code}/matches",
+                (("dateFrom", day_s), ("dateTo", day_s)),
+                token,
+            )
+            items = []
+            if r.get("status") == 200:
+                items = (r.get("data") or {}).get("matches", []) or []
+                fallback_matches.extend(items)
+
+            attempts.append({
+                "endpoint": f"/competitions/{code}/matches",
+                "status": r.get("status", 0),
+                "count": len(items),
+                "error": r.get("error", ""),
+            })
+
+    # Pas de seconde rafale de requêtes ici : le plan gratuit de
+    # football-data.org est limité en appels/minute. L'endpoint
+    # compétition + date couvre déjà les matchs planifiés.
+
+    # Déduplication par ID, puis par date + équipes si l'ID manque.
+    unique = {}
+    for m in combined:
+        mid = m.get("id")
+        key = (
+            f"id:{mid}" if mid is not None else
+            "fallback:" + "|".join([
+                str(m.get("utcDate", "")),
+                str(m.get("homeTeam", {}).get("id", "")),
+                str(m.get("awayTeam", {}).get("id", "")),
+            ])
+        )
+        unique[key] = m
+
+    selected = [
+        m for m in unique.values()
+        if m.get("competition", {}).get("code") in wanted
+    ]
     selected.sort(key=dkey)
-    return selected,{"status":200,"error":"","raw_count":len(raw),"selected_count":len(selected),
-                     "remaining":result.get("remaining","")}
+
+    raw_count = len(raw_global)
+    fallback_count = len(fallback_matches)
+    status_codes = [a["status"] for a in attempts if a["status"]]
+    first_error = next((a["error"] for a in attempts if a["error"]), "")
+
+    return selected, {
+        "status": 200 if selected or any(x == 200 for x in status_codes) else (status_codes[0] if status_codes else 0),
+        "error": first_error,
+        "raw_count": raw_count,
+        "fallback_count": fallback_count,
+        "selected_count": len(selected),
+        "attempts": attempts,
+        "remaining": result.get("remaining", "") if result else "",
+    }
 
 
 # ============================================================
@@ -1182,6 +1274,19 @@ else:
                 "Matchs après filtrage des compétitions :",
                 diagnostic["selected_count"],
             )
+            st.write(
+                "Matchs trouvés par les fallbacks :",
+                diagnostic.get("fallback_count", 0),
+            )
+            for attempt in diagnostic.get("attempts", []):
+                label = (
+                    f"{attempt['endpoint']} · HTTP {attempt['status']} · "
+                    f"{attempt['count']} match(s)"
+                )
+                if attempt.get("error"):
+                    st.caption(label + " · " + str(attempt["error"]))
+                else:
+                    st.caption(label)
 
     # --------------------------------------------------------
     # ANALYSE DES MATCHS
