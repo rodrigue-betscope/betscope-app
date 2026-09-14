@@ -1067,6 +1067,11 @@ def find_matches(day, codes, token):
     # football-data.org est limité en appels/minute. L'endpoint
     # compétition + date couvre déjà les matchs planifiés.
 
+    # Fusion des résultats avant déduplication.
+    # IMPORTANT : cette variable doit inclure la recherche globale ET
+    # les recherches de secours par compétition.
+    combined = list(raw_global) + list(fallback_matches)
+
     # Déduplication par ID, puis par date + équipes si l'ID manque.
     unique = {}
     for m in combined:
