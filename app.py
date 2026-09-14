@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-RODRIGUE PRO FOOTBALL AI V23 FIXED+
+RODRIGUE PRO FOOTBALL AI V24 VALIDATION MAX
 football-data.org v4 only.
 
 Corrections:
@@ -623,6 +623,111 @@ def lambdas(home_rows, away_rows, home_home_rows, away_away_rows, league):
     )
 
 
+
+# ============================================================
+# V24 — ENSEMBLE ELO + NO BET + CALIBRATION
+# ============================================================
+
+def normalize_probs(p):
+    p=np.asarray(p,dtype=float)
+    p=np.nan_to_num(p,nan=0.0,posinf=0.0,neginf=0.0)
+    p=np.maximum(p,0.0)
+    s=p.sum()
+    return p/s if s>0 else np.array([0.45,0.27,0.28])
+
+
+def elo_ratings(history,before=None,k=22.0,home_adv=55.0):
+    ratings={}
+    for m in sorted(history,key=dkey):
+        if before is not None and dkey(m)>=before: break
+        if not finished(m): continue
+        hid=m.get("homeTeam",{}).get("id"); aid=m.get("awayTeam",{}).get("id")
+        if hid is None or aid is None: continue
+        rh=ratings.get(hid,1500.0); ra=ratings.get(aid,1500.0)
+        expected=1/(1+10**(-((rh+home_adv)-ra)/400))
+        f=m["score"]["fullTime"]
+        actual=1.0 if f["home"]>f["away"] else 0.5 if f["home"]==f["away"] else 0.0
+        margin=min(abs(f["home"]-f["away"]),3)
+        kk=k*(1+0.12*margin)
+        ratings[hid]=rh+kk*(actual-expected)
+        ratings[aid]=ra+kk*((1-actual)-(1-expected))
+    return ratings
+
+
+def elo_probs(history,home_id,away_id,before=None):
+    r=elo_ratings(history,before)
+    rh=r.get(home_id,1500.0); ra=r.get(away_id,1500.0)
+    diff=rh+55-ra
+    home_raw=1/(1+10**(-diff/400))
+    draw=clamp(0.285-0.00010*abs(diff),0.16,0.30)
+    remain=1-draw
+    return normalize_probs([home_raw*remain,draw,(1-home_raw)*remain])
+
+
+def empirical_probs(history,home_id,away_id,before=None):
+    prior=np.array([0.45,0.27,0.28])
+    matches=[m for m in history if finished(m) and (before is None or dkey(m)<before)][-400:]
+    counts=np.zeros(3)
+    for i,m in enumerate(matches):
+        h=m.get("homeTeam",{}).get("id"); a=m.get("awayTeam",{}).get("id")
+        f=m["score"]["fullTime"]
+        if h==home_id and a==away_id:
+            y=0 if f["home"]>f["away"] else 1 if f["home"]==f["away"] else 2
+        elif h==away_id and a==home_id:
+            y=2 if f["home"]>f["away"] else 1 if f["home"]==f["away"] else 0
+        else:
+            continue
+        counts[y]+=0.995**(len(matches)-i-1)
+    if counts.sum()<=0:
+        return prior
+    posterior=normalize_probs(counts+8*prior)
+    info=clamp(counts.sum()/20,0,1)
+    return normalize_probs(info*posterior+(1-info)*prior)
+
+
+def ensemble_probs(poisson,elo,empirical,sample_size):
+    q=clamp(sample_size/20,0,1)
+    wp=0.58+0.08*q
+    we=0.27
+    wi=max(0.05,1-wp-we)
+    return normalize_probs(wp*poisson+we*elo+wi*empirical)
+
+
+def model_entropy(p):
+    p=normalize_probs(p)
+    return float(-sum(x*math.log(x) for x in p if x>0))
+
+
+def no_bet_gate(p,sample_size):
+    p=normalize_probs(p)
+    ordered=sorted(p,reverse=True)
+    if sample_size<5:
+        return {"decision":"NO BET","reason":"Historique insuffisant.","score":0}
+    if ordered[0]<0.48:
+        return {"decision":"NO BET","reason":"Probabilité principale trop faible.","score":15}
+    if ordered[0]-ordered[1]<0.08:
+        return {"decision":"NO BET","reason":"Scénarios trop proches.","score":25}
+    if model_entropy(p)>1.02:
+        return {"decision":"NO BET","reason":"Distribution trop incertaine.","score":30}
+    score=int(clamp(45+75*(ordered[0]-0.45)+120*(ordered[0]-ordered[1])+min(sample_size,30)*0.4,0,100))
+    return {"decision":"SIGNAL","reason":"Séparation suffisante entre les scénarios.","score":score}
+
+
+def calibration_error(probabilities,targets,bins=10):
+    p=np.asarray(probabilities,dtype=float); y=np.asarray(targets,dtype=int)
+    errors=[]; weights=[]
+    for cls in range(3):
+        pc=p[:,cls]; yc=(y==cls).astype(float)
+        for b in range(bins):
+            lo=b/bins; hi=(b+1)/bins
+            mask=(pc>=lo)&((pc<=hi) if b==bins-1 else (pc<hi))
+            n=int(mask.sum())
+            if n:
+                errors.append(abs(float(pc[mask].mean())-float(yc[mask].mean())))
+                weights.append(n)
+    return float(np.average(errors,weights=weights)) if weights else None
+
+
 # ============================================================
 # H2H / MI-TEMPS / MT-FT
 # ============================================================
@@ -745,615 +850,165 @@ def htft(ht, ft):
 # ANALYSE D'UN MATCH
 # ============================================================
 
-def analyze(match, token):
-    competition_code = (
-        match.get("competition", {}).get("code", "")
-    )
-
-    season_start = str(
-        match.get("season", {}).get("startDate", "")
-    )
-
-    try:
-        year = int(season_start[:4])
-    except (TypeError, ValueError):
-        year = date.today().year
-
-    all_matches = season_matches(
-        competition_code,
-        year,
-        token,
-    )
-
-    before = dkey(match)
-    home_id = match["homeTeam"]["id"]
-    away_id = match["awayTeam"]["id"]
-
-    league = league_stats(
-        all_matches,
-        before,
-    )
-
-    home_rows = rows_before(
-        all_matches,
-        home_id,
-        before,
-        None,
-        60,
-    )
-
-    away_rows = rows_before(
-        all_matches,
-        away_id,
-        before,
-        None,
-        60,
-    )
-
-    home_home_rows = rows_before(
-        all_matches,
-        home_id,
-        before,
-        "H",
-        20,
-    )
-
-    away_away_rows = rows_before(
-        all_matches,
-        away_id,
-        before,
-        "A",
-        20,
-    )
-
-    home_lambda, away_lambda = lambdas(
-        home_rows,
-        away_rows,
-        home_home_rows,
-        away_away_rows,
-        league,
-    )
-
-    full_time = dc(
-        matrix(home_lambda, away_lambda),
-        home_lambda,
-        away_lambda,
-    )
-
-    h2h_data = h2h_signal(
-        h2h(match["id"], token),
-        home_id,
-        away_id,
-    )
-
-    full_time = apply_h2h(
-        full_time,
-        h2h_data,
-    )
-
-    half_time = ht_model(
-        home_lambda,
-        away_lambda,
-        league,
-    )
-
-    market = markets(full_time)
-
-    quality = int(
-        clamp(
-            35
-            + min(league["n"], 100) * 0.15
-            + min(
-                min(len(home_rows), len(away_rows)),
-                20,
-            ) * 1.2
-            + (8 if h2h_data["n"] >= 5 else 0),
-            0,
-            85,
-        )
-    )
-
-    sorted_1x2 = sorted(
-        [
-            market["1"],
-            market["X"],
-            market["2"],
-        ],
-        reverse=True,
-    )
-
-    confidence = int(
-        clamp(
-            50
-            + 30 * (sorted_1x2[0] - sorted_1x2[1])
-            + 0.25 * quality,
-            50,
-            90,
-        )
-    )
-
-    principal = max(
-        (
-            ("1", market["1"]),
-            ("X", market["X"]),
-            ("2", market["2"]),
-        ),
-        key=lambda z: z[1],
-    )
-
-    return {
-        "home": match["homeTeam"]["name"],
-        "away": match["awayTeam"]["name"],
-        "competition": match["competition"]["name"],
-        "date": before,
-        "status": match.get("status", ""),
-        "hl": home_lambda,
-        "al": away_lambda,
-        "league": league,
-        "hs": stats(home_rows),
-        "as": stats(away_rows),
-        "h2": h2h_data,
-        "mk": market,
-        "scores": scores(full_time),
-        "htscores": scores(half_time, 8),
-        "htft": htft(half_time, full_time),
-        "quality": quality,
-        "confidence": confidence,
-        "one": principal,
-    }
+def analyze(match,token):
+    code=match.get("competition",{}).get("code","")
+    start=str(match.get("season",{}).get("startDate",""))
+    try: year=int(start[:4])
+    except Exception: year=date.today().year
+    allm=season_matches(code,year,token)
+    before=dkey(match); hid=match["homeTeam"]["id"]; aid=match["awayTeam"]["id"]
+    lg=league_stats(allm,before)
+    hr=rows_before(allm,hid,before,None,60); ar=rows_before(allm,aid,before,None,60)
+    hhr=rows_before(allm,hid,before,"H",20); aar=rows_before(allm,aid,before,"A",20)
+    hl,al=lambdas(hr,ar,hhr,aar,lg)
+    ft=dc(matrix(hl,al),hl,al)
+    h2=h2h_signal(h2h(match["id"],token),hid,aid)
+    ft=apply_h2h(ft,h2)
+    mk=markets(ft)
+    poisson=np.array([mk["1"],mk["X"],mk["2"]],dtype=float)
+    elo=elo_probs(allm,hid,aid,before)
+    empirical=empirical_probs(allm,hid,aid,before)
+    ensemble=ensemble_probs(poisson,elo,empirical,min(len(hr),len(ar)))
+    if h2["n"]>=4:
+        ensemble=normalize_probs(0.94*ensemble+0.06*np.array([h2["home"],h2["draw"],h2["away"]]))
+    mk["1"],mk["X"],mk["2"]=map(float,ensemble)
+    mk["1X"]=mk["1"]+mk["X"]; mk["X2"]=mk["X"]+mk["2"]; mk["12"]=mk["1"]+mk["2"]
+    ht=ht_model(hl,al,lg)
+    sample=min(len(hr),len(ar))
+    quality=int(clamp(35+min(lg["n"],100)*0.15+min(sample,20)*1.2+(8 if h2["n"]>=5 else 0),0,85))
+    ordered=sorted(ensemble,reverse=True)
+    confidence=int(clamp(50+30*(ordered[0]-ordered[1])+0.25*quality,50,90))
+    principal=max((("1",mk["1"]),("X",mk["X"]),("2",mk["2"])),key=lambda z:z[1])
+    return {"home":match["homeTeam"]["name"],"away":match["awayTeam"]["name"],
+            "competition":match["competition"]["name"],"date":before,"status":match.get("status",""),
+            "hl":hl,"al":al,"league":lg,"hs":stats(hr),"as":stats(ar),"h2":h2,"mk":mk,
+            "scores":scores(ft),"htscores":scores(ht,8),"htft":htft(ht,ft),"quality":quality,
+            "confidence":confidence,"one":principal,"ensemble":ensemble,
+            "poisson_probs":poisson,"elo_probs":elo,"empirical_probs":empirical,
+            "no_bet":no_bet_gate(ensemble,sample)}
 
 
 # ============================================================
-# BACKTEST
+# V24 — BACKTEST JUSQU'À 5000 VRAIS MATCHS
 # ============================================================
 
 def outcome(match):
-    full = match["score"]["fullTime"]
-
-    if full["home"] > full["away"]:
-        return 0
-
-    if full["home"] == full["away"]:
-        return 1
-
-    return 2
+    f=match["score"]["fullTime"]
+    return 0 if f["home"]>f["away"] else 1 if f["home"]==f["away"] else 2
 
 
-def brier(probabilities, target):
-    return float(
-        sum(
-            (
-                probabilities[i]
-                - (1 if i == target else 0)
-            ) ** 2
-            for i in range(3)
-        )
-    )
+def brier(p,y):
+    return float(sum((p[i]-(1 if i==y else 0))**2 for i in range(3)))
 
 
-def logloss(probabilities, target):
-    return float(
-        -math.log(
-            clamp(
-                probabilities[target],
-                1e-7,
-                1,
-            )
-        )
-    )
+def logloss(p,y):
+    return float(-math.log(clamp(p[y],1e-7,1)))
 
 
-def predict_from_history(history, match):
-    before = dkey(match)
-    home_id = match["homeTeam"]["id"]
-    away_id = match["awayTeam"]["id"]
-
-    league = league_stats(
-        history,
-        before,
-    )
-
-    home_rows = rows_before(
-        history,
-        home_id,
-        before,
-        None,
-        60,
-    )
-
-    away_rows = rows_before(
-        history,
-        away_id,
-        before,
-        None,
-        60,
-    )
-
-    home_home_rows = rows_before(
-        history,
-        home_id,
-        before,
-        "H",
-        20,
-    )
-
-    away_away_rows = rows_before(
-        history,
-        away_id,
-        before,
-        "A",
-        20,
-    )
-
-    if len(home_rows) < 3 or len(away_rows) < 3:
-        return None
-
-    home_lambda, away_lambda = lambdas(
-        home_rows,
-        away_rows,
-        home_home_rows,
-        away_away_rows,
-        league,
-    )
-
-    mat = dc(
-        matrix(home_lambda, away_lambda),
-        home_lambda,
-        away_lambda,
-    )
-
-    market = markets(mat)
-
-    return (
-        np.array(
-            [
-                market["1"],
-                market["X"],
-                market["2"],
-            ]
-        ),
-        market,
-        home_lambda,
-        away_lambda,
-        league,
-    )
+def predict_from_history(history,match):
+    before=dkey(match); hid=match["homeTeam"]["id"]; aid=match["awayTeam"]["id"]
+    lg=league_stats(history,before)
+    hr=rows_before(history,hid,before,None,60); ar=rows_before(history,aid,before,None,60)
+    hhr=rows_before(history,hid,before,"H",20); aar=rows_before(history,aid,before,"A",20)
+    if len(hr)<3 or len(ar)<3: return None
+    hl,al=lambdas(hr,ar,hhr,aar,lg)
+    mat=dc(matrix(hl,al),hl,al); mk=markets(mat)
+    poisson=np.array([mk["1"],mk["X"],mk["2"]],dtype=float)
+    elo=elo_probs(history,hid,aid,before)
+    empirical=empirical_probs(history,hid,aid,before)
+    ensemble=ensemble_probs(poisson,elo,empirical,min(len(hr),len(ar)))
+    return ensemble,mk,mat,lg
 
 
-def run_backtest(
-    code,
-    year,
-    token,
-    max_eval=220,
-    warmup=30,
-):
-    all_matches = sorted(
-        [
-            m
-            for m in season_matches(
-                code,
-                year,
-                token,
-            )
-            if finished(m)
-        ],
-        key=dkey,
-    )
+def run_backtest(code,year,token,max_eval=5000,warmup=30):
+    allm=sorted([m for m in season_matches(code,year,token) if finished(m)],key=dkey)
+    if len(allm)<=warmup:
+        return {"status":"insufficient","n":0,"available":len(allm),
+                "message":"Pas assez de matchs après le warm-up."}
+    evals=allm[warmup:]
+    if len(evals)>max_eval: evals=evals[-max_eval:]
+    predictions=[]; targets=[]; br=[]; ll=[]; bbr=[]; bll=[]
+    over25_hits=over25_n=btts_hits=btts_n=exact_hits=no_bet_n=0
 
-    if len(all_matches) <= warmup:
-        return {
-            "status": "insufficient",
-            "n": 0,
-            "available": len(all_matches),
-            "message": (
-                "Pas assez de matchs historiques "
-                "après la période de warm-up."
-            ),
-        }
+    for m in evals:
+        history=[x for x in allm if dkey(x)<dkey(m)]
+        if len(history)<warmup: continue
+        z=predict_from_history(history,m)
+        if z is None: continue
+        probs,mk,mat,lg=z; y=outcome(m)
+        predictions.append(probs); targets.append(y)
+        br.append(brier(probs,y)); ll.append(logloss(probs,y))
+        draw=clamp(lg["draw"],0.15,0.40)
+        baseline=normalize_probs([0.54*(1-draw),draw,0.46*(1-draw)])
+        bbr.append(brier(baseline,y)); bll.append(logloss(baseline,y))
+        f=m["score"]["fullTime"]
+        over25_hits += (mk["Over 2.5"]>=0.5)==(f["home"]+f["away"]>=3); over25_n+=1
+        btts_hits += (mk["BTTS Oui"]>=0.5)==(f["home"]>0 and f["away"]>0); btts_n+=1
+        exact_hits += scores(mat,1)[0][0]==f'{f["home"]}-{f["away"]}'
+        sample=min(len(rows_before(history,m["homeTeam"]["id"],dkey(m),None,60)),
+                   len(rows_before(history,m["awayTeam"]["id"],dkey(m),None,60)))
+        no_bet_n += no_bet_gate(probs,sample)["decision"]=="NO BET"
 
-    evaluations = all_matches[warmup:]
-
-    if len(evaluations) > max_eval:
-        evaluations = evaluations[-max_eval:]
-
-    predictions = []
-    targets = []
-
-    brier_values = []
-    logloss_values = []
-
-    baseline_brier = []
-    baseline_logloss = []
-
-    over25_hits = 0
-    over25_n = 0
-
-    btts_hits = 0
-    btts_n = 0
-
-    exact_hits = 0
-
-    for match in evaluations:
-        history = [
-            x
-            for x in all_matches
-            if dkey(x) < dkey(match)
-        ]
-
-        if len(history) < warmup:
-            continue
-
-        prediction = predict_from_history(
-            history,
-            match,
-        )
-
-        if prediction is None:
-            continue
-
-        probabilities, market, home_lambda, away_lambda, league = prediction
-
-        target = outcome(match)
-
-        predictions.append(probabilities)
-        targets.append(target)
-
-        brier_values.append(
-            brier(probabilities, target)
-        )
-
-        logloss_values.append(
-            logloss(probabilities, target)
-        )
-
-        draw_rate = clamp(
-            league["draw"],
-            0.15,
-            0.40,
-        )
-
-        # Baseline volontairement simple.
-        baseline = np.array(
-            [
-                0.45 * (1 - draw_rate),
-                draw_rate,
-                0.55 * (1 - draw_rate),
-            ]
-        )
-
-        baseline_brier.append(
-            brier(baseline, target)
-        )
-
-        baseline_logloss.append(
-            logloss(baseline, target)
-        )
-
-        full = match["score"]["fullTime"]
-
-        actual_over25 = (
-            full["home"] + full["away"] >= 3
-        )
-
-        over25_hits += (
-            market["Over 2.5"] >= 0.50
-        ) == actual_over25
-        over25_n += 1
-
-        actual_btts = (
-            full["home"] > 0
-            and full["away"] > 0
-        )
-
-        btts_hits += (
-            market["BTTS Oui"] >= 0.50
-        ) == actual_btts
-        btts_n += 1
-
-        top_score = scores(
-            dc(
-                matrix(
-                    home_lambda,
-                    away_lambda,
-                ),
-                home_lambda,
-                away_lambda,
-            ),
-            1,
-        )[0][0]
-
-        actual_score = (
-            f'{full["home"]}-{full["away"]}'
-        )
-
-        exact_hits += top_score == actual_score
-
-    n = len(targets)
-
+    n=len(targets)
     if not n:
-        return {
-            "status": "insufficient",
-            "n": 0,
-            "available": len(all_matches),
-            "message": (
-                "Pas assez de matchs exploitables "
-                "pour calculer le backtest."
-            ),
-        }
-
-    prediction_array = np.array(predictions)
-    target_array = np.array(targets)
-
-    accuracy = float(
-        np.mean(
-            np.argmax(prediction_array, axis=1)
-            == target_array
-        )
-    )
-
-    brier_score = float(np.mean(brier_values))
-    logloss_score = float(np.mean(logloss_values))
-
-    base_brier = float(np.mean(baseline_brier))
-    base_logloss = float(np.mean(baseline_logloss))
-
-    brier_gain = (
-        1 - brier_score / max(base_brier, 1e-9)
-    )
-
-    logloss_gain = (
-        1 - logloss_score / max(base_logloss, 1e-9)
-    )
-
-    if n < 50:
-        reliability = "INSUFFISANTE"
-    elif n < 150:
-        reliability = "LIMITEE"
-    elif not (
-        brier_score < base_brier
-        and logloss_score < base_logloss
-    ):
-        reliability = "A AMELIORER"
-    else:
-        reliability = "SOLIDE"
-
-    return {
-        "status": "ok",
-        "n": n,
-        "available": len(all_matches),
-        "accuracy": accuracy,
-        "brier": brier_score,
-        "logloss": logloss_score,
-        "baseline_brier": base_brier,
-        "baseline_logloss": base_logloss,
-        "brier_gain": brier_gain,
-        "logloss_gain": logloss_gain,
-        "over25": over25_hits / max(over25_n, 1),
-        "btts": btts_hits / max(btts_n, 1),
-        "exact": exact_hits / max(n, 1),
-        "reliability": reliability,
-    }
+        return {"status":"insufficient","n":0,"available":len(allm),
+                "message":"Pas assez de matchs exploitables."}
+    pa=np.array(predictions); ya=np.array(targets)
+    bs=float(np.mean(br)); ls=float(np.mean(ll)); bbs=float(np.mean(bbr)); bls=float(np.mean(bll))
+    cal=calibration_error(pa,ya,10)
+    if n<50: rel="INSUFFISANTE"
+    elif n<150: rel="LIMITEE"
+    elif n<500: rel="MOYENNE"
+    elif bs<bbs and ls<bls and cal is not None and cal<=0.08: rel="SOLIDE"
+    else: rel="A AMELIORER"
+    return {"status":"ok","n":n,"available":len(allm),
+            "accuracy":float(np.mean(np.argmax(pa,1)==ya)),"brier":bs,"logloss":ls,
+            "baseline_brier":bbs,"baseline_logloss":bls,"brier_gain":1-bs/max(bbs,1e-9),
+            "logloss_gain":1-ls/max(bls,1e-9),"over25":over25_hits/max(over25_n,1),
+            "btts":btts_hits/max(btts_n,1),"exact":exact_hits/max(n,1),
+            "calibration_error":cal,"no_bet_rate":no_bet_n/max(n,1),"reliability":rel}
 
 
-def multi_backtest(
-    code,
-    years,
-    token,
-    max_eval=220,
-    warmup=30,
-):
-    results = []
-
+def multi_backtest(code,years,token,max_eval=5000,warmup=30):
+    results=[]; total=0
     for year in years:
-        results.append(
-            {
-                **run_backtest(
-                    code,
-                    int(year),
-                    token,
-                    max_eval,
-                    warmup,
-                ),
-                "season": int(year),
-            }
-        )
-
-    valid = [
-        result
-        for result in results
-        if result.get("status") == "ok"
-    ]
-
-    total_n = sum(
-        result["n"]
-        for result in valid
-    )
-
-    if not valid:
-        return {
-            "seasons": results,
-            "aggregate": None,
-        }
-
-    def weighted(key):
-        return sum(
-            result[key] * result["n"]
-            for result in valid
-        ) / total_n
-
-    aggregate = {
-        "n": total_n,
-        "accuracy": weighted("accuracy"),
-        "brier": weighted("brier"),
-        "logloss": weighted("logloss"),
-        "baseline_brier": weighted("baseline_brier"),
-        "baseline_logloss": weighted("baseline_logloss"),
-        "brier_gain": weighted("brier_gain"),
-        "logloss_gain": weighted("logloss_gain"),
-        "over25": weighted("over25"),
-        "btts": weighted("btts"),
-        "exact": weighted("exact"),
-    }
-
-    if total_n < 50:
-        reliability = "INSUFFISANTE"
-    elif total_n < 150:
-        reliability = "LIMITEE"
-    elif total_n < 500:
-        reliability = "MOYENNE"
-    elif (
-        aggregate["brier"] < aggregate["baseline_brier"]
-        and aggregate["logloss"] < aggregate["baseline_logloss"]
-    ):
-        reliability = "SOLIDE"
-    else:
-        reliability = "A AMELIORER"
-
-    aggregate["reliability"] = reliability
-
-    return {
-        "seasons": results,
-        "aggregate": aggregate,
-    }
+        remaining=max_eval-total
+        if remaining<=0: break
+        r=run_backtest(code,int(year),token,remaining,warmup); r["season"]=int(year)
+        results.append(r); total+=r.get("n",0)
+    valid=[r for r in results if r.get("status")=="ok"]
+    if not valid: return {"seasons":results,"aggregate":None}
+    N=sum(r["n"] for r in valid)
+    def w(k):
+        vals=[r for r in valid if r.get(k) is not None]; denom=sum(r["n"] for r in vals)
+        return None if not denom else sum(r[k]*r["n"] for r in vals)/denom
+    agg={k:w(k) for k in ["accuracy","brier","logloss","baseline_brier","baseline_logloss",
+                           "brier_gain","logloss_gain","over25","btts","exact","calibration_error","no_bet_rate"]}
+    agg["n"]=N
+    if N<50: agg["reliability"]="INSUFFISANTE"
+    elif N<150: agg["reliability"]="LIMITEE"
+    elif N<500: agg["reliability"]="MOYENNE"
+    elif agg["brier"]<agg["baseline_brier"] and agg["logloss"]<agg["baseline_logloss"] and agg["calibration_error"] is not None and agg["calibration_error"]<=0.08:
+        agg["reliability"]="SOLIDE"
+    else: agg["reliability"]="A AMELIORER"
+    return {"seasons":results,"aggregate":agg}
 
 
 # ============================================================
 # RECHERCHE DES MATCHS — VERSION CORRIGEE
 # ============================================================
 
-def find_matches(day, codes, token):
-    """
-    Recherche les matchs de la journée via /matches.
-
-    Important:
-    - on récupère d'abord les matchs de la date;
-    - on filtre ensuite localement par compétition;
-    - on ne fait jamais st.success()/st.warning() dans st.write().
-    """
-
-    payload = data(
-        "/matches",
-        (
-            ("dateFrom", day.isoformat()),
-            ("dateTo", day.isoformat()),
-        ),
-        token,
-    ) or {}
-
-    raw_matches = payload.get("matches", [])
-    wanted = set(codes)
-
-    selected = [
-        match
-        for match in raw_matches
-        if match.get("competition", {}).get("code") in wanted
-    ]
-
+def find_matches(day,codes,token):
+    result=api("/matches",(("dateFrom",day.isoformat()),("dateTo",day.isoformat())),token)
+    if result["status"]!=200:
+        return [],{"status":result["status"],"error":result.get("error",""),"raw_count":0,"selected_count":0}
+    payload=result["data"] or {}
+    raw=payload.get("matches",[])
+    wanted=set(codes)
+    selected=[m for m in raw if m.get("competition",{}).get("code") in wanted]
     selected.sort(key=dkey)
-
-    return selected, {
-        "raw_count": len(raw_matches),
-        "selected_count": len(selected),
-    }
+    return selected,{"status":200,"error":"","raw_count":len(raw),"selected_count":len(selected),
+                     "remaining":result.get("remaining","")}
 
 
 # ============================================================
@@ -1372,7 +1027,7 @@ def clear_cache():
 # ============================================================
 
 st.title(
-    "⚽ RODRIGUE PRO FOOTBALL AI — V23 FIXED+"
+    "⚽ RODRIGUE PRO FOOTBALL AI — V24 VALIDATION MAX"
 )
 
 st.caption(
@@ -1793,7 +1448,7 @@ else:
         backtest_name = st.selectbox(
             "Compétition",
             list(COMPETITIONS),
-            key="btc_v23",
+            key="btc_v24",
         )
 
     backtest_code = COMPETITIONS[backtest_name]
@@ -1814,17 +1469,17 @@ else:
             "Saisons",
             available_years,
             default=previous_years,
-            key="bty_v23",
+            key="bty_v24",
         )
 
     with b3:
         limit_per_season = st.number_input(
             "Matchs max / saison",
             min_value=50,
-            max_value=500,
-            value=220,
-            step=10,
-            key="btl_v23",
+            max_value=5000,
+            value=1000,
+            step=100,
+            key="btl_v24",
         )
 
     st.info(
@@ -1846,7 +1501,7 @@ else:
                 "⏳ Backtest chronologique "
                 "sans données futures..."
             ):
-                st.session_state["bt_v23"] = multi_backtest(
+                st.session_state["bt_v24"] = multi_backtest(
                     backtest_code,
                     selected_years,
                     token,
@@ -1998,7 +1653,7 @@ st.divider()
 
 st.caption(
     "Data provided by football-data.org · "
-    "RODRIGUE PRO FOOTBALL AI V23 FIXED+ · "
+    "RODRIGUE PRO FOOTBALL AI V24 VALIDATION MAX · "
     "Les statistiques historiques servent à évaluer "
     "le modèle et ne transforment pas une probabilité "
     "en certitude."
@@ -2128,4 +1783,20 @@ st.caption(
 #     Le but de cette version est d'être techniquement robuste,
 #     reproductible et mesurable, pas de promettre une certitude
 #     impossible sur un résultat sportif.
+#
+
+# ============================================================
+# AUDIT V24 — VALIDATION MAX
+# ============================================================
+# V24 combine Poisson/Dixon-Coles, ELO et prior empirique.
+# Le backtest est strictement chronologique.
+# Jusqu'à 5000 vrais matchs historiques peuvent être évalués.
+# Brier et Log Loss doivent battre la baseline.
+# Une erreur de calibration faible est également exigée avant
+# de classer le modèle SOLIDE.
+# Le filtre NO BET refuse les scénarios trop ambigus.
+# Le nombre de lignes de code n'est PAS un échantillon statistique.
+# 5000 vrais matchs évalués sont une mesure statistique beaucoup
+# plus utile que 5000 lignes de programme.
+# Aucun résultat sportif ne peut être garanti à 100%.
 #
