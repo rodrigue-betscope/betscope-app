@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-RODRIGUE PRO FOOTBALL AI V25 VALIDATION MAX PRO
+RODRIGUE PRO FOOTBALL AI V25 FINAL BACKTEST CORRIGÉ
 football-data.org v4 only.
 
 Corrections:
@@ -1683,11 +1683,14 @@ else:
         token,
     )
 
-    previous_years = [
-        year
-        for year in available_years
-        if year < date.today().year
-    ][:5]
+    previous_years = sorted(
+        [
+            year
+            for year in available_years
+            if year < date.today().year
+        ],
+        reverse=True,
+    )[:5]
 
     with b2:
         selected_years = st.multiselect(
@@ -1726,12 +1729,24 @@ else:
                 "⏳ Backtest chronologique "
                 "sans données futures..."
             ):
-                st.session_state["bt_v24"] = multi_backtest(
+                st.session_state["bt_v25"] = multi_backtest(
                     backtest_code,
                     selected_years,
                     token,
                     int(limit_per_season),
                     30,
+                )
+            result_bt = st.session_state.get("bt_v25", {})
+            aggregate_bt = result_bt.get("aggregate", {}) if result_bt else {}
+            if aggregate_bt:
+                st.success(
+                    f'✅ Backtest terminé : {aggregate_bt.get("n", 0)} match(s) évalué(s). '
+                    f'Reliability : {aggregate_bt.get("reliability", "N/A")}.'
+                )
+            else:
+                st.warning(
+                    "⚠️ Le backtest n'a produit aucun résultat exploitable. "
+                    "Ouvre le diagnostic ci-dessous pour voir la réponse de l'API."
                 )
 
     backtest_result = st.session_state.get(
@@ -1878,7 +1893,7 @@ st.divider()
 
 st.caption(
     "Data provided by football-data.org · "
-    "RODRIGUE PRO FOOTBALL AI V25 VALIDATION MAX PRO · "
+    "RODRIGUE PRO FOOTBALL AI V25 FINAL BACKTEST CORRIGÉ · "
     "Les statistiques historiques servent à évaluer "
     "le modèle et ne transforment pas une probabilité "
     "en certitude."
