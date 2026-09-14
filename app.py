@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-RODRIGUE PRO FOOTBALL AI V24 VALIDATION MAX
+RODRIGUE PRO FOOTBALL AI V25 VALIDATION MAX PRO
 football-data.org v4 only.
 
 Corrections:
@@ -42,9 +42,9 @@ COMPETITIONS = {
     "Brasileirão": "BSA",
 }
 
-UA = "Rodrigue-Pro-Football-AI-V23"
+UA = "Rodrigue-Pro-Football-AI-V25"
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI V23",
+    page_title="Rodrigue Pro Football AI V25",
     page_icon="⚽",
     layout="wide",
 )
@@ -847,6 +847,65 @@ def htft(ht, ft):
 
 
 # ============================================================
+# V25 — SIGNAL PRO / ANTI-SURCONFIANCE
+# ============================================================
+
+def pro_signal(result):
+    """Construit un signal lisible à partir de plusieurs contrôles.
+
+    Ce score n'est pas une probabilité de gain. Il mesure la robustesse
+    interne du signal: séparation 1X2, volume d'historique, accord entre
+    modèles et présence éventuelle du NO BET.
+    """
+    p = normalize_probs(result.get("ensemble", [0.45, 0.27, 0.28]))
+    order = np.argsort(p)[::-1]
+    best = float(p[order[0]])
+    second = float(p[order[1]])
+    gap = best - second
+
+    components = [
+        normalize_probs(result.get("poisson_probs", p)),
+        normalize_probs(result.get("elo_probs", p)),
+        normalize_probs(result.get("empirical_probs", p)),
+    ]
+    agreement = 1.0 - float(
+        np.mean([np.abs(c - p).sum() / 2.0 for c in components])
+    )
+
+    sample = int(min(
+        result.get("hs", {}).get("n", 0),
+        result.get("as", {}).get("n", 0),
+    ))
+
+    score = (
+        100.0 * best * 0.45
+        + 100.0 * clamp(gap / 0.25, 0.0, 1.0) * 0.25
+        + 100.0 * agreement * 0.20
+        + 100.0 * clamp(sample / 20.0, 0.0, 1.0) * 0.10
+    )
+
+    gate = result.get("no_bet", {})
+    if gate.get("decision") == "NO BET":
+        decision = "NO BET"
+    elif score >= 72:
+        decision = "SIGNAL FORT"
+    elif score >= 60:
+        decision = "SIGNAL"
+    else:
+        decision = "PRUDENCE"
+
+    return {
+        "decision": decision,
+        "score": int(round(clamp(score, 0, 100))),
+        "best": best,
+        "gap": gap,
+        "agreement": agreement,
+        "sample": sample,
+        "reason": gate.get("reason", ""),
+    }
+
+
+# ============================================================
 # ANALYSE D'UN MATCH
 # ============================================================
 
@@ -879,13 +938,15 @@ def analyze(match,token):
     ordered=sorted(ensemble,reverse=True)
     confidence=int(clamp(50+30*(ordered[0]-ordered[1])+0.25*quality,50,90))
     principal=max((("1",mk["1"]),("X",mk["X"]),("2",mk["2"])),key=lambda z:z[1])
-    return {"home":match["homeTeam"]["name"],"away":match["awayTeam"]["name"],
+    result = {"home":match["homeTeam"]["name"],"away":match["awayTeam"]["name"],
             "competition":match["competition"]["name"],"date":before,"status":match.get("status",""),
             "hl":hl,"al":al,"league":lg,"hs":stats(hr),"as":stats(ar),"h2":h2,"mk":mk,
             "scores":scores(ft),"htscores":scores(ht,8),"htft":htft(ht,ft),"quality":quality,
             "confidence":confidence,"one":principal,"ensemble":ensemble,
             "poisson_probs":poisson,"elo_probs":elo,"empirical_probs":empirical,
             "no_bet":no_bet_gate(ensemble,sample)}
+    result["pro_signal"] = pro_signal(result)
+    return result
 
 
 # ============================================================
@@ -999,91 +1060,82 @@ def multi_backtest(code,years,token,max_eval=5000,warmup=30):
 # ============================================================
 
 def find_matches(day, codes, token):
-    """Recherche robuste des matchs d'une date.
+    """Recherche robuste et diagnostiquée des matchs d'une date.
 
-    Stratégie:
-      1) endpoint global /matches avec dateFrom/dateTo;
-      2) si aucun match exploitable, endpoint /competitions/{code}/matches
-         pour chaque compétition sélectionnée;
-      3) dernier secours: /competitions/{code}/matches?dateFrom/dateTo
-         avec status=SCHEDULED si nécessaire.
+    Ordre:
+      1) /matches?dateFrom=date&dateTo=date
+      2) si aucun match sélectionné: /competitions/{code}/matches
+         avec la même plage de dates, compétition par compétition
+      3) fusion + déduplication + filtrage final.
 
-    On ne considère jamais un résultat vide comme une preuve qu'il n'y a
-    pas de matchs: le diagnostic conserve chaque étape et son HTTP status.
+    Le programme ne transforme jamais une réponse vide en erreur logique.
+    Chaque tentative est conservée dans le diagnostic.
     """
     day_s = day.isoformat()
     wanted = set(codes or [])
     attempts = []
-    raw_global = []
-    selected = []
+    global_matches = []
+    fallback_matches = []
 
-    # --------------------------------------------------------
-    # 1) Recherche globale par date
-    # --------------------------------------------------------
+    # 1) Endpoint global
     result = api(
         "/matches",
         (("dateFrom", day_s), ("dateTo", day_s)),
         token,
     )
+    global_matches = (
+        (result.get("data") or {}).get("matches", []) or []
+        if result.get("status") == 200 else []
+    )
     attempts.append({
         "endpoint": "/matches",
         "status": result.get("status", 0),
-        "count": len((result.get("data") or {}).get("matches", []))
-        if result.get("status") == 200 else 0,
+        "count": len(global_matches),
         "error": result.get("error", ""),
+        "remaining": result.get("remaining", ""),
     })
 
-    if result.get("status") == 200:
-        raw_global = (result.get("data") or {}).get("matches", []) or []
-        selected = [
-            m for m in raw_global
-            if m.get("competition", {}).get("code") in wanted
-        ]
+    selected_global = [
+        m for m in global_matches
+        if m.get("competition", {}).get("code") in wanted
+    ]
 
-    # --------------------------------------------------------
-    # 2) Fallback compétition par compétition
-    # --------------------------------------------------------
-    fallback_matches = []
-    if not selected:
+    # 2) Fallback uniquement si le global n'a fourni aucun match utile.
+    if not selected_global:
         for code in codes or []:
             r = api(
                 f"/competitions/{code}/matches",
                 (("dateFrom", day_s), ("dateTo", day_s)),
                 token,
             )
-            items = []
-            if r.get("status") == 200:
-                items = (r.get("data") or {}).get("matches", []) or []
-                fallback_matches.extend(items)
-
+            items = (
+                (r.get("data") or {}).get("matches", []) or []
+                if r.get("status") == 200 else []
+            )
+            fallback_matches.extend(items)
             attempts.append({
                 "endpoint": f"/competitions/{code}/matches",
                 "status": r.get("status", 0),
                 "count": len(items),
                 "error": r.get("error", ""),
+                "remaining": r.get("remaining", ""),
             })
 
-    # Pas de seconde rafale de requêtes ici : le plan gratuit de
-    # football-data.org est limité en appels/minute. L'endpoint
-    # compétition + date couvre déjà les matchs planifiés.
-
-    # Fusion des résultats avant déduplication.
-    # IMPORTANT : cette variable doit inclure la recherche globale ET
-    # les recherches de secours par compétition.
-    combined = list(raw_global) + list(fallback_matches)
-
-    # Déduplication par ID, puis par date + équipes si l'ID manque.
+    # 3) Fusion et déduplication.
+    combined = list(global_matches) + list(fallback_matches)
     unique = {}
+
     for m in combined:
         mid = m.get("id")
-        key = (
-            f"id:{mid}" if mid is not None else
-            "fallback:" + "|".join([
+        if mid is not None:
+            key = f"id:{mid}"
+        else:
+            key = "fallback:" + "|".join([
                 str(m.get("utcDate", "")),
                 str(m.get("homeTeam", {}).get("id", "")),
                 str(m.get("awayTeam", {}).get("id", "")),
+                str(m.get("competition", {}).get("code", "")),
             ])
-        )
         unique[key] = m
 
     selected = [
@@ -1092,16 +1144,20 @@ def find_matches(day, codes, token):
     ]
     selected.sort(key=dkey)
 
-    raw_count = len(raw_global)
-    fallback_count = len(fallback_matches)
-    status_codes = [a["status"] for a in attempts if a["status"]]
-    first_error = next((a["error"] for a in attempts if a["error"]), "")
+    status_codes = [a["status"] for a in attempts if a.get("status")]
+    first_error = next(
+        (a.get("error", "") for a in attempts if a.get("error")),
+        "",
+    )
 
     return selected, {
-        "status": 200 if selected or any(x == 200 for x in status_codes) else (status_codes[0] if status_codes else 0),
+        "status": (
+            200 if selected
+            else (status_codes[0] if status_codes else 0)
+        ),
         "error": first_error,
-        "raw_count": raw_count,
-        "fallback_count": fallback_count,
+        "raw_count": len(global_matches),
+        "fallback_count": len(fallback_matches),
         "selected_count": len(selected),
         "attempts": attempts,
         "remaining": result.get("remaining", "") if result else "",
@@ -1124,7 +1180,7 @@ def clear_cache():
 # ============================================================
 
 st.title(
-    "⚽ RODRIGUE PRO FOOTBALL AI — V24 VALIDATION MAX"
+    "⚽ RODRIGUE PRO FOOTBALL AI — V25 VALIDATION MAX PRO"
 )
 
 st.caption(
@@ -1233,8 +1289,8 @@ else:
                     token,
                 )
 
-            st.session_state["matches_v23"] = matches
-            st.session_state["search_diag_v23"] = diagnostic
+            st.session_state["matches_v25"] = matches
+            st.session_state["search_diag_v25"] = diagnostic
 
             # IMPORTANT :
             # Ne PAS écrire st.success()/st.warning() dans st.write().
@@ -1333,7 +1389,7 @@ else:
 
             if st.button(
                 "🧠 ANALYSER CE MATCH",
-                key=f"ana_v23_{match_id}",
+                key=f"ana_v25_{match_id}",
                 use_container_width=True,
             ):
                 try:
@@ -1341,23 +1397,23 @@ else:
                         "🧠 Analyse chronologique..."
                     ):
                         st.session_state[
-                            f"res_v23_{match_id}"
+                            f"res_v25_{match_id}"
                         ] = analyze(
                             match,
                             token,
                         )
 
                     st.session_state[
-                        f"err_v23_{match_id}"
+                        f"err_v25_{match_id}"
                     ] = ""
 
                 except Exception as exc:
                     st.session_state[
-                        f"err_v23_{match_id}"
+                        f"err_v25_{match_id}"
                     ] = str(exc)
 
             error = st.session_state.get(
-                f"err_v23_{match_id}",
+                f"err_v25_{match_id}",
                 "",
             )
 
@@ -1368,7 +1424,7 @@ else:
                 )
 
             result = st.session_state.get(
-                f"res_v23_{match_id}"
+                f"res_v25_{match_id}"
             )
 
             if result:
@@ -1405,6 +1461,65 @@ else:
                     f'🎯 1X2 principal : '
                     f'**{result["one"][0]}** '
                     f'({pct(result["one"][1])})'
+                )
+
+                signal = result.get("pro_signal", {})
+                if signal.get("decision") == "SIGNAL FORT":
+                    st.success(
+                        f'🟢 SIGNAL PRO : {signal["decision"]} · '
+                        f'{signal["score"]}/100 · '
+                        f'accord modèles {pct(signal["agreement"])}'
+                    )
+                elif signal.get("decision") == "SIGNAL":
+                    st.info(
+                        f'🔵 SIGNAL PRO : {signal["decision"]} · '
+                        f'{signal["score"]}/100 · '
+                        f'accord modèles {pct(signal["agreement"])}'
+                    )
+                elif signal.get("decision") == "NO BET":
+                    st.error(
+                        f'🔴 {signal["decision"]} · '
+                        f'{signal.get("reason", "incertitude élevée")}'
+                    )
+                else:
+                    st.warning(
+                        f'🟠 SIGNAL PRO : {signal.get("decision", "PRUDENCE")} · '
+                        f'{signal.get("score", 0)}/100'
+                    )
+
+                st.subheader(
+                    "📊 ENSEMBLE DES MODÈLES"
+                )
+                ensemble_table = pd.DataFrame([
+                    {
+                        "Modèle": "Ensemble",
+                        "1": pct(result["ensemble"][0]),
+                        "X": pct(result["ensemble"][1]),
+                        "2": pct(result["ensemble"][2]),
+                    },
+                    {
+                        "Modèle": "Poisson/DC",
+                        "1": pct(result["poisson_probs"][0]),
+                        "X": pct(result["poisson_probs"][1]),
+                        "2": pct(result["poisson_probs"][2]),
+                    },
+                    {
+                        "Modèle": "ELO",
+                        "1": pct(result["elo_probs"][0]),
+                        "X": pct(result["elo_probs"][1]),
+                        "2": pct(result["elo_probs"][2]),
+                    },
+                    {
+                        "Modèle": "Prior empirique",
+                        "1": pct(result["empirical_probs"][0]),
+                        "X": pct(result["empirical_probs"][1]),
+                        "2": pct(result["empirical_probs"][2]),
+                    },
+                ])
+                st.dataframe(
+                    ensemble_table,
+                    use_container_width=True,
+                    hide_index=True,
                 )
 
                 st.subheader(
@@ -1558,7 +1673,7 @@ else:
         backtest_name = st.selectbox(
             "Compétition",
             list(COMPETITIONS),
-            key="btc_v24",
+            key="btc_v25",
         )
 
     backtest_code = COMPETITIONS[backtest_name]
@@ -1579,7 +1694,7 @@ else:
             "Saisons",
             available_years,
             default=previous_years,
-            key="bty_v24",
+            key="bty_v25",
         )
 
     with b3:
@@ -1589,7 +1704,7 @@ else:
             max_value=5000,
             value=1000,
             step=100,
-            key="btl_v24",
+            key="btl_v25",
         )
 
     st.info(
@@ -1620,7 +1735,7 @@ else:
                 )
 
     backtest_result = st.session_state.get(
-        "bt_v23"
+        "bt_v25"
     )
 
     if backtest_result:
@@ -1763,14 +1878,14 @@ st.divider()
 
 st.caption(
     "Data provided by football-data.org · "
-    "RODRIGUE PRO FOOTBALL AI V24 VALIDATION MAX · "
+    "RODRIGUE PRO FOOTBALL AI V25 VALIDATION MAX PRO · "
     "Les statistiques historiques servent à évaluer "
     "le modèle et ne transforment pas une probabilité "
     "en certitude."
 )
 
 # ============================================================
-# AUDIT TECHNIQUE V23
+# AUDIT TECHNIQUE V25
 # ============================================================
 #
 # 01. AUTHENTIFICATION
@@ -1909,4 +2024,27 @@ st.caption(
 # 5000 vrais matchs évalués sont une mesure statistique beaucoup
 # plus utile que 5000 lignes de programme.
 # Aucun résultat sportif ne peut être garanti à 100%.
+#
+
+#
+# 31. RECHERCHE V25
+#     Si l'endpoint global renvoie zéro match, la recherche
+#     compétition par compétition est exécutée avant de conclure.
+#
+# 32. DEDUPLICATION
+#     Les réponses globales et de secours sont fusionnées par ID.
+#
+# 33. SIGNAL PRO
+#     Le signal compare l'ensemble, Poisson/DC, ELO et le prior empirique.
+#
+# 34. ANTI-SURCONFIANCE
+#     Un score de signal ne devient jamais une garantie de résultat.
+#
+# 35. NO BET
+#     Un manque d'historique, une faible séparation ou une forte
+#     incertitude peut bloquer le signal.
+#
+# 36. BACKTEST
+#     Les résultats sont conservés sous bt_v25 afin que l'affichage
+#     corresponde bien au bouton de lancement.
 #
