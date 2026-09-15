@@ -1,717 +1,554 @@
 # -*- coding: utf-8 -*-
 """
-RODRIGUE APPLE AI V3 — Analyseur statistique Apple of Fortune
-------------------------------------------------------------
-Interface Streamlit pour :
-- charger une capture d'écran ;
-- détecter une grille 5 colonnes ;
-- enregistrer les résultats observés ;
-- calculer des probabilités empiriques par colonne ;
-- mesurer la précision réelle du modèle ;
-- produire un score de confiance et un mode "NE PAS JOUER"
-- gérer une mise et une limite de perte.
+RODRIGUE APPLE AI V4 — Analyseur Apple of Fortune
+==================================================
+Version mobile Streamlit, sans OpenCV obligatoire.
+
+Fonctions :
+- import d'une capture ;
+- détection automatique d'une grille 5 colonnes ;
+- tableau C1..C5 avec score et risque ;
+- historique d'observations ;
+- apprentissage statistique à partir des résultats réellement observés ;
+- validation hors-échantillon simple ;
+- gestion de bankroll ;
+- bouton "NE PAS JOUER" si le modèle n'a pas de preuve suffisante.
 
 IMPORTANT :
-Ce programme ne peut pas prédire avec certitude un tirage aléatoire côté serveur.
-Le "90 %" n'est jamais forcé : l'application affiche la précision réellement
-mesurée sur les données enregistrées.
+Une capture d'écran ne révèle pas le prochain résultat caché.
+Le programme n'invente donc pas une probabilité de 90 %.
 """
 
-import io
-import json
-import math
 from pathlib import Path
 from datetime import datetime
+import json
+import math
 
 import numpy as np
 import pandas as pd
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw
 
-# OpenCV est optionnel : l'application continue à fonctionner sans lui.
-try:
-    import cv2
-    CV2_OK = True
-except Exception:
-    CV2_OK = False
-
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-APP_NAME = "RODRIGUE APPLE AI"
+APP_VERSION = "V4"
 N_COLS = 5
 DATA_FILE = Path("apple_ai_history.json")
 
 st.set_page_config(
-    page_title=APP_NAME,
+    page_title="RODRIGUE APPLE AI V4",
     page_icon="🍎",
     layout="wide",
 )
 
-st.markdown(
-    """
-    <style>
-    .main-title {
-        font-size: 34px;
-        font-weight: 800;
-        margin-bottom: 0;
-    }
-    .sub-title {
-        opacity: .75;
-        margin-top: 0;
-    }
-    .box {
-        padding: 15px;
-        border-radius: 12px;
-        border: 1px solid rgba(128,128,128,.25);
-        margin-bottom: 12px;
-    }
-    .safe {
-        padding: 16px;
-        border-radius: 12px;
-        background: rgba(50,180,80,.15);
-        border: 1px solid rgba(50,180,80,.45);
-    }
-    .danger {
-        padding: 16px;
-        border-radius: 12px;
-        background: rgba(220,50,50,.15);
-        border: 1px solid rgba(220,50,50,.45);
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# ------------------------- STYLE -------------------------
 
-st.markdown(f'<div class="main-title">🍎 {APP_NAME}</div>', unsafe_allow_html=True)
+st.markdown("""
+<style>
+.block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
+.title {font-size:32px;font-weight:800;}
+.subtitle {font-size:16px;opacity:.75;}
+.card {padding:14px;border-radius:14px;border:1px solid rgba(128,128,128,.25);margin:8px 0;}
+.good {padding:15px;border-radius:14px;background:rgba(40,170,70,.14);border:1px solid rgba(40,170,70,.35);}
+.bad {padding:15px;border-radius:14px;background:rgba(220,60,60,.14);border:1px solid rgba(220,60,60,.35);}
+.warn {padding:15px;border-radius:14px;background:rgba(220,170,40,.14);border:1px solid rgba(220,170,40,.35);}
+.colbox {text-align:center;padding:12px;border-radius:12px;border:1px solid rgba(128,128,128,.25);}
+.small {font-size:12px;opacity:.7;}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="title">🍎 RODRIGUE APPLE AI V4</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">Analyse statistique • Vision de grille • Validation réelle</div>',
-    unsafe_allow_html=True,
+    '<div class="subtitle">Vision de grille • Score statistique • Validation réelle</div>',
+    unsafe_allow_html=True
 )
 
 st.warning(
-    "Aucune IA ne peut garantir 90 % sur un jeu dont le résultat est généré "
-    "aléatoirement côté serveur. Ce programme mesure la performance réelle du "
-    "modèle et refuse de donner une fausse confiance."
+    "Le système analyse l'écran et les données historiques. Il ne peut pas "
+    "connaître une case cachée générée aléatoirement par le serveur. "
+    "Le seuil de 90 % n'est jamais simulé."
 )
 
-
-# ============================================================
-# STOCKAGE
-# ============================================================
+# ------------------------- HISTORIQUE -------------------------
 
 def load_history():
-    if not DATA_FILE.exists():
-        return []
     try:
-        return json.loads(DATA_FILE.read_text(encoding="utf-8"))
+        if DATA_FILE.exists():
+            data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+            return data if isinstance(data, list) else []
     except Exception:
-        return []
-
+        pass
+    return []
 
 def save_history(history):
     DATA_FILE.write_text(
         json.dumps(history, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+        encoding="utf-8"
     )
-
 
 if "history" not in st.session_state:
     st.session_state.history = load_history()
 
+# ------------------------- STATISTIQUES -------------------------
 
-# ============================================================
-# OUTILS STATISTIQUES
-# ============================================================
+def valid_history():
+    return [
+        x for x in st.session_state.history
+        if int(x.get("safe_col", 0)) in range(1, N_COLS + 1)
+    ]
 
-def wilson_lower_bound(successes, trials, z=1.96):
-    """Borne basse Wilson à 95 %, utile pour éviter une confiance artificielle."""
-    if trials <= 0:
-        return 0.0
+def weighted_scores():
+    h = valid_history()
+    scores = np.ones(N_COLS, dtype=float)  # lissage Laplace
 
-    p = successes / trials
-    denominator = 1 + z**2 / trials
-    center = p + z**2 / (2 * trials)
-    margin = z * math.sqrt((p * (1 - p) / trials) + z**2 / (4 * trials**2))
-    return max(0.0, (center - margin) / denominator)
-
-
-def empirical_column_stats(history):
-    """
-    Chaque observation doit contenir:
-      safe_col = colonne effectivement sûre (1..5)
-    """
-    rows = []
-    for col in range(1, N_COLS + 1):
-        obs = [x for x in history if x.get("safe_col") in range(1, N_COLS + 1)]
-        trials = len(obs)
-        successes = sum(1 for x in obs if x.get("safe_col") == col)
-
-        # Probabilité empirique + lissage de Laplace.
-        p = (successes + 1) / (trials + N_COLS)
-        lower = wilson_lower_bound(successes, trials)
-
-        rows.append(
-            {
-                "Colonne": col,
-                "Observations": trials,
-                "Succès": successes,
-                "Fréquence observée": p,
-                "Borne Wilson 95%": lower,
-            }
-        )
-
-    return pd.DataFrame(rows)
-
-
-def recent_weights(history, decay=0.92):
-    """Poids exponentiels : observations récentes légèrement prioritaires."""
-    valid = [x for x in history if x.get("safe_col") in range(1, N_COLS + 1)]
-    weights = []
-
-    for i, item in enumerate(valid):
-        age = len(valid) - 1 - i
-        weights.append(decay ** age)
-
-    return valid, np.array(weights, dtype=float)
-
-
-def weighted_probabilities(history):
-    valid, weights = recent_weights(history)
-
-    if not valid:
-        return np.ones(N_COLS) / N_COLS
-
-    scores = np.ones(N_COLS)  # Laplace smoothing
-    for item, w in zip(valid, weights):
-        scores[int(item["safe_col"]) - 1] += w
+    # Les observations récentes ont légèrement plus de poids.
+    for i, item in enumerate(h):
+        age = len(h) - 1 - i
+        weight = 0.94 ** age
+        scores[int(item["safe_col"]) - 1] += weight
 
     return scores / scores.sum()
 
+def wilson_lower(successes, trials, z=1.96):
+    if trials <= 0:
+        return 0.0
+    p = successes / trials
+    den = 1 + z*z/trials
+    center = p + z*z/(2*trials)
+    margin = z * math.sqrt(p*(1-p)/trials + z*z/(4*trials*trials))
+    return max(0.0, (center - margin) / den)
 
-def bootstrap_accuracy(history, simulations=1000):
-    """
-    Estime l'incertitude de la précision observée par bootstrap.
-    """
-    valid = [x for x in history if x.get("prediction_col") in range(1, N_COLS + 1)
-             and x.get("safe_col") in range(1, N_COLS + 1)]
-
-    if len(valid) < 5:
-        return None
-
-    correct = np.array(
-        [int(x["prediction_col"] == x["safe_col"]) for x in valid],
-        dtype=float,
-    )
-
-    rng = np.random.default_rng(42)
-    samples = []
-
-    for _ in range(simulations):
-        sample = rng.choice(correct, size=len(correct), replace=True)
-        samples.append(sample.mean())
-
-    return {
-        "accuracy": float(correct.mean()),
-        "low": float(np.percentile(samples, 2.5)),
-        "high": float(np.percentile(samples, 97.5)),
-        "n": len(correct),
-    }
-
-
-def model_confidence(history, selected_col):
-    """
-    Score de confiance volontairement conservateur.
-    Il combine :
-      - fréquence récente ;
-      - historique global ;
-      - quantité d'observations ;
-      - borne Wilson.
-    """
-    valid = [
-        x for x in history
-        if x.get("safe_col") in range(1, N_COLS + 1)
+def prediction_accuracy():
+    rows = [
+        x for x in st.session_state.history
+        if int(x.get("prediction_col", 0)) in range(1, N_COLS+1)
+        and int(x.get("safe_col", 0)) in range(1, N_COLS+1)
     ]
+    if not rows:
+        return None
+    return sum(
+        int(x["prediction_col"]) == int(x["safe_col"])
+        for x in rows
+    ) / len(rows)
 
-    if len(valid) < 10:
-        return {
-            "confidence": 20.0,
-            "probability": 20.0,
-            "status": "DONNÉES INSUFFISANTES",
-            "reason": "Il faut davantage de parties observées.",
-        }
+def confidence_for_column(col):
+    h = valid_history()
+    n = len(h)
 
-    probs = weighted_probabilities(history)
-    p = float(probs[selected_col - 1])
+    if n < 20:
+        return 0.0, "INSUFFISANT"
 
-    trials = len(valid)
-    successes = sum(
-        1 for x in valid if x.get("safe_col") == selected_col
-    )
-    lower = wilson_lower_bound(successes, trials)
+    successes = sum(int(x["safe_col"]) == col for x in h)
+    lower = wilson_lower(successes, n)
+    p = weighted_scores()[col - 1]
 
-    # Score prudent : on pénalise les petits échantillons.
-    sample_factor = min(1.0, trials / 100.0)
-    confidence = 100.0 * (
-        0.55 * lower +
-        0.25 * p +
-        0.20 * sample_factor
-    )
-
-    confidence = max(0.0, min(99.0, confidence))
+    # Confiance prudente : la borne statistique domine le score.
+    sample_factor = min(1.0, n / 150.0)
+    confidence = 100 * (0.70 * lower + 0.20 * p + 0.10 * sample_factor)
 
     if confidence >= 70:
-        status = "SIGNAL STATISTIQUE FORT"
+        level = "FORT"
     elif confidence >= 55:
-        status = "SIGNAL MOYEN"
+        level = "MOYEN"
     else:
-        status = "NE PAS JOUER"
+        level = "FAIBLE"
 
-    return {
-        "confidence": confidence,
-        "probability": p * 100,
-        "status": status,
-        "reason": f"{trials} observations analysées ; borne Wilson = {lower*100:.1f} %.",
-    }
+    return float(min(confidence, 99.0)), level
 
-
-# ============================================================
-# VISION DE LA CAPTURE
-# ============================================================
+# ------------------------- DÉTECTION IMAGE -------------------------
 
 def detect_grid(image):
     """
-    Détection sans OpenCV.
-    Apple of Fortune utilise ici une grille régulière de 5 colonnes.
-    La fonction estime les positions des éléments à partir de la luminosité
-    et de la saturation de l'image. Elle ne prétend pas déterminer la future
-    case gagnante.
+    Détection géométrique robuste pour l'interface Apple of Fortune.
+    Elle localise les 5 colonnes sans prétendre lire une pomme cachée.
     """
-    try:
-        arr = np.asarray(image.convert("RGB"), dtype=np.float32)
-        h, w, _ = arr.shape
+    arr = np.asarray(image.convert("RGB"), dtype=np.float32)
+    h, w, _ = arr.shape
 
-        # Zone centrale de l'écran : on évite l'en-tête et les boutons du bas.
-        y0, y1 = int(h * 0.10), int(h * 0.82)
-        roi = arr[y0:y1]
+    # Sur ce type d'écran, la grille occupe approximativement le centre.
+    # On évite les boutons et la barre de mise.
+    y_top = int(h * 0.12)
+    y_bottom = int(h * 0.82)
 
-        # Intensité + saturation simple, sans OpenCV.
-        mx = roi.max(axis=2)
-        mn = roi.min(axis=2)
-        brightness = mx.mean(axis=2) if mx.ndim == 3 else mx
-        saturation = mx - mn
+    # Recherche des variations verticales dans la zone de grille.
+    roi = arr[y_top:y_bottom]
+    intensity = roi.mean(axis=2)
 
-        # Profil horizontal : les objets circulaires créent des variations
-        # locales de luminosité/saturation.
-        signal_x = (
-            brightness.mean(axis=0) +
-            0.35 * saturation.mean(axis=0)
-        )
+    # Profils X/Y + lissage.
+    px = intensity.mean(axis=0)
+    py = intensity.mean(axis=1)
 
-        # Lissage.
-        kernel = max(5, int(w * 0.012))
-        kernel += 1 - kernel % 2
-        smoothed = np.convolve(
-            signal_x,
-            np.ones(kernel) / kernel,
-            mode="same",
-        )
+    kx = max(7, int(w * 0.015))
+    ky = max(7, int(h * 0.015))
 
-        # Recherche des 5 zones les plus séparées.
-        candidates = []
-        min_sep = max(40, int(w * 0.10))
+    sx = np.convolve(px, np.ones(kx)/kx, mode="same")
+    sy = np.convolve(py, np.ones(ky)/ky, mode="same")
 
-        for x in range(int(w * 0.08), int(w * 0.96)):
-            if x < 0 or x >= len(smoothed):
-                continue
-            left = max(0, x - kernel)
-            right = min(len(smoothed), x + kernel + 1)
-            local = smoothed[left:right]
-            if len(local) and smoothed[x] >= local.mean():
-                candidates.append((smoothed[x], x))
+    # Pour 5 colonnes, on privilégie les positions régulières.
+    # Elles sont ensuite ajustées très légèrement au profil de luminosité.
+    left = int(w * 0.24)
+    right = int(w * 0.91)
+    base_x = np.linspace(left, right, N_COLS)
 
-        candidates.sort(reverse=True)
-
-        centers = []
-        for score, x in candidates:
-            if all(abs(x - c) >= min_sep for c in centers):
-                centers.append(x)
-            if len(centers) == N_COLS:
-                break
-
-        centers.sort()
-
-        # Si l'image est bien celle montrée dans l'application, on peut
-        # aussi fournir une grille géométrique robuste comme fallback.
-        if len(centers) < N_COLS:
-            left = int(w * 0.25)
-            right = int(w * 0.91)
-            centers = [
-                int(left + i * (right - left) / (N_COLS - 1))
-                for i in range(N_COLS)
-            ]
-            method = "grille géométrique de secours"
+    xs = []
+    search = max(10, int(w * 0.045))
+    for bx in base_x:
+        a = max(0, int(bx)-search)
+        b = min(w, int(bx)+search+1)
+        local = sx[a:b]
+        if len(local):
+            # centre de gravité des variations.
+            weights = np.maximum(local - local.min(), 0.001)
+            pos = np.arange(a, b)
+            x = int(np.sum(pos * weights) / np.sum(weights))
         else:
-            method = "analyse PIL/numpy"
+            x = int(bx)
+        xs.append(x)
 
-        # Détection de plusieurs lignes à partir de la projection verticale.
-        signal_y = brightness.mean(axis=1) + 0.35 * saturation.mean(axis=1)
-        ky = max(5, int(h * 0.012))
-        ky += 1 - ky % 2
-        sy = np.convolve(signal_y, np.ones(ky) / ky, mode="same")
+    # Lignes : les objets sont généralement espacés régulièrement.
+    top = int(h * 0.18)
+    bottom = int(h * 0.78)
+    n_rows = 8
+    base_y = np.linspace(top, bottom, n_rows)
 
-        # Zones candidates dans la région de la grille.
-        yrange = range(int(h * 0.14), int(h * 0.78))
-        peaks_y = []
-        sep_y = max(45, int(h * 0.055))
+    ys = []
+    for by in base_y:
+        a = max(0, int(by)-search)
+        b = min(h, int(by)+search+1)
+        local = sy[max(0, a-y_top):max(0, b-y_top)]
+        if len(local):
+            weights = np.maximum(local - local.min(), 0.001)
+            pos = np.arange(a, b)[:len(local)]
+            y = int(np.sum(pos * weights) / np.sum(weights))
+        else:
+            y = int(by)
+        ys.append(y)
 
-        for y in yrange:
-            # sy est calculé sur ROI, donc son index commence à 0 à y0.
-            yi = y - y0
-            if yi < 0 or yi >= len(sy):
-                continue
-            lo = max(0, yi - ky)
-            hi = min(len(sy), yi + ky + 1)
-            local = sy[lo:hi]
-            if len(local) and sy[yi] >= local.mean():
-                peaks_y.append((sy[yi], y))
+    radius = max(18, int(min(h, w) * 0.043))
 
-        peaks_y.sort(reverse=True)
-        rows = []
-        for score, y in peaks_y:
-            if all(abs(y - r) >= sep_y for r in rows):
-                rows.append(y)
-            if len(rows) >= 8:
-                break
-        rows.sort()
+    points = [(int(x), int(y), radius) for y in ys for x in xs]
 
-        detections = []
-        radius = max(20, int(min(h, w) * 0.045))
+    return {
+        "width": w,
+        "height": h,
+        "columns": xs,
+        "rows": ys,
+        "points": points,
+    }
 
-        # Pour l'interface, on retourne au maximum 8 lignes x 5 colonnes.
-        for y in rows[:8]:
-            for x in centers:
-                detections.append((int(x), int(y), radius))
+def draw_grid_overlay(image, grid, chosen_col=None):
+    out = image.copy().convert("RGB")
+    draw = ImageDraw.Draw(out)
 
-        message = (
-            f"{len(detections)} positions estimées avec {method}. "
-            "La grille est localisée, mais une capture ne révèle pas le résultat "
-            "aléatoire futur."
-        )
-        return detections, message
+    xs = grid["columns"]
+    ys = grid["rows"]
+    r = max(15, int(min(out.size) * 0.043))
 
-    except Exception as exc:
-        return None, f"Erreur de détection : {exc}"
+    for ci, x in enumerate(xs, start=1):
+        for ri, y in enumerate(ys, start=1):
+            box = (x-r, y-r, x+r, y+r)
+            # Marquage sobre : on utilise le même tracé pour toutes les cases.
+            draw.ellipse(box, outline="white", width=3)
+            draw.text((x-7, y-8), str(ci), fill="white")
 
+    if chosen_col in range(1, N_COLS+1):
+        x = xs[chosen_col-1]
+        for y in ys:
+            draw.ellipse(
+                (x-r-5, y-r-5, x+r+5, y+r+5),
+                outline="lime",
+                width=5
+            )
 
-# ============================================================
-# SIDEBAR
-# ============================================================
+    return out
+
+# ------------------------- SCORE VISUEL / STATISTIQUE -------------------------
+
+def make_analysis():
+    h = valid_history()
+    probs = weighted_scores()
+    rows = []
+
+    for col in range(1, N_COLS+1):
+        conf, level = confidence_for_column(col)
+        observed = sum(int(x["safe_col"]) == col for x in h)
+        rows.append({
+            "Colonne": f"C{col}",
+            "Observations": len(h),
+            "Succès observés": observed,
+            "Score historique": round(probs[col-1]*100, 1),
+            "Confiance prudente": round(conf, 1),
+            "Niveau": level,
+        })
+
+    df = pd.DataFrame(rows)
+    return df, probs
+
+# ------------------------- SIDEBAR -------------------------
 
 with st.sidebar:
-    st.header("⚙️ Paramètres")
+    st.header("⚙️ Réglages")
 
-    min_conf = st.slider(
-        "Confiance minimale pour un signal",
-        min_value=50,
-        max_value=90,
-        value=70,
-        step=5,
+    threshold = st.slider(
+        "Seuil de confiance",
+        50, 90, 70, 5
     )
 
     bankroll = st.number_input(
-        "Solde disponible (F CFA)",
+        "Bankroll (F CFA)",
         min_value=0.0,
         value=10000.0,
-        step=500.0,
+        step=500.0
     )
 
-    mise = st.number_input(
-        "Mise envisagée (F CFA)",
+    stake = st.number_input(
+        "Mise (F CFA)",
         min_value=0.0,
         value=200.0,
-        step=50.0,
-    )
-
-    max_loss = st.slider(
-        "Perte maximale relative autorisée",
-        1,
-        20,
-        5,
-        help="Protection de gestion de bankroll ; ne prédit pas le résultat.",
+        step=50.0
     )
 
     st.caption(
-        "Le seuil ne transforme pas un jeu aléatoire en jeu prévisible."
+        "Le seuil contrôle uniquement l'affichage du signal. "
+        "Il ne modifie pas les probabilités mathématiques."
     )
 
+# ------------------------- ONGLETS -------------------------
 
-# ============================================================
-# ONGLETS
-# ============================================================
-
-tab1, tab2, tab3, tab4 = st.tabs(
+tab_capture, tab_analysis, tab_history, tab_validation = st.tabs(
     ["📸 Capture", "🧠 Analyse", "📊 Historique", "🧪 Validation"]
 )
 
+# ========================= CAPTURE =========================
 
-# ============================================================
-# TAB 1 — CAPTURE
-# ============================================================
-
-with tab1:
+with tab_capture:
     st.subheader("📸 Charger la capture Apple of Fortune")
 
     uploaded = st.file_uploader(
         "Sélectionne une capture d'écran",
         type=["png", "jpg", "jpeg", "webp"],
+        key="capture_upload"
     )
 
     if uploaded:
         image = Image.open(uploaded).convert("RGB")
-        st.image(image, caption="Capture chargée", use_container_width=True)
+        st.image(image, use_container_width=True)
 
-        if st.button("🔎 Détecter la grille", use_container_width=True):
-            detections, message = detect_grid(image)
+        if st.button("🔎 ANALYSER AUTOMATIQUEMENT", use_container_width=True):
+            try:
+                grid = detect_grid(image)
+                st.session_state.grid = grid
 
-            if detections is None:
-                st.error(message)
+                df, probs = make_analysis()
+                chosen = int(np.argmax(probs)) + 1
+                st.session_state.chosen_col = chosen
+
+                overlay = draw_grid_overlay(image, grid, chosen)
+                st.session_state.overlay = overlay
+
+                st.success("Grille détectée. Analyse statistique terminée.")
+            except Exception as e:
+                st.error(f"Erreur d'analyse : {e}")
+
+    if "overlay" in st.session_state:
+        st.subheader("🗺️ Grille détectée")
+        st.image(
+            st.session_state.overlay,
+            caption="Repères de grille — ils ne révèlent pas les cases cachées.",
+            use_container_width=True
+        )
+
+        df, probs = make_analysis()
+        chosen = int(np.argmax(probs)) + 1
+        st.session_state.chosen_col = chosen
+
+        # ---------- RESULTAT PRINCIPAL ----------
+        n = len(valid_history())
+
+        if n < 20:
+            st.markdown(
+                '<div class="bad"><b>🛑 NE PAS JOUER</b><br>'
+                f'Données insuffisantes : {n}/20 observations minimum.</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            conf, level = confidence_for_column(chosen)
+
+            if conf >= threshold:
+                st.markdown(
+                    f'<div class="good"><b>🎯 COLONNE PRIORITAIRE : C{chosen}</b><br>'
+                    f'Confiance statistique prudente : <b>{conf:.1f}%</b><br>'
+                    f'Niveau : <b>{level}</b></div>',
+                    unsafe_allow_html=True
+                )
             else:
-                st.info(message)
+                st.markdown(
+                    f'<div class="bad"><b>🛑 NE PAS JOUER</b><br>'
+                    f'C{chosen} : {conf:.1f}% de confiance, sous ton seuil de '
+                    f'{threshold}%.</div>',
+                    unsafe_allow_html=True
+                )
 
-                if len(detections) > 0:
-                    df_det = pd.DataFrame(
-                        detections,
-                        columns=["X", "Y", "Rayon"]
-                    )
-                    st.dataframe(df_det, use_container_width=True)
+        st.subheader("📊 Les 5 colonnes")
+        cols = st.columns(5)
 
-                    st.caption(
-                        "La détection localise les éléments graphiques. "
-                        "Elle ne peut pas déterminer mathématiquement la future case gagnante."
-                    )
+        for i, c in enumerate(cols, start=1):
+            conf, level = confidence_for_column(i)
+            score = probs[i-1] * 100
 
-    st.divider()
+            if n < 20:
+                shown_conf = "—"
+                level = "INSUFFISANT"
+            else:
+                shown_conf = f"{conf:.1f}%"
 
-    st.subheader("➕ Enregistrer un résultat réellement observé")
+            with c:
+                st.markdown(
+                    f'<div class="colbox"><b>C{i}</b><br>'
+                    f'Score : <b>{score:.1f}%</b><br>'
+                    f'Confiance : <b>{shown_conf}</b><br>'
+                    f'<span class="small">{level}</span></div>',
+                    unsafe_allow_html=True
+                )
 
-    c1, c2, c3 = st.columns(3)
-
-    with c1:
-        safe_col = st.selectbox(
-            "Colonne réellement sûre",
-            list(range(1, N_COLS + 1)),
-            index=0,
-        )
-
-    with c2:
-        prediction_col = st.selectbox(
-            "Colonne prédite avant le résultat",
-            list(range(1, N_COLS + 1)),
-            index=0,
-        )
-
-    with c3:
-        niveau = st.selectbox(
-            "Niveau du signal",
-            ["faible", "moyen", "fort"],
-            index=1,
-        )
-
-    if st.button("💾 Enregistrer cette observation", use_container_width=True):
-        st.session_state.history.append(
-            {
-                "date": datetime.now().isoformat(timespec="seconds"),
-                "safe_col": int(safe_col),
-                "prediction_col": int(prediction_col),
-                "signal": niveau,
-            }
-        )
-        save_history(st.session_state.history)
-        st.success("Observation enregistrée.")
-
-
-# ============================================================
-# TAB 2 — ANALYSE
-# ============================================================
-
-with tab2:
-    st.subheader("🧠 Analyse statistique")
-
-    history = st.session_state.history
-    stats = empirical_column_stats(history)
-
-    if len(history) == 0:
-        st.info(
-            "Aucune observation. Commence par enregistrer les résultats "
-            "réellement observés."
-        )
-    else:
-        probs = weighted_probabilities(history)
-
-        table = stats.copy()
-        table["Probabilité récente pondérée"] = probs
-
-        st.dataframe(
-            table.style.format(
-                {
-                    "Fréquence observée": "{:.1%}",
-                    "Borne Wilson 95%": "{:.1%}",
-                    "Probabilité récente pondérée": "{:.1%}",
-                }
-            ),
-            use_container_width=True,
-        )
-
-        selected = int(
-            np.argmax(probs) + 1
-        )
-
-        result = model_confidence(history, selected)
-
-        st.markdown(
-            f"""
-            <div class="box">
-            <h3>🎯 Colonne statistiquement prioritaire : {selected}</h3>
-            <p>Probabilité empirique pondérée : <b>{result["probability"]:.1f}%</b></p>
-            <p>Score de confiance prudent : <b>{result["confidence"]:.1f}%</b></p>
-            <p>{result["reason"]}</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        if result["confidence"] >= min_conf:
-            st.markdown(
-                f'<div class="safe">🟢 <b>{result["status"]}</b><br>'
-                f'Le modèle dépasse ton seuil de {min_conf}%.</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f'<div class="danger">🔴 <b>NE PAS JOUER</b><br>'
-                f'Le signal ({result["confidence"]:.1f}%) est inférieur au seuil '
-                f'de {min_conf}%.</div>',
-                unsafe_allow_html=True,
-            )
-
-        # Gestion de bankroll.
-        risk = 0 if bankroll <= 0 else 100 * mise / bankroll
-
-        st.write("")
-        st.subheader("💰 Gestion de la mise")
-        st.metric("Mise / bankroll", f"{risk:.1f}%")
-
-        if risk > max_loss:
-            st.error(
-                f"Mise trop élevée selon ton plafond de {max_loss}% de bankroll."
-            )
-        else:
-            st.success("Mise dans la limite configurée.")
+        # ---------- ENREGISTREMENT RAPIDE ----------
+        st.divider()
+        st.subheader("➕ Résultat réellement observé")
 
         st.caption(
-            "Cette section gère le risque financier ; elle n'améliore pas "
-            "la probabilité mathématique d'une case aléatoire."
+            "Après avoir joué et vu le résultat, touche uniquement la colonne "
+            "qui était réellement sûre. Cela permet au modèle de mesurer ses "
+            "performances au lieu d'inventer une réussite."
         )
 
+        actual = st.radio(
+            "Quelle colonne était réellement sûre ?",
+            [1, 2, 3, 4, 5],
+            horizontal=True,
+            key="actual_col"
+        )
 
-# ============================================================
-# TAB 3 — HISTORIQUE
-# ============================================================
+        if st.button("💾 ENREGISTRER + APPRENDRE", use_container_width=True):
+            predicted = int(st.session_state.get("chosen_col", 1))
+            st.session_state.history.append({
+                "date": datetime.now().isoformat(timespec="seconds"),
+                "safe_col": int(actual),
+                "prediction_col": predicted,
+            })
+            save_history(st.session_state.history)
+            st.success(
+                f"Résultat enregistré : C{actual}. "
+                f"Prédiction du modèle : C{predicted}."
+            )
+            st.rerun()
 
-with tab3:
-    st.subheader("📊 Historique des observations")
+# ========================= ANALYSE =========================
 
-    history = st.session_state.history
+with tab_analysis:
+    st.subheader("🧠 Analyse statistique")
 
-    if not history:
-        st.info("Historique vide.")
+    df, probs = make_analysis()
+    n = len(valid_history())
+
+    st.dataframe(df, use_container_width=True)
+
+    best = int(np.argmax(probs)) + 1
+    conf, level = confidence_for_column(best)
+
+    if n < 20:
+        st.info(
+            f"Le modèle dispose de {n} observation(s). "
+            "Il faut au minimum 20 observations pour commencer à afficher "
+            "une confiance statistique."
+        )
+        st.markdown(
+            '<div class="bad"><b>🛑 NE PAS JOUER</b><br>'
+            'Pas assez de données validées.</div>',
+            unsafe_allow_html=True
+        )
+    elif conf >= threshold:
+        st.markdown(
+            f'<div class="good"><b>🎯 PRIORITÉ : C{best}</b><br>'
+            f'Confiance : <b>{conf:.1f}%</b> — {level}</div>',
+            unsafe_allow_html=True
+        )
     else:
-        df = pd.DataFrame(history)
-        st.dataframe(df, use_container_width=True)
+        st.markdown(
+            f'<div class="bad"><b>🛑 NE PAS JOUER</b><br>'
+            f'Meilleure colonne C{best} : {conf:.1f}% seulement.</div>',
+            unsafe_allow_html=True
+        )
 
-        if st.button("🗑️ Effacer tout l'historique"):
+    st.caption(
+        "Un score statistique supérieur aux autres colonnes ne signifie pas "
+        "que la prochaine case est connue à l'avance."
+    )
+
+# ========================= HISTORIQUE =========================
+
+with tab_history:
+    st.subheader("📊 Historique")
+
+    if not st.session_state.history:
+        st.info("Aucune observation enregistrée.")
+    else:
+        hist_df = pd.DataFrame(st.session_state.history)
+        st.dataframe(hist_df, use_container_width=True)
+
+        csv = hist_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "⬇️ Exporter CSV",
+            csv,
+            "apple_ai_history.csv",
+            "text/csv"
+        )
+
+        if st.button("🗑️ Effacer l'historique"):
             st.session_state.history = []
             save_history([])
             st.rerun()
 
-        st.download_button(
-            "⬇️ Exporter CSV",
-            data=df.to_csv(index=False).encode("utf-8"),
-            file_name="apple_ai_history.csv",
-            mime="text/csv",
-        )
+# ========================= VALIDATION =========================
 
+with tab_validation:
+    st.subheader("🧪 Validation réelle")
 
-# ============================================================
-# TAB 4 — VALIDATION
-# ============================================================
+    acc = prediction_accuracy()
 
-with tab4:
-    st.subheader("🧪 La précision réelle du modèle")
-
-    validation = bootstrap_accuracy(st.session_state.history)
-
-    if validation is None:
-        st.info(
-            "Il faut au moins 5 observations avec une colonne prédite et "
-            "une colonne réellement sûre pour calculer la précision."
-        )
+    if acc is None:
+        st.info("Aucune prédiction validée pour le moment.")
     else:
-        acc = validation["accuracy"] * 100
-        low = validation["low"] * 100
-        high = validation["high"] * 100
+        n = len([
+            x for x in st.session_state.history
+            if int(x.get("prediction_col", 0)) in range(1, 6)
+            and int(x.get("safe_col", 0)) in range(1, 6)
+        ])
 
-        a, b, c = st.columns(3)
+        st.metric("Précision observée", f"{acc*100:.1f}%")
+        st.metric("Prédictions validées", n)
 
-        with a:
-            st.metric("Précision observée", f"{acc:.1f}%")
-        with b:
-            st.metric("Intervalle bootstrap bas", f"{low:.1f}%")
-        with c:
-            st.metric("Intervalle bootstrap haut", f"{high:.1f}%")
-
-        if acc >= 90:
+        if acc >= 0.90:
             st.success(
-                "La précision observée est ≥ 90 % sur cet historique. "
-                "Cela ne constitue toutefois pas une garantie pour les prochaines parties."
+                "La précision observée atteint au moins 90 % sur cet historique. "
+                "Cela ne garantit pas les prochaines parties."
             )
         else:
             st.warning(
-                f"La précision observée est de {acc:.1f} %. "
-                "Le modèle ne démontre donc pas actuellement une précision de 90 %."
+                "Le modèle n'atteint pas encore 90 % sur les données disponibles."
             )
-
-        st.caption(
-            f"Échantillon : {validation['n']} prédictions validées. "
-            "L'intervalle bootstrap montre l'incertitude autour de cette mesure."
-        )
 
     st.divider()
 
-    st.subheader("📌 Règle anti-fausse-confiance")
+    risk = 0 if bankroll <= 0 else 100 * stake / bankroll
+    st.metric("Mise / bankroll", f"{risk:.1f}%")
 
-    st.write(
-        """
-        Le programme ne fait jamais ceci :
+    if risk > 5:
+        st.error("⚠️ La mise dépasse 5 % de la bankroll.")
+    else:
+        st.success("Gestion de mise : dans la limite de 5 %.")
 
-        **« 90 % de confiance » uniquement parce qu'une case semble plus favorable.**
-
-        Il exige des observations et compare ensuite les prédictions aux résultats
-        réellement obtenus. Si les données ne prouvent pas la performance, le
-        système affiche **NE PAS JOUER**.
-        """
-    )
-
-
-# ============================================================
-# PIED DE PAGE
-# ============================================================
+# ------------------------- FOOTER -------------------------
 
 st.divider()
 st.caption(
-    "RODRIGUE APPLE AI — outil statistique expérimental. "
-    "Les résultats passés ne garantissent pas les résultats futurs."
+    "RODRIGUE APPLE AI V4 • La performance affichée est calculée à partir "
+    "des résultats réellement enregistrés."
 )
