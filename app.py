@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-RODRIGUE APPLE AI — Analyseur statistique Apple of Fortune
+RODRIGUE APPLE AI V3 — Analyseur statistique Apple of Fortune
 ------------------------------------------------------------
 Interface Streamlit pour :
 - charger une capture d'écran ;
@@ -324,11 +324,12 @@ def detect_grid(image):
         min_sep = max(40, int(w * 0.10))
 
         for x in range(int(w * 0.08), int(w * 0.96)):
+            if x < 0 or x >= len(smoothed):
+                continue
             left = max(0, x - kernel)
-            right = min(w, x + kernel)
-            local_mean = smoothed[left:right].mean()
-
-            if smoothed[x] >= local_mean:
+            right = min(len(smoothed), x + kernel + 1)
+            local = smoothed[left:right]
+            if len(local) and smoothed[x] >= local.mean():
                 candidates.append((smoothed[x], x))
 
         candidates.sort(reverse=True)
@@ -367,10 +368,15 @@ def detect_grid(image):
         sep_y = max(45, int(h * 0.055))
 
         for y in yrange:
-            lo = max(0, y - ky)
-            hi = min(len(sy), y + ky)
-            if sy[y] >= sy[lo:hi].mean():
-                peaks_y.append((sy[y], y))
+            # sy est calculé sur ROI, donc son index commence à 0 à y0.
+            yi = y - y0
+            if yi < 0 or yi >= len(sy):
+                continue
+            lo = max(0, yi - ky)
+            hi = min(len(sy), yi + ky + 1)
+            local = sy[lo:hi]
+            if len(local) and sy[yi] >= local.mean():
+                peaks_y.append((sy[yi], y))
 
         peaks_y.sort(reverse=True)
         rows = []
