@@ -283,49 +283,121 @@ def model_confidence(history, selected_col):
 
 def detect_grid(image):
     """
-    Détection indicative d'une grille de 5 colonnes.
-    Elle ne prétend pas reconnaître quelle pomme est gagnante.
-    Retourne des centres approximatifs des cercles détectés.
+    Détection sans OpenCV.
+    Apple of Fortune utilise ici une grille régulière de 5 colonnes.
+    La fonction estime les positions des éléments à partir de la luminosité
+    et de la saturation de l'image. Elle ne prétend pas déterminer la future
+    case gagnante.
     """
-    if not CV2_OK:
-        return None, "OpenCV n'est pas installé."
+    try:
+        arr = np.asarray(image.convert("RGB"), dtype=np.float32)
+        h, w, _ = arr.shape
 
-    arr = np.array(image.convert("RGB"))
-    bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    gray = cv2.medianBlur(gray, 7)
+        # Zone centrale de l'écran : on évite l'en-tête et les boutons du bas.
+        y0, y1 = int(h * 0.10), int(h * 0.82)
+        roi = arr[y0:y1]
 
-    h, w = gray.shape[:2]
+        # Intensité + saturation simple, sans OpenCV.
+        mx = roi.max(axis=2)
+        mn = roi.min(axis=2)
+        brightness = mx.mean(axis=2) if mx.ndim == 3 else mx
+        saturation = mx - mn
 
-    circles = cv2.HoughCircles(
-        gray,
-        cv2.HOUGH_GRADIENT,
-        dp=1.2,
-        minDist=max(30, int(w * 0.08)),
-        param1=100,
-        param2=35,
-        minRadius=max(15, int(min(h, w) * 0.025)),
-        maxRadius=max(30, int(min(h, w) * 0.10)),
-    )
+        # Profil horizontal : les objets circulaires créent des variations
+        # locales de luminosité/saturation.
+        signal_x = (
+            brightness.mean(axis=0) +
+            0.35 * saturation.mean(axis=0)
+        )
 
-    if circles is None:
-        return None, "Aucun cercle suffisamment net détecté."
+        # Lissage.
+        kernel = max(5, int(w * 0.012))
+        kernel += 1 - kernel % 2
+        smoothed = np.convolve(
+            signal_x,
+            np.ones(kernel) / kernel,
+            mode="same",
+        )
 
-    circles = np.round(circles[0]).astype(int)
+        # Recherche des 5 zones les plus séparées.
+        candidates = []
+        min_sep = max(40, int(w * 0.10))
 
-    # Garder les cercles dans la zone centrale où se trouve généralement la grille.
-    filtered = []
-    for x, y, r in circles:
-        if 0.10*w < x < 0.95*w and 0.08*h < y < 0.90*h:
-            filtered.append((int(x), int(y), int(r)))
+        for x in range(int(w * 0.08), int(w * 0.96)):
+            left = max(0, x - kernel)
+            right = min(w, x + kernel)
+            local_mean = smoothed[left:right].mean()
 
-    if len(filtered) < 5:
-        return filtered, f"{len(filtered)} éléments détectés ; grille incomplète."
+            if smoothed[x] >= local_mean:
+                candidates.append((smoothed[x], x))
 
-    # Regroupement approximatif en 5 colonnes par position X.
-    filtered = sorted(filtered, key=lambda p: p[1])
+        candidates.sort(reverse=True)
 
-    return filtered, f"{len(filtered)} cercles détectés. Vérification visuelle recommandée."
+        centers = []
+        for score, x in candidates:
+            if all(abs(x - c) >= min_sep for c in centers):
+                centers.append(x)
+            if len(centers) == N_COLS:
+                break
+
+        centers.sort()
+
+        # Si l'image est bien celle montrée dans l'application, on peut
+        # aussi fournir une grille géométrique robuste comme fallback.
+        if len(centers) < N_COLS:
+            left = int(w * 0.25)
+            right = int(w * 0.91)
+            centers = [
+                int(left + i * (right - left) / (N_COLS - 1))
+                for i in range(N_COLS)
+            ]
+            method = "grille géométrique de secours"
+        else:
+            method = "analyse PIL/numpy"
+
+        # Détection de plusieurs lignes à partir de la projection verticale.
+        signal_y = brightness.mean(axis=1) + 0.35 * saturation.mean(axis=1)
+        ky = max(5, int(h * 0.012))
+        ky += 1 - ky % 2
+        sy = np.convolve(signal_y, np.ones(ky) / ky, mode="same")
+
+        # Zones candidates dans la région de la grille.
+        yrange = range(int(h * 0.14), int(h * 0.78))
+        peaks_y = []
+        sep_y = max(45, int(h * 0.055))
+
+        for y in yrange:
+            lo = max(0, y - ky)
+            hi = min(len(sy), y + ky)
+            if sy[y] >= sy[lo:hi].mean():
+                peaks_y.append((sy[y], y))
+
+        peaks_y.sort(reverse=True)
+        rows = []
+        for score, y in peaks_y:
+            if all(abs(y - r) >= sep_y for r in rows):
+                rows.append(y)
+            if len(rows) >= 8:
+                break
+        rows.sort()
+
+        detections = []
+        radius = max(20, int(min(h, w) * 0.045))
+
+        # Pour l'interface, on retourne au maximum 8 lignes x 5 colonnes.
+        for y in rows[:8]:
+            for x in centers:
+                detections.append((int(x), int(y), radius))
+
+        message = (
+            f"{len(detections)} positions estimées avec {method}. "
+            "La grille est localisée, mais une capture ne révèle pas le résultat "
+            "aléatoire futur."
+        )
+        return detections, message
+
+    except Exception as exc:
+        return None, f"Erreur de détection : {exc}"
 
 
 # ============================================================
