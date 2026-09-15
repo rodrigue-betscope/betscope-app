@@ -1,2065 +1,639 @@
 # -*- coding: utf-8 -*-
 """
-RODRIGUE PRO FOOTBALL AI V25 FINAL BACKTEST CORRIGÉ
-football-data.org v4 only.
+RODRIGUE APPLE AI — Analyseur statistique Apple of Fortune
+------------------------------------------------------------
+Interface Streamlit pour :
+- charger une capture d'écran ;
+- détecter une grille 5 colonnes ;
+- enregistrer les résultats observés ;
+- calculer des probabilités empiriques par colonne ;
+- mesurer la précision réelle du modèle ;
+- produire un score de confiance et un mode "NE PAS JOUER"
+- gérer une mise et une limite de perte.
 
-Corrections:
-- X-Auth-Token is always sent.
-- Token is part of the API cache key.
-- API cache can be reset.
-- Fixed the Streamlit DeltaGenerator display bug:
-  never pass st.success()/st.warning() into st.write(), st.help(), etc.
-- Match search uses /matches with dateFrom/dateTo and local competition filtering.
-- Search diagnostics show how many raw matches the API returned.
-- Multi-season chronological backtest with full historical context.
-- Poisson + Dixon-Coles + Bayesian shrinkage + home/away form.
-- Half-time, HT/FT, exact scores, 1X2, double chance, BTTS, totals.
-- No future data is used for a historical prediction.
-- Probabilities are estimates, not guarantees.
+IMPORTANT :
+Ce programme ne peut pas prédire avec certitude un tirage aléatoire côté serveur.
+Le "90 %" n'est jamais forcé : l'application affiche la précision réellement
+mesurée sur les données enregistrées.
 """
+
+import io
+import json
 import math
-import os
-import time
-from datetime import date
+from pathlib import Path
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
-import requests
 import streamlit as st
+from PIL import Image
 
-API_BASE = "https://api.football-data.org/v4"
+# OpenCV est optionnel : l'application continue à fonctionner sans lui.
+try:
+    import cv2
+    CV2_OK = True
+except Exception:
+    CV2_OK = False
 
-COMPETITIONS = {
-    "Premier League": "PL",
-    "LaLiga": "PD",
-    "Bundesliga": "BL1",
-    "Serie A": "SA",
-    "Ligue 1": "FL1",
-    "Champions League": "CL",
-    "Eredivisie": "DED",
-    "Primeira Liga": "PPL",
-    "Championship": "ELC",
-    "Brasileirão": "BSA",
-}
 
-UA = "Rodrigue-Pro-Football-AI-V25"
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+APP_NAME = "RODRIGUE APPLE AI"
+N_COLS = 5
+DATA_FILE = Path("apple_ai_history.json")
+
 st.set_page_config(
-    page_title="Rodrigue Pro Football AI V25",
-    page_icon="⚽",
+    page_title=APP_NAME,
+    page_icon="🍎",
     layout="wide",
 )
 
-S = requests.Session()
-S.headers.update({"User-Agent": UA, "Accept": "application/json"})
-
-
-# ============================================================
-# UTILITAIRES
-# ============================================================
-
-def sf(x, d=None):
-    try:
-        x = float(x)
-        return x if math.isfinite(x) else d
-    except (TypeError, ValueError):
-        return d
-
-
-def clamp(x, a, b):
-    x = sf(x, a)
-    return max(a, min(b, x))
-
-
-def pct(x):
-    x = sf(x)
-    return "N/D" if x is None else f"{100 * clamp(x, 0, 1):.1f}%"
-
-
-def fmt(x):
-    x = sf(x)
-    return "N/D" if x is None else f"{x:.3f}"
-
-
-def token_from_ui():
-    try:
-        secret = st.secrets.get("FOOTBALL_DATA_KEY", "")
-    except Exception:
-        secret = ""
-
-    return str(
-        secret
-        or os.getenv("FOOTBALL_DATA_KEY", "")
-        or st.session_state.get("api_key", "")
-    ).strip()
-
-
-# ============================================================
-# API FOOTBALL-DATA.ORG
-# ============================================================
-
-def _get(ep, params=(), token=""):
-    if not token:
-        return {
-            "status": 0,
-            "data": None,
-            "error": "Clé API absente",
-            "remaining": "",
-        }
-
-    try:
-        response = S.get(
-            API_BASE + ep,
-            headers={
-                "X-Auth-Token": token,
-                "Accept": "application/json",
-                "User-Agent": UA,
-            },
-            params=dict(params),
-            timeout=30,
-        )
-
-        try:
-            payload = response.json()
-        except Exception:
-            payload = None
-
-        if isinstance(payload, dict):
-            message = payload.get("message") or payload.get("error") or ""
-        else:
-            message = response.text[:500]
-
-        return {
-            "status": response.status_code,
-            "data": payload if response.status_code == 200 else None,
-            "error": message,
-            "remaining": response.headers.get(
-                "X-Requests-Available-Minute", ""
-            ),
-        }
-
-    except requests.RequestException as exc:
-        return {
-            "status": 0,
-            "data": None,
-            "error": str(exc),
-            "remaining": "",
-        }
-
-
-@st.cache_data(ttl=180, show_spinner=False)
-def api(ep, params=(), token=""):
-    time.sleep(0.08)
-    return _get(ep, params, token)
-
-
-def data(ep, params=(), token=""):
-    result = api(ep, params, token)
-    return result["data"] if result["status"] == 200 else None
-
-
-def api_message(result):
-    status = result.get("status", 0)
-    error = result.get("error") or "sans détail"
-
-    known = {
-        400: "HTTP 400 — paramètres de requête invalides.",
-        401: "HTTP 401 — clé non authentifiée.",
-        403: (
-            "HTTP 403 — ressource restreinte : "
-            "authentification, permissions ou plan."
-        ),
-        404: "HTTP 404 — ressource introuvable.",
-        429: "HTTP 429 — quota dépassé.",
+st.markdown(
+    """
+    <style>
+    .main-title {
+        font-size: 34px;
+        font-weight: 800;
+        margin-bottom: 0;
     }
-    return known.get(status, f"HTTP {status} — {error}")
+    .sub-title {
+        opacity: .75;
+        margin-top: 0;
+    }
+    .box {
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid rgba(128,128,128,.25);
+        margin-bottom: 12px;
+    }
+    .safe {
+        padding: 16px;
+        border-radius: 12px;
+        background: rgba(50,180,80,.15);
+        border: 1px solid rgba(50,180,80,.45);
+    }
+    .danger {
+        padding: 16px;
+        border-radius: 12px;
+        background: rgba(220,50,50,.15);
+        border: 1px solid rgba(220,50,50,.45);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(f'<div class="main-title">🍎 {APP_NAME}</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="sub-title">Analyse statistique • Vision de grille • Validation réelle</div>',
+    unsafe_allow_html=True,
+)
+
+st.warning(
+    "Aucune IA ne peut garantir 90 % sur un jeu dont le résultat est généré "
+    "aléatoirement côté serveur. Ce programme mesure la performance réelle du "
+    "modèle et refuse de donner une fausse confiance."
+)
 
 
 # ============================================================
-# MATCH / HISTORIQUE
+# STOCKAGE
 # ============================================================
 
-def finished(match):
-    full_time = match.get("score", {}).get("fullTime", {})
-    return (
-        match.get("status") == "FINISHED"
-        and full_time.get("home") is not None
-        and full_time.get("away") is not None
+def load_history():
+    if not DATA_FILE.exists():
+        return []
+    try:
+        return json.loads(DATA_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def save_history(history):
+    DATA_FILE.write_text(
+        json.dumps(history, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
 
-def dkey(match):
-    return match.get("utcDate", "")
+if "history" not in st.session_state:
+    st.session_state.history = load_history()
 
 
-def result_row(match, team_id):
-    home_id = match.get("homeTeam", {}).get("id")
-    away_id = match.get("awayTeam", {}).get("id")
+# ============================================================
+# OUTILS STATISTIQUES
+# ============================================================
 
-    full_time = match.get("score", {}).get("fullTime", {})
-    home_goals = full_time.get("home")
-    away_goals = full_time.get("away")
+def wilson_lower_bound(successes, trials, z=1.96):
+    """Borne basse Wilson à 95 %, utile pour éviter une confiance artificielle."""
+    if trials <= 0:
+        return 0.0
 
-    if home_goals is None or away_goals is None:
+    p = successes / trials
+    denominator = 1 + z**2 / trials
+    center = p + z**2 / (2 * trials)
+    margin = z * math.sqrt((p * (1 - p) / trials) + z**2 / (4 * trials**2))
+    return max(0.0, (center - margin) / denominator)
+
+
+def empirical_column_stats(history):
+    """
+    Chaque observation doit contenir:
+      safe_col = colonne effectivement sûre (1..5)
+    """
+    rows = []
+    for col in range(1, N_COLS + 1):
+        obs = [x for x in history if x.get("safe_col") in range(1, N_COLS + 1)]
+        trials = len(obs)
+        successes = sum(1 for x in obs if x.get("safe_col") == col)
+
+        # Probabilité empirique + lissage de Laplace.
+        p = (successes + 1) / (trials + N_COLS)
+        lower = wilson_lower_bound(successes, trials)
+
+        rows.append(
+            {
+                "Colonne": col,
+                "Observations": trials,
+                "Succès": successes,
+                "Fréquence observée": p,
+                "Borne Wilson 95%": lower,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def recent_weights(history, decay=0.92):
+    """Poids exponentiels : observations récentes légèrement prioritaires."""
+    valid = [x for x in history if x.get("safe_col") in range(1, N_COLS + 1)]
+    weights = []
+
+    for i, item in enumerate(valid):
+        age = len(valid) - 1 - i
+        weights.append(decay ** age)
+
+    return valid, np.array(weights, dtype=float)
+
+
+def weighted_probabilities(history):
+    valid, weights = recent_weights(history)
+
+    if not valid:
+        return np.ones(N_COLS) / N_COLS
+
+    scores = np.ones(N_COLS)  # Laplace smoothing
+    for item, w in zip(valid, weights):
+        scores[int(item["safe_col"]) - 1] += w
+
+    return scores / scores.sum()
+
+
+def bootstrap_accuracy(history, simulations=1000):
+    """
+    Estime l'incertitude de la précision observée par bootstrap.
+    """
+    valid = [x for x in history if x.get("prediction_col") in range(1, N_COLS + 1)
+             and x.get("safe_col") in range(1, N_COLS + 1)]
+
+    if len(valid) < 5:
         return None
 
-    if team_id == home_id:
-        return {
-            "gf": home_goals,
-            "ga": away_goals,
-            "venue": "H",
-            "r": (
-                "W" if home_goals > away_goals
-                else "D" if home_goals == away_goals
-                else "L"
-            ),
-        }
-
-    if team_id == away_id:
-        return {
-            "gf": away_goals,
-            "ga": home_goals,
-            "venue": "A",
-            "r": (
-                "W" if away_goals > home_goals
-                else "D" if away_goals == home_goals
-                else "L"
-            ),
-        }
-
-    return None
-
-
-def rows_before(matches, team_id, before=None, venue=None, limit=60):
-    output = []
-    cutoff = before or "9999"
-
-    for match in sorted(matches, key=dkey, reverse=True):
-        if dkey(match) >= cutoff or not finished(match):
-            continue
-
-        row = result_row(match, team_id)
-
-        if row and (venue is None or row["venue"] == venue):
-            output.append({"date": dkey(match), **row})
-
-            if len(output) >= limit:
-                break
-
-    return output
-
-
-def stats(rows):
-    if not rows:
-        return {
-            "n": 0,
-            "wins": 0,
-            "draws": 0,
-            "losses": 0,
-            "gf": 1.30,
-            "ga": 1.30,
-            "form": 0.50,
-        }
-
-    weights = np.array(
-        [0.94 ** i for i in range(len(rows))],
-        dtype=float,
-    )
-    gf = np.array([x["gf"] for x in rows], dtype=float)
-    ga = np.array([x["ga"] for x in rows], dtype=float)
-    points = np.array(
-        [
-            3 if x["r"] == "W"
-            else 1 if x["r"] == "D"
-            else 0
-            for x in rows
-        ],
+    correct = np.array(
+        [int(x["prediction_col"] == x["safe_col"]) for x in valid],
         dtype=float,
     )
 
+    rng = np.random.default_rng(42)
+    samples = []
+
+    for _ in range(simulations):
+        sample = rng.choice(correct, size=len(correct), replace=True)
+        samples.append(sample.mean())
+
     return {
-        "n": len(rows),
-        "wins": int(sum(x["r"] == "W" for x in rows)),
-        "draws": int(sum(x["r"] == "D" for x in rows)),
-        "losses": int(sum(x["r"] == "L" for x in rows)),
-        "gf": float(np.average(gf, weights=weights)),
-        "ga": float(np.average(ga, weights=weights)),
-        "form": float(np.average(points / 3.0, weights=weights)),
+        "accuracy": float(correct.mean()),
+        "low": float(np.percentile(samples, 2.5)),
+        "high": float(np.percentile(samples, 97.5)),
+        "n": len(correct),
     }
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
-def competition_info(code, token):
-    return data(f"/competitions/{code}", (), token) or {}
-
-
-@st.cache_data(ttl=900, show_spinner=False)
-def season_matches(code, year, token):
-    payload = data(
-        f"/competitions/{code}/matches",
-        (("season", str(year)),),
-        token,
-    ) or {}
-    return payload.get("matches", [])
-
-
-@st.cache_data(ttl=900, show_spinner=False)
-def h2h(match_id, token):
-    payload = data(
-        f"/matches/{match_id}/head2head",
-        (("limit", "10"),),
-        token,
-    ) or {}
-    return payload.get("matches", [])
-
-
-def seasons(code, token):
-    info = competition_info(code, token)
-    years = []
-
-    for season in info.get("seasons", []):
-        start = str(season.get("startDate", ""))
-        if len(start) >= 4:
-            try:
-                years.append(int(start[:4]))
-            except ValueError:
-                pass
-
-    current = str(info.get("currentSeason", {}).get("startDate", ""))
-    if len(current) >= 4:
-        try:
-            years.append(int(current[:4]))
-        except ValueError:
-            pass
-
-    return sorted(set(years), reverse=True)
-
-
-# ============================================================
-# STATISTIQUES DE LIGUE
-# ============================================================
-
-def league_stats(matches, before=None):
-    finished_matches = [
-        m
-        for m in matches
-        if finished(m) and (before is None or dkey(m) < before)
+def model_confidence(history, selected_col):
+    """
+    Score de confiance volontairement conservateur.
+    Il combine :
+      - fréquence récente ;
+      - historique global ;
+      - quantité d'observations ;
+      - borne Wilson.
+    """
+    valid = [
+        x for x in history
+        if x.get("safe_col") in range(1, N_COLS + 1)
     ]
 
-    if not finished_matches:
+    if len(valid) < 10:
         return {
-            "n": 0,
-            "home_g": 1.45,
-            "away_g": 1.15,
-            "total_g": 2.60,
-            "ht_ratio": 0.44,
-            "draw": 0.27,
+            "confidence": 20.0,
+            "probability": 20.0,
+            "status": "DONNÉES INSUFFISANTES",
+            "reason": "Il faut davantage de parties observées.",
         }
 
-    home_goals = []
-    away_goals = []
-    ht_goals = []
-    draws = 0
+    probs = weighted_probabilities(history)
+    p = float(probs[selected_col - 1])
 
-    for match in finished_matches:
-        full = match["score"]["fullTime"]
-        hg = full["home"]
-        ag = full["away"]
+    trials = len(valid)
+    successes = sum(
+        1 for x in valid if x.get("safe_col") == selected_col
+    )
+    lower = wilson_lower_bound(successes, trials)
 
-        home_goals.append(hg)
-        away_goals.append(ag)
-
-        if hg == ag:
-            draws += 1
-
-        half = match.get("score", {}).get("halfTime", {})
-        if half.get("home") is not None and half.get("away") is not None:
-            ht_goals.append(half["home"] + half["away"])
-
-    total_goals = float(
-        np.mean(np.array(home_goals) + np.array(away_goals))
+    # Score prudent : on pénalise les petits échantillons.
+    sample_factor = min(1.0, trials / 100.0)
+    confidence = 100.0 * (
+        0.55 * lower +
+        0.25 * p +
+        0.20 * sample_factor
     )
 
-    ratio = (
-        float(np.mean(ht_goals)) / total_goals
-        if ht_goals and total_goals > 0
-        else 0.44
-    )
+    confidence = max(0.0, min(99.0, confidence))
 
-    return {
-        "n": len(home_goals),
-        "home_g": float(np.mean(home_goals)),
-        "away_g": float(np.mean(away_goals)),
-        "total_g": total_goals,
-        "ht_ratio": clamp(ratio, 0.35, 0.55),
-        "draw": draws / max(len(home_goals), 1),
-    }
-
-
-# ============================================================
-# POISSON / DIXON-COLES
-# ============================================================
-
-def pois(lam, k):
-    lam = sf(lam)
-    k = int(k)
-
-    if lam is None or lam < 0 or k < 0:
-        return 0.0
-
-    if lam == 0:
-        return 1.0 if k == 0 else 0.0
-
-    try:
-        value = math.exp(
-            -lam
-            + k * math.log(lam)
-            - math.lgamma(k + 1)
-        )
-        return clamp(value, 0.0, 1.0)
-    except (ValueError, OverflowError):
-        return 0.0
-
-
-def matrix(home_lambda, away_lambda, n=8):
-    home = np.array(
-        [pois(home_lambda, i) for i in range(n + 1)]
-    )
-    away = np.array(
-        [pois(away_lambda, i) for i in range(n + 1)]
-    )
-
-    mat = np.outer(home, away)
-    total = mat.sum()
-
-    if total > 0:
-        return mat / total
-
-    return np.zeros_like(mat)
-
-
-def dc(mat, home_lambda, away_lambda, rho=-0.055):
-    output = mat.copy()
-
-    corrections = {
-        (0, 0): 1 - home_lambda * away_lambda * rho,
-        (0, 1): 1 + home_lambda * rho,
-        (1, 0): 1 + away_lambda * rho,
-        (1, 1): 1 - rho,
-    }
-
-    for (home_goals, away_goals), factor in corrections.items():
-        if (
-            home_goals < output.shape[0]
-            and away_goals < output.shape[1]
-        ):
-            output[home_goals, away_goals] *= clamp(
-                factor, 0.90, 1.10
-            )
-
-    output = np.maximum(output, 0)
-    total = output.sum()
-
-    return output / total if total > 0 else output
-
-
-# ============================================================
-# MARCHES
-# ============================================================
-
-def markets(mat):
-    result = {
-        "1": 0.0,
-        "X": 0.0,
-        "2": 0.0,
-        "BTTS Oui": 0.0,
-        "Over 1.5": 0.0,
-        "Over 2.5": 0.0,
-        "Over 3.5": 0.0,
-    }
-
-    for home_goals in range(mat.shape[0]):
-        for away_goals in range(mat.shape[1]):
-            p = float(mat[home_goals, away_goals])
-
-            if home_goals > away_goals:
-                result["1"] += p
-            elif home_goals == away_goals:
-                result["X"] += p
-            else:
-                result["2"] += p
-
-            if home_goals > 0 and away_goals > 0:
-                result["BTTS Oui"] += p
-
-            if home_goals + away_goals >= 2:
-                result["Over 1.5"] += p
-
-            if home_goals + away_goals >= 3:
-                result["Over 2.5"] += p
-
-            if home_goals + away_goals >= 4:
-                result["Over 3.5"] += p
-
-    result["1X"] = result["1"] + result["X"]
-    result["X2"] = result["X"] + result["2"]
-    result["12"] = result["1"] + result["2"]
-    result["BTTS Non"] = 1 - result["BTTS Oui"]
-
-    for line in ("1.5", "2.5", "3.5"):
-        result["Under " + line] = 1 - result["Over " + line]
-
-    return result
-
-
-def scores(mat, n=10):
-    values = [
-        (f"{h}-{a}", float(mat[h, a]))
-        for h in range(mat.shape[0])
-        for a in range(mat.shape[1])
-    ]
-
-    return sorted(
-        values,
-        key=lambda z: z[1],
-        reverse=True,
-    )[:n]
-
-
-# ============================================================
-# FORCES DES EQUIPES
-# ============================================================
-
-def strength(rows, league, venue=None):
-    current = stats(rows)
-    n = current["n"]
-    prior = 6.0
-
-    if venue == "H":
-        prior_gf = league["home_g"]
-        prior_ga = league["away_g"]
-    elif venue == "A":
-        prior_gf = league["away_g"]
-        prior_ga = league["home_g"]
+    if confidence >= 70:
+        status = "SIGNAL STATISTIQUE FORT"
+    elif confidence >= 55:
+        status = "SIGNAL MOYEN"
     else:
-        prior_gf = league["total_g"] / 2
-        prior_ga = league["total_g"] / 2
-
-    gf = (
-        n * current["gf"] + prior * prior_gf
-    ) / (n + prior)
-
-    ga = (
-        n * current["ga"] + prior * prior_ga
-    ) / (n + prior)
-
-    return gf, ga, current
-
-
-def lambdas(home_rows, away_rows, home_home_rows, away_away_rows, league):
-    home_gf, home_ga, home_stats = strength(
-        home_rows, league
-    )
-    away_gf, away_ga, away_stats = strength(
-        away_rows, league
-    )
-
-    home_gf_home, home_ga_home, _ = strength(
-        home_home_rows, league, "H"
-    )
-    away_gf_away, away_ga_away, _ = strength(
-        away_away_rows, league, "A"
-    )
-
-    league_home = max(league["home_g"], 0.25)
-    league_away = max(league["away_g"], 0.20)
-    league_avg = max(league["total_g"] / 2, 0.20)
-
-    home_attack = (
-        0.58 * home_gf_home / league_home
-        + 0.42 * away_gf / league_avg
-    )
-
-    home_defense = (
-        0.58 * away_ga_away / league_away
-        + 0.42 * home_ga / league_avg
-    )
-
-    away_attack = (
-        0.58 * away_gf_away / league_away
-        + 0.42 * away_gf / league_avg
-    )
-
-    away_defense = (
-        0.58 * home_ga_home / league_home
-        + 0.42 * away_ga / league_avg
-    )
-
-    home_lambda = league_home * math.sqrt(
-        max(home_attack, 0.20)
-        * max(home_defense, 0.20)
-    )
-
-    away_lambda = league_away * math.sqrt(
-        max(away_attack, 0.20)
-        * max(away_defense, 0.20)
-    )
-
-    # Forme récente : correction faible et bornée.
-    home_lambda *= clamp(
-        0.93 + 0.14 * home_stats["form"],
-        0.90,
-        1.07,
-    )
-
-    away_lambda *= clamp(
-        0.93 + 0.14 * away_stats["form"],
-        0.90,
-        1.07,
-    )
-
-    return (
-        clamp(home_lambda, 0.20, 3.80),
-        clamp(away_lambda, 0.15, 3.50),
-    )
-
-
-
-# ============================================================
-# V24 — ENSEMBLE ELO + NO BET + CALIBRATION
-# ============================================================
-
-def normalize_probs(p):
-    p=np.asarray(p,dtype=float)
-    p=np.nan_to_num(p,nan=0.0,posinf=0.0,neginf=0.0)
-    p=np.maximum(p,0.0)
-    s=p.sum()
-    return p/s if s>0 else np.array([0.45,0.27,0.28])
-
-
-def elo_ratings(history,before=None,k=22.0,home_adv=55.0):
-    ratings={}
-    for m in sorted(history,key=dkey):
-        if before is not None and dkey(m)>=before: break
-        if not finished(m): continue
-        hid=m.get("homeTeam",{}).get("id"); aid=m.get("awayTeam",{}).get("id")
-        if hid is None or aid is None: continue
-        rh=ratings.get(hid,1500.0); ra=ratings.get(aid,1500.0)
-        expected=1/(1+10**(-((rh+home_adv)-ra)/400))
-        f=m["score"]["fullTime"]
-        actual=1.0 if f["home"]>f["away"] else 0.5 if f["home"]==f["away"] else 0.0
-        margin=min(abs(f["home"]-f["away"]),3)
-        kk=k*(1+0.12*margin)
-        ratings[hid]=rh+kk*(actual-expected)
-        ratings[aid]=ra+kk*((1-actual)-(1-expected))
-    return ratings
-
-
-def elo_probs(history,home_id,away_id,before=None):
-    r=elo_ratings(history,before)
-    rh=r.get(home_id,1500.0); ra=r.get(away_id,1500.0)
-    diff=rh+55-ra
-    home_raw=1/(1+10**(-diff/400))
-    draw=clamp(0.285-0.00010*abs(diff),0.16,0.30)
-    remain=1-draw
-    return normalize_probs([home_raw*remain,draw,(1-home_raw)*remain])
-
-
-def empirical_probs(history,home_id,away_id,before=None):
-    prior=np.array([0.45,0.27,0.28])
-    matches=[m for m in history if finished(m) and (before is None or dkey(m)<before)][-400:]
-    counts=np.zeros(3)
-    for i,m in enumerate(matches):
-        h=m.get("homeTeam",{}).get("id"); a=m.get("awayTeam",{}).get("id")
-        f=m["score"]["fullTime"]
-        if h==home_id and a==away_id:
-            y=0 if f["home"]>f["away"] else 1 if f["home"]==f["away"] else 2
-        elif h==away_id and a==home_id:
-            y=2 if f["home"]>f["away"] else 1 if f["home"]==f["away"] else 0
-        else:
-            continue
-        counts[y]+=0.995**(len(matches)-i-1)
-    if counts.sum()<=0:
-        return prior
-    posterior=normalize_probs(counts+8*prior)
-    info=clamp(counts.sum()/20,0,1)
-    return normalize_probs(info*posterior+(1-info)*prior)
-
-
-def ensemble_probs(poisson,elo,empirical,sample_size):
-    q=clamp(sample_size/20,0,1)
-    wp=0.58+0.08*q
-    we=0.27
-    wi=max(0.05,1-wp-we)
-    return normalize_probs(wp*poisson+we*elo+wi*empirical)
-
-
-def model_entropy(p):
-    p=normalize_probs(p)
-    return float(-sum(x*math.log(x) for x in p if x>0))
-
-
-def no_bet_gate(p,sample_size):
-    p=normalize_probs(p)
-    ordered=sorted(p,reverse=True)
-    if sample_size<5:
-        return {"decision":"NO BET","reason":"Historique insuffisant.","score":0}
-    if ordered[0]<0.48:
-        return {"decision":"NO BET","reason":"Probabilité principale trop faible.","score":15}
-    if ordered[0]-ordered[1]<0.08:
-        return {"decision":"NO BET","reason":"Scénarios trop proches.","score":25}
-    if model_entropy(p)>1.02:
-        return {"decision":"NO BET","reason":"Distribution trop incertaine.","score":30}
-    score=int(clamp(45+75*(ordered[0]-0.45)+120*(ordered[0]-ordered[1])+min(sample_size,30)*0.4,0,100))
-    return {"decision":"SIGNAL","reason":"Séparation suffisante entre les scénarios.","score":score}
-
-
-def calibration_error(probabilities,targets,bins=10):
-    p=np.asarray(probabilities,dtype=float); y=np.asarray(targets,dtype=int)
-    errors=[]; weights=[]
-    for cls in range(3):
-        pc=p[:,cls]; yc=(y==cls).astype(float)
-        for b in range(bins):
-            lo=b/bins; hi=(b+1)/bins
-            mask=(pc>=lo)&((pc<=hi) if b==bins-1 else (pc<hi))
-            n=int(mask.sum())
-            if n:
-                errors.append(abs(float(pc[mask].mean())-float(yc[mask].mean())))
-                weights.append(n)
-    return float(np.average(errors,weights=weights)) if weights else None
-
-
-# ============================================================
-# H2H / MI-TEMPS / MT-FT
-# ============================================================
-
-def h2h_signal(matches, home_id, away_id):
-    home_wins = 0
-    draws = 0
-    away_wins = 0
-
-    for match in matches:
-        if not finished(match):
-            continue
-
-        full = match["score"]["fullTime"]
-        match_home = match.get("homeTeam", {}).get("id")
-        match_away = match.get("awayTeam", {}).get("id")
-
-        if match_home == home_id and match_away == away_id:
-            x, y = full["home"], full["away"]
-        elif match_home == away_id and match_away == home_id:
-            x, y = full["away"], full["home"]
-        else:
-            continue
-
-        if x > y:
-            home_wins += 1
-        elif x == y:
-            draws += 1
-        else:
-            away_wins += 1
-
-    total = home_wins + draws + away_wins
+        status = "NE PAS JOUER"
 
     return {
-        "n": total,
-        "home": home_wins / total if total else 0.50,
-        "away": away_wins / total if total else 0.25,
-        "draw": draws / total if total else 0.25,
-        "hw": home_wins,
-        "dr": draws,
-        "aw": away_wins,
+        "confidence": confidence,
+        "probability": p * 100,
+        "status": status,
+        "reason": f"{trials} observations analysées ; borne Wilson = {lower*100:.1f} %.",
     }
-
-
-def apply_h2h(mat, h2h_data):
-    if h2h_data["n"] < 4:
-        return mat
-
-    adjustment = clamp(
-        (h2h_data["home"] - h2h_data["away"]) * 0.035,
-        -0.025,
-        0.025,
-    )
-
-    output = mat.copy()
-
-    for h in range(output.shape[0]):
-        for a in range(output.shape[1]):
-            if h > a:
-                output[h, a] *= 1 + adjustment
-            elif h < a:
-                output[h, a] *= 1 - adjustment
-
-    return output / output.sum()
-
-
-def ht_model(home_lambda, away_lambda, league):
-    ratio = clamp(
-        league.get("ht_ratio", 0.44),
-        0.35,
-        0.55,
-    )
-
-    home_ht = home_lambda * ratio
-    away_ht = away_lambda * ratio
-
-    return dc(
-        matrix(home_ht, away_ht, 6),
-        home_ht,
-        away_ht,
-    )
-
-
-def htft(ht, ft):
-    ht_markets = markets(ht)
-    ft_markets = markets(ft)
-
-    transitions = {
-        "1": {"1": 0.74, "X": 0.16, "2": 0.10},
-        "X": {"1": 0.27, "X": 0.48, "2": 0.25},
-        "2": {"1": 0.10, "X": 0.16, "2": 0.74},
-    }
-
-    output = {
-        f"{x}/{y}": ht_markets[x] * transitions[x][y]
-        for x in "1X2"
-        for y in "1X2"
-    }
-
-    for y in "1X2":
-        total = sum(
-            output[f"{x}/{y}"]
-            for x in "1X2"
-        )
-
-        if total > 0:
-            for x in "1X2":
-                output[f"{x}/{y}"] *= (
-                    ft_markets[y] / total
-                )
-
-    return sorted(
-        output.items(),
-        key=lambda z: z[1],
-        reverse=True,
-    )
 
 
 # ============================================================
-# V25 — SIGNAL PRO / ANTI-SURCONFIANCE
+# VISION DE LA CAPTURE
 # ============================================================
 
-def pro_signal(result):
-    """Construit un signal lisible à partir de plusieurs contrôles.
-
-    Ce score n'est pas une probabilité de gain. Il mesure la robustesse
-    interne du signal: séparation 1X2, volume d'historique, accord entre
-    modèles et présence éventuelle du NO BET.
+def detect_grid(image):
     """
-    p = normalize_probs(result.get("ensemble", [0.45, 0.27, 0.28]))
-    order = np.argsort(p)[::-1]
-    best = float(p[order[0]])
-    second = float(p[order[1]])
-    gap = best - second
-
-    components = [
-        normalize_probs(result.get("poisson_probs", p)),
-        normalize_probs(result.get("elo_probs", p)),
-        normalize_probs(result.get("empirical_probs", p)),
-    ]
-    agreement = 1.0 - float(
-        np.mean([np.abs(c - p).sum() / 2.0 for c in components])
-    )
-
-    sample = int(min(
-        result.get("hs", {}).get("n", 0),
-        result.get("as", {}).get("n", 0),
-    ))
-
-    score = (
-        100.0 * best * 0.45
-        + 100.0 * clamp(gap / 0.25, 0.0, 1.0) * 0.25
-        + 100.0 * agreement * 0.20
-        + 100.0 * clamp(sample / 20.0, 0.0, 1.0) * 0.10
-    )
-
-    gate = result.get("no_bet", {})
-    if gate.get("decision") == "NO BET":
-        decision = "NO BET"
-    elif score >= 72:
-        decision = "SIGNAL FORT"
-    elif score >= 60:
-        decision = "SIGNAL"
-    else:
-        decision = "PRUDENCE"
-
-    return {
-        "decision": decision,
-        "score": int(round(clamp(score, 0, 100))),
-        "best": best,
-        "gap": gap,
-        "agreement": agreement,
-        "sample": sample,
-        "reason": gate.get("reason", ""),
-    }
-
-
-# ============================================================
-# ANALYSE D'UN MATCH
-# ============================================================
-
-def analyze(match,token):
-    code=match.get("competition",{}).get("code","")
-    start=str(match.get("season",{}).get("startDate",""))
-    try: year=int(start[:4])
-    except Exception: year=date.today().year
-    allm=season_matches(code,year,token)
-    before=dkey(match); hid=match["homeTeam"]["id"]; aid=match["awayTeam"]["id"]
-    lg=league_stats(allm,before)
-    hr=rows_before(allm,hid,before,None,60); ar=rows_before(allm,aid,before,None,60)
-    hhr=rows_before(allm,hid,before,"H",20); aar=rows_before(allm,aid,before,"A",20)
-    hl,al=lambdas(hr,ar,hhr,aar,lg)
-    ft=dc(matrix(hl,al),hl,al)
-    h2=h2h_signal(h2h(match["id"],token),hid,aid)
-    ft=apply_h2h(ft,h2)
-    mk=markets(ft)
-    poisson=np.array([mk["1"],mk["X"],mk["2"]],dtype=float)
-    elo=elo_probs(allm,hid,aid,before)
-    empirical=empirical_probs(allm,hid,aid,before)
-    ensemble=ensemble_probs(poisson,elo,empirical,min(len(hr),len(ar)))
-    if h2["n"]>=4:
-        ensemble=normalize_probs(0.94*ensemble+0.06*np.array([h2["home"],h2["draw"],h2["away"]]))
-    mk["1"],mk["X"],mk["2"]=map(float,ensemble)
-    mk["1X"]=mk["1"]+mk["X"]; mk["X2"]=mk["X"]+mk["2"]; mk["12"]=mk["1"]+mk["2"]
-    ht=ht_model(hl,al,lg)
-    sample=min(len(hr),len(ar))
-    quality=int(clamp(35+min(lg["n"],100)*0.15+min(sample,20)*1.2+(8 if h2["n"]>=5 else 0),0,85))
-    ordered=sorted(ensemble,reverse=True)
-    confidence=int(clamp(50+30*(ordered[0]-ordered[1])+0.25*quality,50,90))
-    principal=max((("1",mk["1"]),("X",mk["X"]),("2",mk["2"])),key=lambda z:z[1])
-    result = {"home":match["homeTeam"]["name"],"away":match["awayTeam"]["name"],
-            "competition":match["competition"]["name"],"date":before,"status":match.get("status",""),
-            "hl":hl,"al":al,"league":lg,"hs":stats(hr),"as":stats(ar),"h2":h2,"mk":mk,
-            "scores":scores(ft),"htscores":scores(ht,8),"htft":htft(ht,ft),"quality":quality,
-            "confidence":confidence,"one":principal,"ensemble":ensemble,
-            "poisson_probs":poisson,"elo_probs":elo,"empirical_probs":empirical,
-            "no_bet":no_bet_gate(ensemble,sample)}
-    result["pro_signal"] = pro_signal(result)
-    return result
-
-
-# ============================================================
-# V24 — BACKTEST JUSQU'À 5000 VRAIS MATCHS
-# ============================================================
-
-def outcome(match):
-    f=match["score"]["fullTime"]
-    return 0 if f["home"]>f["away"] else 1 if f["home"]==f["away"] else 2
-
-
-def brier(p,y):
-    return float(sum((p[i]-(1 if i==y else 0))**2 for i in range(3)))
-
-
-def logloss(p,y):
-    return float(-math.log(clamp(p[y],1e-7,1)))
-
-
-def predict_from_history(history,match):
-    before=dkey(match); hid=match["homeTeam"]["id"]; aid=match["awayTeam"]["id"]
-    lg=league_stats(history,before)
-    hr=rows_before(history,hid,before,None,60); ar=rows_before(history,aid,before,None,60)
-    hhr=rows_before(history,hid,before,"H",20); aar=rows_before(history,aid,before,"A",20)
-    if len(hr)<3 or len(ar)<3: return None
-    hl,al=lambdas(hr,ar,hhr,aar,lg)
-    mat=dc(matrix(hl,al),hl,al); mk=markets(mat)
-    poisson=np.array([mk["1"],mk["X"],mk["2"]],dtype=float)
-    elo=elo_probs(history,hid,aid,before)
-    empirical=empirical_probs(history,hid,aid,before)
-    ensemble=ensemble_probs(poisson,elo,empirical,min(len(hr),len(ar)))
-    return ensemble,mk,mat,lg
-
-
-def run_backtest(code,year,token,max_eval=5000,warmup=30):
-    allm=sorted([m for m in season_matches(code,year,token) if finished(m)],key=dkey)
-    if len(allm)<=warmup:
-        return {"status":"insufficient","n":0,"available":len(allm),
-                "message":"Pas assez de matchs après le warm-up."}
-    evals=allm[warmup:]
-    if len(evals)>max_eval: evals=evals[-max_eval:]
-    predictions=[]; targets=[]; br=[]; ll=[]; bbr=[]; bll=[]
-    over25_hits=over25_n=btts_hits=btts_n=exact_hits=no_bet_n=0
-
-    for m in evals:
-        history=[x for x in allm if dkey(x)<dkey(m)]
-        if len(history)<warmup: continue
-        z=predict_from_history(history,m)
-        if z is None: continue
-        probs,mk,mat,lg=z; y=outcome(m)
-        predictions.append(probs); targets.append(y)
-        br.append(brier(probs,y)); ll.append(logloss(probs,y))
-        draw=clamp(lg["draw"],0.15,0.40)
-        baseline=normalize_probs([0.54*(1-draw),draw,0.46*(1-draw)])
-        bbr.append(brier(baseline,y)); bll.append(logloss(baseline,y))
-        f=m["score"]["fullTime"]
-        over25_hits += (mk["Over 2.5"]>=0.5)==(f["home"]+f["away"]>=3); over25_n+=1
-        btts_hits += (mk["BTTS Oui"]>=0.5)==(f["home"]>0 and f["away"]>0); btts_n+=1
-        exact_hits += scores(mat,1)[0][0]==f'{f["home"]}-{f["away"]}'
-        sample=min(len(rows_before(history,m["homeTeam"]["id"],dkey(m),None,60)),
-                   len(rows_before(history,m["awayTeam"]["id"],dkey(m),None,60)))
-        no_bet_n += no_bet_gate(probs,sample)["decision"]=="NO BET"
-
-    n=len(targets)
-    if not n:
-        return {"status":"insufficient","n":0,"available":len(allm),
-                "message":"Pas assez de matchs exploitables."}
-    pa=np.array(predictions); ya=np.array(targets)
-    bs=float(np.mean(br)); ls=float(np.mean(ll)); bbs=float(np.mean(bbr)); bls=float(np.mean(bll))
-    cal=calibration_error(pa,ya,10)
-    if n<50: rel="INSUFFISANTE"
-    elif n<150: rel="LIMITEE"
-    elif n<500: rel="MOYENNE"
-    elif bs<bbs and ls<bls and cal is not None and cal<=0.08: rel="SOLIDE"
-    else: rel="A AMELIORER"
-    return {"status":"ok","n":n,"available":len(allm),
-            "accuracy":float(np.mean(np.argmax(pa,1)==ya)),"brier":bs,"logloss":ls,
-            "baseline_brier":bbs,"baseline_logloss":bls,"brier_gain":1-bs/max(bbs,1e-9),
-            "logloss_gain":1-ls/max(bls,1e-9),"over25":over25_hits/max(over25_n,1),
-            "btts":btts_hits/max(btts_n,1),"exact":exact_hits/max(n,1),
-            "calibration_error":cal,"no_bet_rate":no_bet_n/max(n,1),"reliability":rel}
-
-
-def multi_backtest(code,years,token,max_eval=5000,warmup=30):
-    results=[]; total=0
-    for year in years:
-        remaining=max_eval-total
-        if remaining<=0: break
-        r=run_backtest(code,int(year),token,remaining,warmup); r["season"]=int(year)
-        results.append(r); total+=r.get("n",0)
-    valid=[r for r in results if r.get("status")=="ok"]
-    if not valid: return {"seasons":results,"aggregate":None}
-    N=sum(r["n"] for r in valid)
-    def w(k):
-        vals=[r for r in valid if r.get(k) is not None]; denom=sum(r["n"] for r in vals)
-        return None if not denom else sum(r[k]*r["n"] for r in vals)/denom
-    agg={k:w(k) for k in ["accuracy","brier","logloss","baseline_brier","baseline_logloss",
-                           "brier_gain","logloss_gain","over25","btts","exact","calibration_error","no_bet_rate"]}
-    agg["n"]=N
-    if N<50: agg["reliability"]="INSUFFISANTE"
-    elif N<150: agg["reliability"]="LIMITEE"
-    elif N<500: agg["reliability"]="MOYENNE"
-    elif agg["brier"]<agg["baseline_brier"] and agg["logloss"]<agg["baseline_logloss"] and agg["calibration_error"] is not None and agg["calibration_error"]<=0.08:
-        agg["reliability"]="SOLIDE"
-    else: agg["reliability"]="A AMELIORER"
-    return {"seasons":results,"aggregate":agg}
-
-
-# ============================================================
-# RECHERCHE DES MATCHS — VERSION CORRIGEE
-# ============================================================
-
-def find_matches(day, codes, token):
-    """Recherche robuste et diagnostiquée des matchs d'une date.
-
-    Ordre:
-      1) /matches?dateFrom=date&dateTo=date
-      2) si aucun match sélectionné: /competitions/{code}/matches
-         avec la même plage de dates, compétition par compétition
-      3) fusion + déduplication + filtrage final.
-
-    Le programme ne transforme jamais une réponse vide en erreur logique.
-    Chaque tentative est conservée dans le diagnostic.
+    Détection indicative d'une grille de 5 colonnes.
+    Elle ne prétend pas reconnaître quelle pomme est gagnante.
+    Retourne des centres approximatifs des cercles détectés.
     """
-    day_s = day.isoformat()
-    wanted = set(codes or [])
-    attempts = []
-    global_matches = []
-    fallback_matches = []
+    if not CV2_OK:
+        return None, "OpenCV n'est pas installé."
 
-    # 1) Endpoint global
-    result = api(
-        "/matches",
-        (("dateFrom", day_s), ("dateTo", day_s)),
-        token,
-    )
-    global_matches = (
-        (result.get("data") or {}).get("matches", []) or []
-        if result.get("status") == 200 else []
-    )
-    attempts.append({
-        "endpoint": "/matches",
-        "status": result.get("status", 0),
-        "count": len(global_matches),
-        "error": result.get("error", ""),
-        "remaining": result.get("remaining", ""),
-    })
+    arr = np.array(image.convert("RGB"))
+    bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    gray = cv2.medianBlur(gray, 7)
 
-    selected_global = [
-        m for m in global_matches
-        if m.get("competition", {}).get("code") in wanted
-    ]
+    h, w = gray.shape[:2]
 
-    # 2) Fallback uniquement si le global n'a fourni aucun match utile.
-    if not selected_global:
-        for code in codes or []:
-            r = api(
-                f"/competitions/{code}/matches",
-                (("dateFrom", day_s), ("dateTo", day_s)),
-                token,
-            )
-            items = (
-                (r.get("data") or {}).get("matches", []) or []
-                if r.get("status") == 200 else []
-            )
-            fallback_matches.extend(items)
-            attempts.append({
-                "endpoint": f"/competitions/{code}/matches",
-                "status": r.get("status", 0),
-                "count": len(items),
-                "error": r.get("error", ""),
-                "remaining": r.get("remaining", ""),
-            })
-
-    # 3) Fusion et déduplication.
-    combined = list(global_matches) + list(fallback_matches)
-    unique = {}
-
-    for m in combined:
-        mid = m.get("id")
-        if mid is not None:
-            key = f"id:{mid}"
-        else:
-            key = "fallback:" + "|".join([
-                str(m.get("utcDate", "")),
-                str(m.get("homeTeam", {}).get("id", "")),
-                str(m.get("awayTeam", {}).get("id", "")),
-                str(m.get("competition", {}).get("code", "")),
-            ])
-        unique[key] = m
-
-    selected = [
-        m for m in unique.values()
-        if m.get("competition", {}).get("code") in wanted
-    ]
-    selected.sort(key=dkey)
-
-    status_codes = [a["status"] for a in attempts if a.get("status")]
-    first_error = next(
-        (a.get("error", "") for a in attempts if a.get("error")),
-        "",
+    circles = cv2.HoughCircles(
+        gray,
+        cv2.HOUGH_GRADIENT,
+        dp=1.2,
+        minDist=max(30, int(w * 0.08)),
+        param1=100,
+        param2=35,
+        minRadius=max(15, int(min(h, w) * 0.025)),
+        maxRadius=max(30, int(min(h, w) * 0.10)),
     )
 
-    return selected, {
-        "status": (
-            200 if selected
-            else (status_codes[0] if status_codes else 0)
-        ),
-        "error": first_error,
-        "raw_count": len(global_matches),
-        "fallback_count": len(fallback_matches),
-        "selected_count": len(selected),
-        "attempts": attempts,
-        "remaining": result.get("remaining", "") if result else "",
-    }
+    if circles is None:
+        return None, "Aucun cercle suffisamment net détecté."
+
+    circles = np.round(circles[0]).astype(int)
+
+    # Garder les cercles dans la zone centrale où se trouve généralement la grille.
+    filtered = []
+    for x, y, r in circles:
+        if 0.10*w < x < 0.95*w and 0.08*h < y < 0.90*h:
+            filtered.append((int(x), int(y), int(r)))
+
+    if len(filtered) < 5:
+        return filtered, f"{len(filtered)} éléments détectés ; grille incomplète."
+
+    # Regroupement approximatif en 5 colonnes par position X.
+    filtered = sorted(filtered, key=lambda p: p[1])
+
+    return filtered, f"{len(filtered)} cercles détectés. Vérification visuelle recommandée."
 
 
 # ============================================================
-# CACHE
+# SIDEBAR
 # ============================================================
-
-def clear_cache():
-    try:
-        st.cache_data.clear()
-    except Exception:
-        pass
-
-
-# ============================================================
-# INTERFACE
-# ============================================================
-
-st.title(
-    "⚽ RODRIGUE PRO FOOTBALL AI — V25 VALIDATION MAX PRO"
-)
-
-st.caption(
-    "football-data.org v4 · validation chronologique · "
-    "anti-fuite · Poisson/Dixon-Coles · multi-saisons. "
-    "Les probabilités sont des estimations, pas des garanties."
-)
-
 
 with st.sidebar:
-    st.header("🔐 API football-data.org")
+    st.header("⚙️ Paramètres")
 
-    st.text_input(
-        "Clé API",
-        type="password",
-        key="api_key",
-        help="Ta clé reste dans la session Streamlit.",
+    min_conf = st.slider(
+        "Confiance minimale pour un signal",
+        min_value=50,
+        max_value=90,
+        value=70,
+        step=5,
     )
 
-    token = token_from_ui()
-
-    if st.button(
-        "🔄 Réinitialiser le cache API",
-        use_container_width=True,
-    ):
-        clear_cache()
-        st.rerun()
-
-
-if not token:
-    st.warning(
-        "⚠️ Entre ta clé API football-data.org "
-        "dans la barre latérale."
+    bankroll = st.number_input(
+        "Solde disponible (F CFA)",
+        min_value=0.0,
+        value=10000.0,
+        step=500.0,
     )
 
-else:
-    status = api(
-        "/competitions/PL",
-        (),
-        token,
+    mise = st.number_input(
+        "Mise envisagée (F CFA)",
+        min_value=0.0,
+        value=200.0,
+        step=50.0,
     )
 
-    if status["status"] == 200:
-        st.success(
-            "🟢 API OK · appels restants : "
-            + str(status.get("remaining") or "N/D")
-        )
-    else:
-        st.error(
-            api_message(status)
-            + " · "
-            + str(status.get("error") or "")
-        )
+    max_loss = st.slider(
+        "Perte maximale relative autorisée",
+        1,
+        20,
+        5,
+        help="Protection de gestion de bankroll ; ne prédit pas le résultat.",
+    )
 
-    c1, c2 = st.columns(2)
+    st.caption(
+        "Le seuil ne transforme pas un jeu aléatoire en jeu prévisible."
+    )
 
-    with c1:
-        day = st.date_input(
-            "📅 Date",
-            date.today(),
-        )
 
-    with c2:
-        names = st.multiselect(
-            "🏆 Compétitions",
-            list(COMPETITIONS),
-            default=[
-                "Premier League",
-                "LaLiga",
-                "Bundesliga",
-            ],
-        )
+# ============================================================
+# ONGLETS
+# ============================================================
 
-    codes = [
-        COMPETITIONS[name]
-        for name in names
-    ]
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["📸 Capture", "🧠 Analyse", "📊 Historique", "🧪 Validation"]
+)
 
-    # --------------------------------------------------------
-    # RECHERCHE
-    # --------------------------------------------------------
 
-    if st.button(
-        "🚀 CHERCHER LES MATCHS",
-        type="primary",
-        use_container_width=True,
-    ):
-        if status["status"] != 200:
-            st.error(
-                "🔴 Recherche arrêtée : "
-                "API/token indisponible."
-            )
+# ============================================================
+# TAB 1 — CAPTURE
+# ============================================================
 
-        elif not codes:
-            st.warning(
-                "⚠️ Sélectionne au moins une compétition."
-            )
+with tab1:
+    st.subheader("📸 Charger la capture Apple of Fortune")
 
-        else:
-            with st.spinner(
-                "🔎 Recherche des matchs..."
-            ):
-                matches, diagnostic = find_matches(
-                    day,
-                    codes,
-                    token,
-                )
+    uploaded = st.file_uploader(
+        "Sélectionne une capture d'écran",
+        type=["png", "jpg", "jpeg", "webp"],
+    )
 
-            st.session_state["matches_v25"] = matches
-            st.session_state["search_diag_v25"] = diagnostic
+    if uploaded:
+        image = Image.open(uploaded).convert("RGB")
+        st.image(image, caption="Capture chargée", use_container_width=True)
 
-            # IMPORTANT :
-            # Ne PAS écrire st.success()/st.warning() dans st.write().
-            # Cela évite l'affichage DeltaGenerator.
-            if matches:
-                st.success(
-                    f"✅ {len(matches)} match(s) trouvé(s) "
-                    f"pour le {day.strftime('%d/%m/%Y')}."
-                )
+        if st.button("🔎 Détecter la grille", use_container_width=True):
+            detections, message = detect_grid(image)
+
+            if detections is None:
+                st.error(message)
             else:
-                st.warning(
-                    f"⚠️ Aucun match trouvé pour le "
-                    f"{day.strftime('%d/%m/%Y')} "
-                    f"dans les compétitions sélectionnées."
-                )
+                st.info(message)
 
-                st.caption(
-                    "Diagnostic : "
-                    f"{diagnostic['raw_count']} match(s) "
-                    "brut(s) retourné(s) par l'API avant "
-                    "filtrage des compétitions."
-                )
-
-    # --------------------------------------------------------
-    # DIAGNOSTIC DE LA DERNIERE RECHERCHE
-    # --------------------------------------------------------
-
-    diagnostic = st.session_state.get(
-        "search_diag_v23"
-    )
-
-    if diagnostic:
-        with st.expander(
-            "🔍 Diagnostic de recherche",
-            expanded=False,
-        ):
-            st.write(
-                "Matchs bruts retournés par l'API :",
-                diagnostic["raw_count"],
-            )
-            st.write(
-                "Matchs après filtrage des compétitions :",
-                diagnostic["selected_count"],
-            )
-            st.write(
-                "Matchs trouvés par les fallbacks :",
-                diagnostic.get("fallback_count", 0),
-            )
-            for attempt in diagnostic.get("attempts", []):
-                label = (
-                    f"{attempt['endpoint']} · HTTP {attempt['status']} · "
-                    f"{attempt['count']} match(s)"
-                )
-                if attempt.get("error"):
-                    st.caption(label + " · " + str(attempt["error"]))
-                else:
-                    st.caption(label)
-
-    # --------------------------------------------------------
-    # ANALYSE DES MATCHS
-    # --------------------------------------------------------
-
-    for index, match in enumerate(
-        st.session_state.get(
-            "matches_v23",
-            [],
-        )
-    ):
-        home = match.get(
-            "homeTeam",
-            {},
-        ).get("name", "?")
-
-        away = match.get(
-            "awayTeam",
-            {},
-        ).get("name", "?")
-
-        match_id = match.get(
-            "id",
-            index,
-        )
-
-        competition = match.get(
-            "competition",
-            {},
-        ).get("name", "")
-
-        with st.expander(
-            f"⚽ {home} — {away} | {competition}"
-        ):
-            st.caption(
-                f'{match.get("status", "")} · '
-                f'{match.get("utcDate", "")}'
-            )
-
-            if st.button(
-                "🧠 ANALYSER CE MATCH",
-                key=f"ana_v25_{match_id}",
-                use_container_width=True,
-            ):
-                try:
-                    with st.spinner(
-                        "🧠 Analyse chronologique..."
-                    ):
-                        st.session_state[
-                            f"res_v25_{match_id}"
-                        ] = analyze(
-                            match,
-                            token,
-                        )
-
-                    st.session_state[
-                        f"err_v25_{match_id}"
-                    ] = ""
-
-                except Exception as exc:
-                    st.session_state[
-                        f"err_v25_{match_id}"
-                    ] = str(exc)
-
-            error = st.session_state.get(
-                f"err_v25_{match_id}",
-                "",
-            )
-
-            if error:
-                st.error(
-                    "Erreur pendant l'analyse : "
-                    + error
-                )
-
-            result = st.session_state.get(
-                f"res_v25_{match_id}"
-            )
-
-            if result:
-                q1, q2, q3, q4 = st.columns(4)
-
-                q1.metric(
-                    "xG modèle",
-                    f'{result["hl"]:.2f} — '
-                    f'{result["al"]:.2f}',
-                )
-
-                q2.metric(
-                    "Qualité données",
-                    f'{result["quality"]}/85',
-                )
-
-                q3.metric(
-                    "Confiance modèle",
-                    f'{result["confidence"]}%',
-                )
-
-                q4.metric(
-                    "H2H",
-                    str(result["h2"]["n"]),
-                )
-
-                st.info(
-                    "ℹ️ La confiance modèle mesure la "
-                    "qualité/séparation du modèle. "
-                    "Elle n'est pas une garantie de gain."
-                )
-
-                st.success(
-                    f'🎯 1X2 principal : '
-                    f'**{result["one"][0]}** '
-                    f'({pct(result["one"][1])})'
-                )
-
-                signal = result.get("pro_signal", {})
-                if signal.get("decision") == "SIGNAL FORT":
-                    st.success(
-                        f'🟢 SIGNAL PRO : {signal["decision"]} · '
-                        f'{signal["score"]}/100 · '
-                        f'accord modèles {pct(signal["agreement"])}'
+                if len(detections) > 0:
+                    df_det = pd.DataFrame(
+                        detections,
+                        columns=["X", "Y", "Rayon"]
                     )
-                elif signal.get("decision") == "SIGNAL":
-                    st.info(
-                        f'🔵 SIGNAL PRO : {signal["decision"]} · '
-                        f'{signal["score"]}/100 · '
-                        f'accord modèles {pct(signal["agreement"])}'
+                    st.dataframe(df_det, use_container_width=True)
+
+                    st.caption(
+                        "La détection localise les éléments graphiques. "
+                        "Elle ne peut pas déterminer mathématiquement la future case gagnante."
                     )
-                elif signal.get("decision") == "NO BET":
-                    st.error(
-                        f'🔴 {signal["decision"]} · '
-                        f'{signal.get("reason", "incertitude élevée")}'
-                    )
-                else:
-                    st.warning(
-                        f'🟠 SIGNAL PRO : {signal.get("decision", "PRUDENCE")} · '
-                        f'{signal.get("score", 0)}/100'
-                    )
-
-                st.subheader(
-                    "📊 ENSEMBLE DES MODÈLES"
-                )
-                ensemble_table = pd.DataFrame([
-                    {
-                        "Modèle": "Ensemble",
-                        "1": pct(result["ensemble"][0]),
-                        "X": pct(result["ensemble"][1]),
-                        "2": pct(result["ensemble"][2]),
-                    },
-                    {
-                        "Modèle": "Poisson/DC",
-                        "1": pct(result["poisson_probs"][0]),
-                        "X": pct(result["poisson_probs"][1]),
-                        "2": pct(result["poisson_probs"][2]),
-                    },
-                    {
-                        "Modèle": "ELO",
-                        "1": pct(result["elo_probs"][0]),
-                        "X": pct(result["elo_probs"][1]),
-                        "2": pct(result["elo_probs"][2]),
-                    },
-                    {
-                        "Modèle": "Prior empirique",
-                        "1": pct(result["empirical_probs"][0]),
-                        "X": pct(result["empirical_probs"][1]),
-                        "2": pct(result["empirical_probs"][2]),
-                    },
-                ])
-                st.dataframe(
-                    ensemble_table,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                st.subheader(
-                    "📈 FORME RÉCENTE"
-                )
-
-                form_table = pd.DataFrame(
-                    [
-                        {
-                            "Équipe": result["home"],
-                            "Matchs": result["hs"]["n"],
-                            "V": result["hs"]["wins"],
-                            "N": result["hs"]["draws"],
-                            "D": result["hs"]["losses"],
-                            "GF/m": fmt(result["hs"]["gf"]),
-                            "GA/m": fmt(result["hs"]["ga"]),
-                        },
-                        {
-                            "Équipe": result["away"],
-                            "Matchs": result["as"]["n"],
-                            "V": result["as"]["wins"],
-                            "N": result["as"]["draws"],
-                            "D": result["as"]["losses"],
-                            "GF/m": fmt(result["as"]["gf"]),
-                            "GA/m": fmt(result["as"]["ga"]),
-                        },
-                    ]
-                )
-
-                st.dataframe(
-                    form_table,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                st.subheader(
-                    "🎯 MARCHÉS"
-                )
-
-                market_keys = [
-                    "1",
-                    "X",
-                    "2",
-                    "1X",
-                    "X2",
-                    "12",
-                    "BTTS Oui",
-                    "BTTS Non",
-                    "Over 1.5",
-                    "Under 1.5",
-                    "Over 2.5",
-                    "Under 2.5",
-                    "Over 3.5",
-                    "Under 3.5",
-                ]
-
-                market_table = pd.DataFrame(
-                    [
-                        {
-                            "Marché": key,
-                            "Probabilité modèle": pct(
-                                result["mk"][key]
-                            ),
-                        }
-                        for key in market_keys
-                    ]
-                )
-
-                st.dataframe(
-                    market_table,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                st.subheader(
-                    "🔢 SCORES EXACTS"
-                )
-
-                score_table = pd.DataFrame(
-                    [
-                        {
-                            "Score": score,
-                            "Probabilité": pct(probability),
-                        }
-                        for score, probability
-                        in result["scores"]
-                    ]
-                )
-
-                st.dataframe(
-                    score_table,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                st.subheader(
-                    "⏱️ MI-TEMPS"
-                )
-
-                ht_table = pd.DataFrame(
-                    [
-                        {
-                            "Score MT": score,
-                            "Probabilité": pct(probability),
-                        }
-                        for score, probability
-                        in result["htscores"]
-                    ]
-                )
-
-                st.dataframe(
-                    ht_table,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                st.subheader(
-                    "🔄 MT / FT"
-                )
-
-                htft_table = pd.DataFrame(
-                    [
-                        {
-                            "MT/FT": combination,
-                            "Probabilité": pct(probability),
-                        }
-                        for combination, probability
-                        in result["htft"]
-                    ]
-                )
-
-                st.dataframe(
-                    htft_table,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-    # --------------------------------------------------------
-    # BACKTEST
-    # --------------------------------------------------------
 
     st.divider()
 
-    st.subheader(
-        "🧪 BACKTEST INTELLIGENT — MULTI-SAISONS"
-    )
+    st.subheader("➕ Enregistrer un résultat réellement observé")
 
-    b1, b2, b3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
 
-    with b1:
-        backtest_name = st.selectbox(
-            "Compétition",
-            list(COMPETITIONS),
-            key="btc_v25",
+    with c1:
+        safe_col = st.selectbox(
+            "Colonne réellement sûre",
+            list(range(1, N_COLS + 1)),
+            index=0,
         )
 
-    backtest_code = COMPETITIONS[backtest_name]
-
-    available_years = seasons(
-        backtest_code,
-        token,
-    )
-
-    previous_years = sorted(
-        [
-            year
-            for year in available_years
-            if year < date.today().year
-        ],
-        reverse=True,
-    )[:5]
-
-    with b2:
-        selected_years = st.multiselect(
-            "Saisons",
-            available_years,
-            default=previous_years,
-            key="bty_v25",
+    with c2:
+        prediction_col = st.selectbox(
+            "Colonne prédite avant le résultat",
+            list(range(1, N_COLS + 1)),
+            index=0,
         )
 
-    with b3:
-        limit_per_season = st.number_input(
-            "Matchs max / saison",
-            min_value=50,
-            max_value=5000,
-            value=1000,
-            step=100,
-            key="btl_v25",
+    with c3:
+        niveau = st.selectbox(
+            "Niveau du signal",
+            ["faible", "moyen", "fort"],
+            index=1,
         )
 
-    st.info(
-        "📌 Pour une validation sérieuse, utilise plusieurs "
-        "saisons. Une saison récente avec quelques matchs "
-        "ne permet pas de conclure."
-    )
-
-    if st.button(
-        "🧪 LANCER LE BACKTEST MULTI-SAISONS",
-        use_container_width=True,
-    ):
-        if not selected_years:
-            st.warning(
-                "⚠️ Sélectionne au moins une saison."
-            )
-        else:
-            with st.spinner(
-                "⏳ Backtest chronologique "
-                "sans données futures..."
-            ):
-                st.session_state["bt_v25"] = multi_backtest(
-                    backtest_code,
-                    selected_years,
-                    token,
-                    int(limit_per_season),
-                    30,
-                )
-            result_bt = st.session_state.get("bt_v25", {})
-            aggregate_bt = result_bt.get("aggregate", {}) if result_bt else {}
-            if aggregate_bt:
-                st.success(
-                    f'✅ Backtest terminé : {aggregate_bt.get("n", 0)} match(s) évalué(s). '
-                    f'Reliability : {aggregate_bt.get("reliability", "N/A")}.'
-                )
-            else:
-                st.warning(
-                    "⚠️ Le backtest n'a produit aucun résultat exploitable. "
-                    "Ouvre le diagnostic ci-dessous pour voir la réponse de l'API."
-                )
-
-    backtest_result = st.session_state.get(
-        "bt_v25"
-    )
-
-    if backtest_result:
-        aggregate = backtest_result.get(
-            "aggregate"
+    if st.button("💾 Enregistrer cette observation", use_container_width=True):
+        st.session_state.history.append(
+            {
+                "date": datetime.now().isoformat(timespec="seconds"),
+                "safe_col": int(safe_col),
+                "prediction_col": int(prediction_col),
+                "signal": niveau,
+            }
         )
+        save_history(st.session_state.history)
+        st.success("Observation enregistrée.")
 
-        if aggregate:
-            reliability = aggregate["reliability"]
 
-            if reliability == "SOLIDE":
-                st.success(
-                    f'🟢 Validation SOLIDE · '
-                    f'{aggregate["n"]} matchs'
-                )
-            elif aggregate["n"] < 150:
-                st.warning(
-                    f'🟠 Échantillon encore limité · '
-                    f'{aggregate["n"]} matchs'
-                )
-            else:
-                st.warning(
-                    f'🟠 Résultat : {reliability} · '
-                    f'{aggregate["n"]} matchs'
-                )
+# ============================================================
+# TAB 2 — ANALYSE
+# ============================================================
 
-            backtest_table = pd.DataFrame(
-                [
-                    {
-                        "Matchs": aggregate["n"],
-                        "Accuracy 1X2": pct(
-                            aggregate["accuracy"]
-                        ),
-                        "Brier ↓": fmt(
-                            aggregate["brier"]
-                        ),
-                        "Baseline Brier ↓": fmt(
-                            aggregate["baseline_brier"]
-                        ),
-                        "Gain Brier": pct(
-                            aggregate["brier_gain"]
-                        ),
-                        "Log loss ↓": fmt(
-                            aggregate["logloss"]
-                        ),
-                        "Baseline Log loss ↓": fmt(
-                            aggregate["baseline_logloss"]
-                        ),
-                        "Gain Log loss": pct(
-                            aggregate["logloss_gain"]
-                        ),
-                        "Over 2.5": pct(
-                            aggregate["over25"]
-                        ),
-                        "BTTS": pct(
-                            aggregate["btts"]
-                        ),
-                        "Score exact top-1": pct(
-                            aggregate["exact"]
-                        ),
-                        "Validation": reliability,
-                    }
-                ]
-            )
+with tab2:
+    st.subheader("🧠 Analyse statistique")
 
-            st.dataframe(
-                backtest_table,
-                use_container_width=True,
-                hide_index=True,
-            )
+    history = st.session_state.history
+    stats = empirical_column_stats(history)
 
-        else:
-            st.warning(
-                "⚠️ Aucune saison ne contient assez "
-                "de données exploitables."
-            )
-
-        season_results = backtest_result.get(
-            "seasons",
-            [],
+    if len(history) == 0:
+        st.info(
+            "Aucune observation. Commence par enregistrer les résultats "
+            "réellement observés."
         )
+    else:
+        probs = weighted_probabilities(history)
 
-        if season_results:
-            st.subheader(
-                "📚 Détail par saison"
-            )
+        table = stats.copy()
+        table["Probabilité récente pondérée"] = probs
 
-            detail_rows = []
-
-            for result in season_results:
-                row = {
-                    "Saison": result.get("season"),
-                    "Matchs disponibles": result.get(
-                        "available",
-                        0,
-                    ),
-                    "Matchs évalués": result.get(
-                        "n",
-                        0,
-                    ),
-                    "Statut": result.get(
-                        "reliability",
-                        result.get("status", ""),
-                    ),
+        st.dataframe(
+            table.style.format(
+                {
+                    "Fréquence observée": "{:.1%}",
+                    "Borne Wilson 95%": "{:.1%}",
+                    "Probabilité récente pondérée": "{:.1%}",
                 }
+            ),
+            use_container_width=True,
+        )
 
-                if result.get("status") == "ok":
-                    row.update(
-                        {
-                            "Accuracy": pct(
-                                result["accuracy"]
-                            ),
-                            "Brier": fmt(
-                                result["brier"]
-                            ),
-                            "Log loss": fmt(
-                                result["logloss"]
-                            ),
-                            "Over 2.5": pct(
-                                result["over25"]
-                            ),
-                            "BTTS": pct(
-                                result["btts"]
-                            ),
-                            "Exact top-1": pct(
-                                result["exact"]
-                            ),
-                        }
-                    )
+        selected = int(
+            np.argmax(probs) + 1
+        )
 
-                detail_rows.append(row)
+        result = model_confidence(history, selected)
 
-            st.dataframe(
-                pd.DataFrame(detail_rows),
-                use_container_width=True,
-                hide_index=True,
+        st.markdown(
+            f"""
+            <div class="box">
+            <h3>🎯 Colonne statistiquement prioritaire : {selected}</h3>
+            <p>Probabilité empirique pondérée : <b>{result["probability"]:.1f}%</b></p>
+            <p>Score de confiance prudent : <b>{result["confidence"]:.1f}%</b></p>
+            <p>{result["reason"]}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if result["confidence"] >= min_conf:
+            st.markdown(
+                f'<div class="safe">🟢 <b>{result["status"]}</b><br>'
+                f'Le modèle dépasse ton seuil de {min_conf}%.</div>',
+                unsafe_allow_html=True,
             )
+        else:
+            st.markdown(
+                f'<div class="danger">🔴 <b>NE PAS JOUER</b><br>'
+                f'Le signal ({result["confidence"]:.1f}%) est inférieur au seuil '
+                f'de {min_conf}%.</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Gestion de bankroll.
+        risk = 0 if bankroll <= 0 else 100 * mise / bankroll
+
+        st.write("")
+        st.subheader("💰 Gestion de la mise")
+        st.metric("Mise / bankroll", f"{risk:.1f}%")
+
+        if risk > max_loss:
+            st.error(
+                f"Mise trop élevée selon ton plafond de {max_loss}% de bankroll."
+            )
+        else:
+            st.success("Mise dans la limite configurée.")
+
+        st.caption(
+            "Cette section gère le risque financier ; elle n'améliore pas "
+            "la probabilité mathématique d'une case aléatoire."
+        )
+
+
+# ============================================================
+# TAB 3 — HISTORIQUE
+# ============================================================
+
+with tab3:
+    st.subheader("📊 Historique des observations")
+
+    history = st.session_state.history
+
+    if not history:
+        st.info("Historique vide.")
+    else:
+        df = pd.DataFrame(history)
+        st.dataframe(df, use_container_width=True)
+
+        if st.button("🗑️ Effacer tout l'historique"):
+            st.session_state.history = []
+            save_history([])
+            st.rerun()
+
+        st.download_button(
+            "⬇️ Exporter CSV",
+            data=df.to_csv(index=False).encode("utf-8"),
+            file_name="apple_ai_history.csv",
+            mime="text/csv",
+        )
+
+
+# ============================================================
+# TAB 4 — VALIDATION
+# ============================================================
+
+with tab4:
+    st.subheader("🧪 La précision réelle du modèle")
+
+    validation = bootstrap_accuracy(st.session_state.history)
+
+    if validation is None:
+        st.info(
+            "Il faut au moins 5 observations avec une colonne prédite et "
+            "une colonne réellement sûre pour calculer la précision."
+        )
+    else:
+        acc = validation["accuracy"] * 100
+        low = validation["low"] * 100
+        high = validation["high"] * 100
+
+        a, b, c = st.columns(3)
+
+        with a:
+            st.metric("Précision observée", f"{acc:.1f}%")
+        with b:
+            st.metric("Intervalle bootstrap bas", f"{low:.1f}%")
+        with c:
+            st.metric("Intervalle bootstrap haut", f"{high:.1f}%")
+
+        if acc >= 90:
+            st.success(
+                "La précision observée est ≥ 90 % sur cet historique. "
+                "Cela ne constitue toutefois pas une garantie pour les prochaines parties."
+            )
+        else:
+            st.warning(
+                f"La précision observée est de {acc:.1f} %. "
+                "Le modèle ne démontre donc pas actuellement une précision de 90 %."
+            )
+
+        st.caption(
+            f"Échantillon : {validation['n']} prédictions validées. "
+            "L'intervalle bootstrap montre l'incertitude autour de cette mesure."
+        )
+
+    st.divider()
+
+    st.subheader("📌 Règle anti-fausse-confiance")
+
+    st.write(
+        """
+        Le programme ne fait jamais ceci :
+
+        **« 90 % de confiance » uniquement parce qu'une case semble plus favorable.**
+
+        Il exige des observations et compare ensuite les prédictions aux résultats
+        réellement obtenus. Si les données ne prouvent pas la performance, le
+        système affiche **NE PAS JOUER**.
+        """
+    )
+
+
+# ============================================================
+# PIED DE PAGE
+# ============================================================
 
 st.divider()
-
 st.caption(
-    "Data provided by football-data.org · "
-    "RODRIGUE PRO FOOTBALL AI V25 FINAL BACKTEST CORRIGÉ · "
-    "Les statistiques historiques servent à évaluer "
-    "le modèle et ne transforment pas une probabilité "
-    "en certitude."
+    "RODRIGUE APPLE AI — outil statistique expérimental. "
+    "Les résultats passés ne garantissent pas les résultats futurs."
 )
-
-# ============================================================
-# AUDIT TECHNIQUE V25
-# ============================================================
-#
-# 01. AUTHENTIFICATION
-#     Chaque appel API passe X-Auth-Token.
-#
-# 02. CACHE
-#     Le token fait partie des arguments de api(), donc un
-#     changement de clé ne réutilise pas une ancienne réponse.
-#
-# 03. DELTAGENERATOR
-#     st.success() et st.warning() sont appelés directement.
-#     Leur valeur de retour n'est jamais envoyée à st.write().
-#
-# 04. RECHERCHE DES MATCHS
-#     /matches reçoit dateFrom/dateTo puis les compétitions
-#     sont filtrées localement.
-#
-# 05. DIAGNOSTIC
-#     L'interface affiche le nombre brut retourné par l'API.
-#     Cela permet de distinguer absence réelle de matchs et
-#     problème de filtrage.
-#
-# 06. BACKTEST
-#     Pour chaque match évalué, l'historique est limité aux
-#     matchs dont la date est strictement antérieure au match.
-#     Les données futures ne sont donc pas utilisées.
-#
-# 07. WARM-UP
-#     Les premiers matchs de la saison ne sont pas évalués
-#     avant d'avoir suffisamment de contexte historique.
-#
-# 08. MULTI-SAISON
-#     Plusieurs saisons peuvent être agrégées afin d'éviter
-#     une conclusion basée sur 5 ou 10 matchs seulement.
-#
-# 09. BRIER
-#     Plus petit = meilleur.
-#
-# 10. LOG LOSS
-#     Plus petit = meilleur.
-#
-# 11. ACCURACY
-#     Mesure la fréquence du choix 1X2 ayant le maximum de
-#     probabilité. Elle ne mesure pas la calibration.
-#
-# 12. SCORE EXACT
-#     Le score exact top-1 est beaucoup plus difficile que 1X2.
-#
-# 13. CONFIANCE
-#     La confiance affichée dans l'application est un indicateur
-#     de séparation/qualité du modèle. Elle n'est pas la
-#     probabilité de gagner un pari.
-#
-# 14. POISSON
-#     Le cas lambda=0 est traité explicitement pour éviter une
-#     matrice nulle ou des valeurs incohérentes.
-#
-# 15. DIXON-COLES
-#     La correction est faible et bornée afin de ne pas laisser
-#     un ajustement théorique dominer les données.
-#
-# 16. H2H
-#     Le face-à-face est volontairement peu pondéré.
-#
-# 17. SHRINKAGE
-#     Les petits échantillons sont rapprochés des moyennes de
-#     la ligue plutôt que d'être utilisés sans correction.
-#
-# 18. ROBUSTESSE
-#     Les réponses API non-200 ne sont pas traitées comme des
-#     données valides.
-#
-# 19. QUOTA
-#     Le nombre d'appels restants fourni par l'API est affiché
-#     lorsque l'en-tête est disponible.
-#
-# 20. ATTRIBUTION
-#     L'attribution football-data.org est conservée dans l'UI.
-#
-# 21. COMPATIBILITE
-#     Le script vise Python 3 + Streamlit + NumPy + Pandas +
-#     Requests.
-#
-# 22. SECURITE DE LA CLE
-#     La clé n'est pas écrite en dur dans le fichier. Utiliser
-#     Streamlit Secrets ou la zone protégée de la barre latérale.
-#
-# 23. LIMITES DES DONNEES
-#     Si le compte football-data.org ne donne pas accès à une
-#     ressource historique, le modèle ne peut pas inventer les
-#     données manquantes.
-#
-# 24. VALIDATION
-#     Un nombre élevé de lignes de code ne constitue pas un
-#     échantillon statistique. La fiabilité doit être jugée sur
-#     le nombre de vrais matchs historiques évalués.
-#
-# 25. REGLE DE CONFIANCE
-#     Ne pas déclarer un modèle solide sur un très petit
-#     échantillon, même si l'accuracy semble élevée.
-#
-# 26. DATE UTC
-#     Les horaires football-data.org sont en UTC. La recherche
-#     utilise la date API puis filtre les compétitions.
-#
-# 27. ETAT STREAMLIT
-#     Les résultats de recherche et d'analyse sont conservés
-#     dans st.session_state pour éviter de les perdre à chaque
-#     interaction.
-#
-# 28. ERREURS D'ANALYSE
-#     Une exception d'analyse est capturée et affichée dans
-#     l'expander du match au lieu de casser toute l'application.
-#
-# 29. REINITIALISATION
-#     Le bouton de cache permet de forcer une nouvelle lecture
-#     de l'API après modification de la clé ou des données.
-#
-# 30. OBJECTIF
-#     Le but de cette version est d'être techniquement robuste,
-#     reproductible et mesurable, pas de promettre une certitude
-#     impossible sur un résultat sportif.
-#
-
-# ============================================================
-# AUDIT V24 — VALIDATION MAX
-# ============================================================
-# V24 combine Poisson/Dixon-Coles, ELO et prior empirique.
-# Le backtest est strictement chronologique.
-# Jusqu'à 5000 vrais matchs historiques peuvent être évalués.
-# Brier et Log Loss doivent battre la baseline.
-# Une erreur de calibration faible est également exigée avant
-# de classer le modèle SOLIDE.
-# Le filtre NO BET refuse les scénarios trop ambigus.
-# Le nombre de lignes de code n'est PAS un échantillon statistique.
-# 5000 vrais matchs évalués sont une mesure statistique beaucoup
-# plus utile que 5000 lignes de programme.
-# Aucun résultat sportif ne peut être garanti à 100%.
-#
-
-#
-# 31. RECHERCHE V25
-#     Si l'endpoint global renvoie zéro match, la recherche
-#     compétition par compétition est exécutée avant de conclure.
-#
-# 32. DEDUPLICATION
-#     Les réponses globales et de secours sont fusionnées par ID.
-#
-# 33. SIGNAL PRO
-#     Le signal compare l'ensemble, Poisson/DC, ELO et le prior empirique.
-#
-# 34. ANTI-SURCONFIANCE
-#     Un score de signal ne devient jamais une garantie de résultat.
-#
-# 35. NO BET
-#     Un manque d'historique, une faible séparation ou une forte
-#     incertitude peut bloquer le signal.
-#
-# 36. BACKTEST
-#     Les résultats sont conservés sous bt_v25 afin que l'affichage
-#     corresponde bien au bouton de lancement.
-#
