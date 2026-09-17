@@ -351,7 +351,6 @@ def strength_from_standings(home_table, away_table):
     ag = safe_float(away_table.get("goalsFor"))
     ac = safe_float(away_table.get("goalsAgainst"))
 
-    # Différence normalisée, volontairement limitée.
     point_signal = clamp((hp - ap) / 100.0, -0.25, 0.25)
     goal_signal = clamp(((hg - hc) - (ag - ac)) / 100.0, -0.20, 0.20)
 
@@ -366,11 +365,9 @@ def expected_goals(home_stats, away_stats, standings_signal=0.0):
     a_attack = away_stats["away_gf"] or away_stats["gf"] or league
     a_def = away_stats["away_ga"] or away_stats["ga"] or league
 
-    # Base offensive/défensive.
     hxg = 0.55 * h_attack + 0.25 * a_def + 0.20 * league
     axg = 0.55 * a_attack + 0.25 * h_def + 0.20 * league
 
-    # Avantage domicile modéré + classement.
     hxg *= 1.05 + clamp(standings_signal, -0.08, 0.08)
     axg *= 0.96 - clamp(standings_signal, -0.05, 0.05)
 
@@ -445,15 +442,10 @@ def exact_scores(m, n=10):
 
 
 def half_time_matrix(hxg, axg):
-    # Estimation dédiée : environ 44% du volume de buts attendu avant la pause.
     return goal_matrix(hxg * 0.44, axg * 0.44)
 
 
 def ht_ft(hm, fm):
-    """
-    Combinaison probabiliste simplifiée.
-    On calcule le résultat HT et FT avec une approximation conditionnelle.
-    """
     ht = {"1": 0.0, "X": 0.0, "2": 0.0}
     ft = {"1": 0.0, "X": 0.0, "2": 0.0}
 
@@ -468,7 +460,6 @@ def ht_ft(hm, fm):
     rows = []
     for htr, hp in ht.items():
         for ftr, fp in ft.items():
-            # Coefficient de dépendance : la HT et FT ne sont pas indépendantes.
             dependency = 1.0
             if htr == ftr:
                 dependency = 1.25
@@ -801,6 +792,8 @@ if load:
                 st.markdown("### Données JSON")
                 st.json(report)
 
+    except Exception as e:
+        st.error(f"Une erreur est survenue lors du chargement des données : {e}")
 
 st.markdown("---")
 st.caption(
