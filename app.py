@@ -88,22 +88,21 @@ def analyze_match_comprehensive(match_info):
     news_context = search_injuries_and_news(home_team, away_team)
     print(f"[Info Web / Absents/Blessés] : {news_context[:180]}...")
 
-    # Simulation des forces offensives et défensives (basées sur les taux moyens de buts)
-    # Dans un système complet, ces valeurs proviennent de l'historique des derniers matchs.
-    home_lambda = 1.65  # Moyenne estimée de buts pour l'équipe à domicile
-    away_lambda = 1.15  # Moyenne estimée de buts pour l'équipe extérieure
+    # Simulation des forces offensives et défensives
+    home_lambda = 1.65  
+    away_lambda = 1.15  
 
     # Ajustement basé sur le contexte web (si des joueurs clés sont blessés)
     if "missing" in news_context.lower() or "injury" in news_context.lower() or "blessé" in news_context.lower():
-        home_lambda *= 0.95   Légère baisse en cas d'absences signalées
+        home_lambda *= 0.95  # Légère baisse en cas d'absences signalées
 
     # Calcul de la matrice des scores
     score_matrix = calculate_exact_scores_matrix(home_lambda, away_lambda, max_goals=5)
     
     # Probabilités 1N2
-    prob_home_win = np.sum(np.tril(score_matrix, -1)) # Ligne > Colonne
+    prob_home_win = np.sum(np.tril(score_matrix, -1)) 
     prob_draw = np.sum(np.diag(score_matrix))
-    prob_away_win = np.sum(np.triu(score_matrix, 1))   # Ligne < Colonne
+    prob_away_win = np.sum(np.triu(score_matrix, 1))   
     
     total_prob = prob_home_win + prob_draw + prob_away_win
     prob_home_win /= total_prob
@@ -131,30 +130,30 @@ def analyze_match_comprehensive(match_info):
     print("\n==========================================")
     print("      RAPPORT DE PRONOSTICS COMPLETS      ")
     print("==========================================")
-    print(1. f"Résultat Final (1N2) :")
+    print(f"1. Résultat Final (1N2) :")
     print(f"   - Victoire {home_team} : {prob_home_win*100:.1f}%")
     print(f"   - Match Nul : {prob_draw*100:.1f}%")
     print(f"   - Victoire {away_team} : {prob_away_win*100:.1f}%")
 
-    print(2. f"Double Chance :")
-    print(f"   - {home ou Nul} : {(prob_home_win + prob_draw)*100:.1f}%")
-    print(f"   - {Nul ou away_team} : {(prob_draw + prob_away_win)*100:.1f}%")
+    print(f"2. Double Chance :")
+    print(f"   - {home_team} ou Nul : {(prob_home_win + prob_draw)*100:.1f}%")
+    print(f"   - Nul ou {away_team} : {(prob_draw + prob_away_win)*100:.1f}%")
     print(f"   - {home_team} ou {away_team} : {(prob_home_win + prob_away_win)*100:.1f}%")
 
-    print(3. f"Buts (Over / Under) :")
+    print(f"3. Buts (Over / Under) :")
     print(f"   - Over 1.5 buts : {prob_over_15*100:.1f}% (Moins de 2.5: {(1-prob_over_25)*100:.1f}%)")
     print(f"   - Over 2.5 buts : {prob_over_25*100:.1f}%")
     print(f"   - Over 3.5 buts : {prob_over_35*100:.1f}%")
 
-    print(4. f"Les Deux Équipes Marquent (BTTS) :")
+    print(f"4. Les Deux Équipes Marquent (BTTS) :")
     print(f"   - Oui : {btts_yes*100:.1f}% | Non : {btts_no*100:.1f}%")
 
-    print(5. f"Mi-Temps / Fin de Match (HT/FT Estimé) :")
+    print(f"5. Mi-Temps / Fin de Match (HT/FT Estimé) :")
     print(f"   - Nul à la Mi-temps / Victoire {home_team} (HT N / FT 1) : {(prob_draw * prob_home_win * 1.2)*100:.1f}%")
     print(f"   - Nul à la Mi-temps / Victoire {away_team} (HT N / FT 2) : {(prob_draw * prob_away_win * 1.2)*100:.1f}%")
     print(f"   - {home_team} gagne aux deux mi-temps : {(prob_home_win**2 * 1.3)*100:.1f}%")
 
-    print(6. f"Scores Exacts Probables :")
+    print(f"6. Scores Exacts Probables :")
     for score, prob in top_scores:
         print(f"   - Score {score} : {prob:.1f}% de probabilité mathématique")
     print("==========================================")
@@ -163,15 +162,10 @@ def analyze_match_comprehensive(match_info):
 # EXÉCUTION PRINCIPALE
 # ==========================================
 if __name__ == "__main__":
-    # Exemple d'ID de match (ex: un match de Premier League ou Ligue des Champions via l'API)
-    # Vous pouvez remplacer cet ID par un vrai match du jour récupéré de l'API.
     sample_match_id = 456789  
-    
-    # Récupération ou simulation d'un objet match pour l'exemple si l'ID direct n'est pas actif
     match_data = get_match_data_from_api(sample_match_id)
     
     if not match_data:
-        # Structure de secours pour démonstration immédiate si l'ID distant est invalide
         match_data = {
             "homeTeam": {"name": "Real Madrid"},
             "awayTeam": {"name": "FC Barcelona"}
