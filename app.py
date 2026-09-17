@@ -66,8 +66,10 @@ COMPETITIONS = {
     "Championship": "ELC",
     "Brasileirão": "BSA",
     "Champions League": "CL",
-    "Europa League": "EL",  # <--- Ajoute cette ligne ici
+    "Europa League": "EL",      # <--- Ajouté ici
+    "Conference League": "UECL", # <--- Ajouté ici (optionnel)
 }
+
 
 
 
