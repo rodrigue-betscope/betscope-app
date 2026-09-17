@@ -513,11 +513,11 @@ if not matches:
         st.subheader("⚙️ Saisie Manuelle (Match Virtuel / Autre)")
         col_m1, col_m2 = st.columns(2)
         with col_m1:
-            m_home = st.text_input("Équipe Domicile", "Beşiktaş")
-            hxg_input = st.number_input("Buts attendus (xG) Domicile", min_value=0.1, max_value=5.0, value=1.65, step=0.05)
+            m_home = st.text_input("Équipe Domicile", "Ofi")
+            hxg_input = st.number_input("Buts attendus (xG) Domicile", min_value=0.1, max_value=5.0, value=1.25, step=0.05)
         with col_m2:
-            m_away = st.text_input("Équipe Extérieur", "Olympique de Marseille")
-            axg_input = st.number_input("Buts attendus (xG) Extérieur", min_value=0.1, max_value=5.0, value=1.25, step=0.05)
+            m_away = st.text_input("Équipe Extérieur", "TSG 1899 Hoffenheim")
+            axg_input = st.number_input("Buts attendus (xG) Extérieur", min_value=0.1, max_value=5.0, value=1.95, step=0.05)
             
         submitted = st.form_submit_button("🚀 LANCER L'ANALYSE BLUE SCORE", use_container_width=True)
         
@@ -526,33 +526,33 @@ if not matches:
             fm = goal_matrix(hxg_input, axg_input)
             mk = market_probs(fm)
             
-            # Dashboard Blue Score Visuel
+            # Dashboard Blue Score Visuel Nettoyé (Sans bug d'affichage texte brut)
             st.markdown(
                 f"""
                 <div style="background: linear-gradient(135deg, #0b1d3a, #163b6d); padding: 20px; border-radius: 12px; color: white; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-                    <h2 style="margin: 0; font-family: sans-serif; letter-spacing: 2px; color: #00d2ff;">🔵 BLUE SCORE ANALYTICS</h2>
-                    <p style="font-size: 14px; color: #cbd5e1; margin-top: 5px;">Modèle Prédictif Avancé — BetScope Pro</p>
-                    <hr style="border: 0.5px solid rgba(255,255,255,0.2);">
-                    <h3 style="margin: 10px 0;">{m_home} &nbsp;VS&nbsp; {m_away}</h3>
+                    <h2 style="margin: 0; font-size: 20px; font-family: sans-serif; letter-spacing: 2px; color: #00d2ff;">🔵 BLUE SCORE ANALYTICS</h2>
+                    <p style="font-size: 12px; color: #cbd5e1; margin-top: 5px;">Modèle Prédictif Avancé — BetScope Pro</p>
+                    <hr style="border: 0.5px solid rgba(255,255,255,0.2); margin: 10px 0;">
+                    <h3 style="margin: 10px 0; font-size: 18px;">{m_home} &nbsp;VS&nbsp; {m_away}</h3>
                     
-                    <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; margin-top: 15px;">
-                        <div>
-                            <span style="display: block; font-size: 12px; color: #94a3b8;">1 (DOM)</span>
-                            <strong style="font-size: 18px; color: #4ade80;">{mk["1"] * 100:.2f}%</strong>
+                    <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-top: 15px;">
+                        <div style="text-align: center;">
+                            <span style="display: block; font-size: 11px; color: #94a3b8;">1 (DOM)</span>
+                            <strong style="font-size: 16px; color: #4ade80;">{mk["1"] * 100:.2f}%</strong>
                         </div>
-                        <div>
-                            <span style="display: block; font-size: 12px; color: #94a3b8;">X (NUL)</span>
-                            <strong style="font-size: 18px; color: #facc15;">{mk["X"] * 100:.2f}%</strong>
+                        <div style="text-align: center;">
+                            <span style="display: block; font-size: 11px; color: #94a3b8;">X (NUL)</span>
+                            <strong style="font-size: 16px; color: #facc15;">{mk["X"] * 100:.2f}%</strong>
                         </div>
-                        <div>
-                            <span style="display: block; font-size: 12px; color: #94a3b8;">2 (EXT)</span>
-                            <strong style="font-size: 18px; color: #f87171;">{mk["2"] * 100:.2f}%</strong>
+                        <div style="text-align: center;">
+                            <span style="display: block; font-size: 11px; color: #94a3b8;">2 (EXT)</span>
+                            <strong style="font-size: 16px; color: #f87171;">{mk["2"] * 100:.2f}%</strong>
                         </div>
                     </div>
                     
-                    <div style="margin-top: 15px; background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px;">
-                        <span style="font-size: 14px; color: #38bdf8;">🔥 Indice BTTS (Les deux équipes marquent) : </span>
-                        <strong style="font-size: 16px; color: #fff;">{mk["BTTS Oui"] * 100:.1f}%</strong>
+                    <div style="margin-top: 12px; background: rgba(15, 23, 42, 0.7); padding: 10px; border-radius: 8px; text-align: center;">
+                        <span style="font-size: 13px; color: #38bdf8;">🔥 Indice BTTS : </span>
+                        <strong style="font-size: 15px; color: #fff;">{mk["BTTS Oui"] * 100:.1f}%</strong>
                     </div>
                 </div>
                 """,
@@ -612,29 +612,29 @@ else:
         st.markdown(
             f"""
             <div style="background: linear-gradient(135deg, #0b1d3a, #163b6d); padding: 20px; border-radius: 12px; color: white; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); margin-top: 20px;">
-                <h2 style="margin: 0; font-family: sans-serif; letter-spacing: 2px; color: #00d2ff;">🔵 BLUE SCORE ANALYTICS</h2>
-                <p style="font-size: 14px; color: #cbd5e1; margin-top: 5px;">Modèle Prédictif Avancé — BetScope Pro</p>
-                <hr style="border: 0.5px solid rgba(255,255,255,0.2);">
-                <h3 style="margin: 10px 0;">{h_name} &nbsp;VS&nbsp; {a_name}</h3>
+                <h2 style="margin: 0; font-size: 20px; font-family: sans-serif; letter-spacing: 2px; color: #00d2ff;">🔵 BLUE SCORE ANALYTICS</h2>
+                <p style="font-size: 12px; color: #cbd5e1; margin-top: 5px;">Modèle Prédictif Avancé — BetScope Pro</p>
+                <hr style="border: 0.5px solid rgba(255,255,255,0.2); margin: 10px 0;">
+                <h3 style="margin: 10px 0; font-size: 18px;">{h_name} &nbsp;VS&nbsp; {a_name}</h3>
                 
-                <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; margin-top: 15px;">
-                    <div>
-                        <span style="display: block; font-size: 12px; color: #94a3b8;">1 (DOM)</span>
-                        <strong style="font-size: 18px; color: #4ade80;">{mk_api["1"] * 100:.2f}%</strong>
+                <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-top: 15px;">
+                    <div style="text-align: center;">
+                        <span style="display: block; font-size: 11px; color: #94a3b8;">1 (DOM)</span>
+                        <strong style="font-size: 16px; color: #4ade80;">{mk_api["1"] * 100:.2f}%</strong>
                     </div>
-                    <div>
-                        <span style="display: block; font-size: 12px; color: #94a3b8;">X (NUL)</span>
-                        <strong style="font-size: 18px; color: #facc15;">{mk_api["X"] * 100:.2f}%</strong>
+                    <div style="text-align: center;">
+                        <span style="display: block; font-size: 11px; color: #94a3b8;">X (NUL)</span>
+                        <strong style="font-size: 16px; color: #facc15;">{mk_api["X"] * 100:.2f}%</strong>
                     </div>
-                    <div>
-                        <span style="display: block; font-size: 12px; color: #94a3b8;">2 (EXT)</span>
-                        <strong style="font-size: 18px; color: #f87171;">{mk_api["2"] * 100:.2f}%</strong>
+                    <div style="text-align: center;">
+                        <span style="display: block; font-size: 11px; color: #94a3b8;">2 (EXT)</span>
+                        <strong style="font-size: 16px; color: #f87171;">{mk_api["2"] * 100:.2f}%</strong>
                     </div>
                 </div>
                 
-                <div style="margin-top: 15px; background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px;">
-                    <span style="font-size: 14px; color: #38bdf8;">🔥 Indice BTTS (Les deux équipes marquent) : </span>
-                    <strong style="font-size: 16px; color: #fff;">{mk_api["BTTS Oui"] * 100:.1f}%</strong>
+                <div style="margin-top: 12px; background: rgba(15, 23, 42, 0.7); padding: 10px; border-radius: 8px; text-align: center;">
+                    <span style="font-size: 13px; color: #38bdf8;">🔥 Indice BTTS : </span>
+                    <strong style="font-size: 15px; color: #fff;">{mk_api["BTTS Oui"] * 100:.1f}%</strong>
                 </div>
             </div>
             """,
