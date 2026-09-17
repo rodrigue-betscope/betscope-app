@@ -1,31 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-RODRIGUE PRO FOOTBALL AI — V2 ULTIMATE
-======================================
+RODRIGUE PRO FOOTBALL AI — V2 ULTIMATE + BLUE SCORE
+===================================================
 
 Objectif:
-    Analyse multi-facteurs de matchs de football à partir de données réelles.
-
-Sources:
-    - football-data.org v4 : matchs, historiques, classements, équipes,
-      buteurs et données de joueurs selon les permissions du compte.
-    - SerpApi/Google : recherche complémentaire d'absences, suspensions,
-      compositions probables, actualités et informations de stade.
-
-IMPORTANT:
-    Ce logiciel produit des probabilités statistiques, pas des garanties.
-    Il ne doit jamais transformer une recherche web ambiguë en "blessure
-    confirmée". Les informations web sont conservées comme preuves textuelles
-    et leur fiabilité est pondérée.
-
-Installation:
-    pip install requests numpy pandas streamlit
-
-Lancement:
-    streamlit run rodrigue_pro_football_ai_v2.py
-
-Clés:
-    définir FOOTBALL_DATA_KEY et SERPAPI_KEY dans les variables d'environnement.
+    Analyse multi-facteurs de matchs de football à partir de données réelles 
+    ou en mode manuel pour les matchs virtuels / eSports.
 """
 
 import os
@@ -66,11 +46,9 @@ COMPETITIONS = {
     "Championship": "ELC",
     "Brasileirão": "BSA",
     "Champions League": "CL",
-    "Europa League": "EL",      # <--- Ajouté ici
-    "Conference League": "UECL", # <--- Ajouté ici (optionnel)
+    "Europa League": "EL",
+    "Conference League": "UECL",
 }
-
-
 
 
 # ============================================================
@@ -154,21 +132,6 @@ def get_standings(code):
             return table.get("table", [])
     tables = data.get("standings", [])
     return tables[0].get("table", []) if tables else []
-
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def get_competition_scorers(code, limit=20):
-    data = api_get(
-        f"{FD_BASE}/competitions/{code}/scorers",
-        fd_headers(),
-        {"limit": limit},
-    )
-    return data.get("scorers", [])
-
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def get_team(team_id):
-    return api_get(f"{FD_BASE}/teams/{team_id}", fd_headers())
 
 
 def score_from_match(match):
@@ -301,47 +264,32 @@ def web_research(home, away, venue=""):
         f'"{home}" blessures absences suspensions composition probable',
         f'"{away}" blessures absences suspensions composition probable',
         f'"{home}" "{away}" preview statistiques',
-        f'"{home}" "{away}" lineups injuries',
-        f'"{home}" stade venue',
-        f'"{away}" forme derniers matchs',
     ]
-
     result = {}
     for q in queries:
         result[q] = serp_search(q)
     return result
 
 
-# ============================================================
-# EXTRACTION PRUDENTE DES ABSENCES
-# ============================================================
-
-INJURY_WORDS = [
-    "blessé", "blessure", "injury", "injured", "absent",
-    "suspendu", "suspension", "suspended", "out",
-]
-
 def extract_absence_evidence(search_results):
+    injury_words = ["blessé", "blessure", "injury", "injured", "absent", "suspendu", "suspension", "suspended", "out"]
     evidence = []
-
     for query, items in search_results.items():
         for item in items:
             text = f"{item.get('title','')} {item.get('snippet','')}"
             low = text.lower()
-
-            if any(word in low for word in INJURY_WORDS):
+            if any(word in low for word in injury_words):
                 evidence.append({
                     "query": query,
                     "title": item.get("title"),
                     "snippet": item.get("snippet"),
                     "link": item.get("link"),
                 })
-
     return evidence
 
 
 # ============================================================
-# MODÈLE DE PERFORMANCE
+# MODÈLE DE PERFORMANCE & MATHS
 # ============================================================
 
 def strength_from_standings(home_table, away_table):
@@ -363,7 +311,6 @@ def strength_from_standings(home_table, away_table):
 
 def expected_goals(home_stats, away_stats, standings_signal=0.0):
     league = 1.35
-
     h_attack = home_stats["home_gf"] or home_stats["gf"] or league
     h_def = home_stats["home_ga"] or home_stats["ga"] or league
     a_attack = away_stats["away_gf"] or away_stats["gf"] or league
@@ -381,29 +328,21 @@ def expected_goals(home_stats, away_stats, standings_signal=0.0):
 def goal_matrix(hxg, axg):
     m = {}
     total = 0.0
-
     for h in range(MAX_GOALS + 1):
         for a in range(MAX_GOALS + 1):
             p = poisson(h, hxg) * poisson(a, axg)
             m[(h, a)] = p
             total += p
-
     if total:
         m = {k: v / total for k, v in m.items()}
-
     return m
 
-
-# ============================================================
-# MARCHÉS
-# ============================================================
 
 def market_probs(m):
     out = {
         "1": 0.0, "X": 0.0, "2": 0.0,
         "1X": 0.0, "X2": 0.0, "12": 0.0,
-        "BTTS Oui": 0.0,
-        "BTTS Non": 0.0,
+        "BTTS Oui": 0.0, "BTTS Non": 0.0,
         "O0.5": 0.0, "O1.5": 0.0, "O2.5": 0.0, "O3.5": 0.0,
     }
 
@@ -426,11 +365,7 @@ def market_probs(m):
     out["1X"] = out["1"] + out["X"]
     out["X2"] = out["X"] + out["2"]
     out["12"] = out["1"] + out["2"]
-
     out["BTTS Non"] = 1 - out["BTTS Oui"]
-
-    for line in [0.5, 1.5, 2.5, 3.5]:
-        out[f"U{line}"] = 1 - out[f"O{line}"]
 
     return out
 
@@ -445,89 +380,30 @@ def exact_scores(m, n=10):
     return sorted(rows, key=lambda x: x["Probabilité"], reverse=True)[:n]
 
 
-def half_time_matrix(hxg, axg):
-    return goal_matrix(hxg * 0.44, axg * 0.44)
-
-
-def ht_ft(hm, fm):
-    ht = {"1": 0.0, "X": 0.0, "2": 0.0}
-    ft = {"1": 0.0, "X": 0.0, "2": 0.0}
-
-    for (h, a), p in hm.items():
-        r = "1" if h > a else "X" if h == a else "2"
-        ht[r] += p
-
-    for (h, a), p in fm.items():
-        r = "1" if h > a else "X" if h == a else "2"
-        ft[r] += p
-
-    rows = []
-    for htr, hp in ht.items():
-        for ftr, fp in ft.items():
-            dependency = 1.0
-            if htr == ftr:
-                dependency = 1.25
-            elif htr == "X" and ftr != "X":
-                dependency = 1.10
-
-            rows.append({
-                "HT/FT": f"{htr}/{ftr}",
-                "Probabilité brute": hp * fp * dependency
-            })
-
-    total = sum(x["Probabilité brute"] for x in rows)
-    for x in rows:
-        x["Probabilité"] = pct(x["Probabilité brute"] / total if total else 0)
-
-    return sorted(rows, key=lambda x: x["Probabilité"], reverse=True)
-
-
-# ============================================================
-# QUALITÉ DES DONNÉES
-# ============================================================
-
 def data_quality(home_stats, away_stats, home_table, away_table):
     score = 0
     maximum = 6
-
-    if home_stats["n"] >= 5:
-        score += 1
-    if away_stats["n"] >= 5:
-        score += 1
-    if home_stats["home_gf"] is not None:
-        score += 1
-    if away_stats["away_gf"] is not None:
-        score += 1
-    if home_table:
-        score += 1
-    if away_table:
-        score += 1
-
+    if home_stats["n"] >= 5: score += 1
+    if away_stats["n"] >= 5: score += 1
+    if home_stats["home_gf"] is not None: score += 1
+    if away_stats["away_gf"] is not None: score += 1
+    if home_table: score += 1
+    if away_table: score += 1
     return score / maximum
 
 
 def confidence_from_model(markets, quality):
     top = max(markets["1"], markets["X"], markets["2"])
-
-    if quality < 0.50:
-        return "Faible"
-    if top >= 0.65 and quality >= 0.80:
-        return "Élevée"
-    if top >= 0.50:
-        return "Moyenne"
+    if quality < 0.50: return "Faible"
+    if top >= 0.65 and quality >= 0.80: return "Élevée"
+    if top >= 0.50: return "Moyenne"
     return "Faible"
 
-
-# ============================================================
-# ANALYSE COMPLÈTE
-# ============================================================
 
 def analyze_match(match, use_web=True):
     home = match.get("homeTeam", {})
     away = match.get("awayTeam", {})
-
-    hid = home.get("id")
-    aid = away.get("id")
+    hid, aid = home.get("id"), away.get("id")
 
     if not hid or not aid:
         raise ValueError("Identifiants des équipes indisponibles.")
@@ -546,62 +422,27 @@ def analyze_match(match, use_web=True):
     hxg, axg = expected_goals(hs, aws, standings_signal)
 
     fm = goal_matrix(hxg, axg)
-    hm = half_time_matrix(hxg, axg)
-
     markets = market_probs(fm)
-    htmarkets = market_probs(hm)
-
-    web = web_research(
-        home_name,
-        away_name,
-        match.get("venue", "")
-    ) if use_web else {}
-
-    absences = extract_absence_evidence(web)
-
     quality = data_quality(hs, aws, htable, atable)
 
-    report = {
+    web = web_research(home_name, away_name) if use_web else {}
+    absences = extract_absence_evidence(web)
+
+    return {
         "match": f"{home_name} — {away_name}",
-        "date": match.get("utcDate"),
         "competition": match.get("competition", {}).get("name"),
         "venue": match.get("venue"),
-        "area": match.get("area", {}).get("name"),
-        "expected_goals": {
-            home_name: round(hxg, 3),
-            away_name: round(axg, 3),
-        },
-        "form": {
-            home_name: hs["form"],
-            away_name: aws["form"],
-        },
+        "expected_goals": {home_name: round(hxg, 3), away_name: round(axg, 3)},
         "markets": {k: pct(v) for k, v in markets.items()},
-        "half_time_markets": {k: pct(v) for k, v in htmarkets.items()},
         "exact_scores": exact_scores(fm),
-        "ht_ft": ht_ft(hm, fm),
         "data_quality": pct(quality),
         "confidence": confidence_from_model(markets, quality),
         "absence_evidence": absences,
-        "web_sources": web,
-        "standings": {
-            home_name: htable,
-            away_name: atable,
-        },
-        "notes": [
-            "Les absences trouvées sur le Web sont des indices et doivent être vérifiées.",
-            "Les statistiques avancées non fournies par la source ne sont pas inventées.",
-            "Le stade est conservé comme contexte ; son impact numérique nécessite des données historiques spécifiques.",
-            "La météo n'est pas convertie automatiquement en avantage sans donnée météo fiable.",
-            "Le HT/FT est un modèle probabiliste, pas une information officielle.",
-            "Une probabilité n'est pas une garantie de résultat.",
-        ],
     }
-
-    return report
 
 
 # ============================================================
-# INTERFACE STREAMLIT
+# INTERFACE STREAMLIT & DASHBOARD BLUE SCORE
 # ============================================================
 
 st.set_page_config(
@@ -613,7 +454,7 @@ st.set_page_config(
 st.title("⚽ RODRIGUE PRO FOOTBALL AI — V2 ULTIMATE")
 st.caption(
     "Analyse multi-facteurs : forme • domicile/extérieur • classement • "
-    "buts • Poisson • absences • recherche web • HT/FT • scores exacts"
+    "buts • Poisson • absences • recherche web • scores exacts"
 )
 
 with st.sidebar:
@@ -640,6 +481,7 @@ with st.sidebar:
             "Bundesliga",
             "Serie A",
             "Ligue 1",
+            "Europa League",
         ],
     )
 
@@ -649,158 +491,170 @@ with st.sidebar:
         disabled=not bool(SERPAPI_KEY),
     )
 
-    show_raw = st.checkbox("Afficher les données brutes", value=False)
-
     load = st.button("🔎 CHARGER LES MATCHS", use_container_width=True)
 
+# Chargement des matchs depuis l'API
+matches = []
 if load:
     try:
         codes = [COMPETITIONS[x] for x in selected_names]
-
         matches = get_matches(
             date_value.strftime("%Y-%m-%d"),
             tuple(codes),
         )
-
-        if not matches:
-            st.warning(
-                "Aucun match trouvé pour cette date dans les compétitions "
-                "sélectionnées. Vérifie la date et les compétitions disponibles."
-            )
-            st.stop()
-
-        st.success(f"{len(matches)} match(s) trouvé(s).")
-
-        labels = []
-        for i, m in enumerate(matches):
-            labels.append(
-                f"{i+1}. {m.get('homeTeam', {}).get('name')} "
-                f"vs {m.get('awayTeam', {}).get('name')}"
-            )
-
-        selected_label = st.selectbox("Choisir le match", labels)
-        idx = labels.index(selected_label)
-
-        if st.button("🧠 ANALYSER LE MATCH", use_container_width=True):
-            with st.spinner("Analyse statistique en cours..."):
-                report = analyze_match(
-                    matches[idx],
-                    use_web=use_web,
-                )
-
-            st.subheader(report["match"])
-            st.write(
-                f"**Compétition :** {report['competition']}  |  "
-                f"**Stade :** {report['venue'] or 'non fourni'}"
-            )
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Qualité données", f"{report['data_quality']} %")
-            c2.metric("Confiance", report["confidence"])
-            c3.metric(
-                "Buts attendus",
-                f"{list(report['expected_goals'].values())[0]:.2f} — "
-                f"{list(report['expected_goals'].values())[1]:.2f}"
-            )
-
-            st.markdown("### 🎯 1X2 / Double chance")
-
-            market_keys = [
-                "1", "X", "2", "1X", "X2", "12"
-            ]
-
-            df1 = pd.DataFrame([
-                {
-                    "Marché": k,
-                    "Probabilité": report["markets"][k]
-                }
-                for k in market_keys
-            ])
-
-            st.dataframe(df1, use_container_width=True, hide_index=True)
-
-            st.markdown("### ⚽ Buts / BTTS")
-
-            goal_keys = [
-                "O0.5", "U0.5",
-                "O1.5", "U1.5",
-                "O2.5", "U2.5",
-                "O3.5", "U3.5",
-                "BTTS Oui", "BTTS Non",
-            ]
-
-            df2 = pd.DataFrame([
-                {
-                    "Marché": k,
-                    "Probabilité": report["markets"][k]
-                }
-                for k in goal_keys
-            ])
-
-            st.dataframe(df2, use_container_width=True, hide_index=True)
-
-            st.markdown("### 🕐 Mi-temps")
-
-            ht_keys = ["1", "X", "2"]
-            df3 = pd.DataFrame([
-                {
-                    "Résultat HT": k,
-                    "Probabilité": report["half_time_markets"][k]
-                }
-                for k in ht_keys
-            ])
-            st.dataframe(df3, use_container_width=True, hide_index=True)
-
-            st.markdown("### 🔥 HT / FT")
-
-            df4 = pd.DataFrame(report["ht_ft"][:9])
-            st.dataframe(df4, use_container_width=True, hide_index=True)
-
-            st.markdown("### 🎯 Scores exacts")
-
-            df5 = pd.DataFrame(report["exact_scores"])
-            st.dataframe(df5, use_container_width=True, hide_index=True)
-
-            st.markdown("### 🏥 Absences / informations Web")
-
-            if report["absence_evidence"]:
-                for item in report["absence_evidence"][:15]:
-                    st.markdown(
-                        f"**{item['title']}**  \n"
-                        f"{item['snippet']}  \n"
-                        f"{item['link']}"
-                    )
-            else:
-                st.info(
-                    "Aucune preuve Web d'absence détectée. "
-                    "Cela ne signifie pas qu'il n'y a aucune absence."
-                )
-
-            st.markdown("### 📊 Forme récente")
-
-            form_df = pd.DataFrame([
-                {"Équipe": team, "5 derniers": form}
-                for team, form in report["form"].items()
-            ])
-            st.dataframe(form_df, use_container_width=True, hide_index=True)
-
-            st.markdown("### ⚠️ Lecture finale")
-
-            st.info(
-                "Le modèle donne des probabilités. Les événements imprévus, "
-                "les compositions officielles, les cartons, blessures pendant "
-                "le match et autres facteurs peuvent modifier le résultat."
-            )
-
-            if show_raw:
-                st.markdown("### Données JSON")
-                st.json(report)
-
     except Exception as e:
-        st.error(f"Une erreur est survenue lors du chargement des données : {e}")
+        st.error(f"Erreur API : {e}")
 
-st.markdown("---")
-st.caption(
-    "RODRIGUE PRO FOOTBALL AI V2 — outil d'analyse statistique. "
-    "Aucune sortie ne constitue une garantie de gain."
-)
+# Si aucun match n'est trouvé via l'API (ex: matchs virtuels / eSports / trêves), on propose le mode manuel
+if not matches:
+    st.info("💡 Aucun match réel trouvé via l'API pour cette date. Utilise le formulaire ci-dessous pour analyser tes matchs virtuels (ex: Ligue Europa eSports).")
+    
+    with st.form("manual_match_form"):
+        st.subheader("⚙️ Saisie Manuelle (Match Virtuel / Autre)")
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            m_home = st.text_input("Équipe Domicile", "Beşiktaş")
+            hxg_input = st.number_input("Buts attendus (xG) Domicile", min_value=0.1, max_value=5.0, value=1.65, step=0.05)
+        with col_m2:
+            m_away = st.text_input("Équipe Extérieur", "Olympique de Marseille")
+            axg_input = st.number_input("Buts attendus (xG) Extérieur", min_value=0.1, max_value=5.0, value=1.25, step=0.05)
+            
+        submitted = st.form_submit_button("🚀 LANCER L'ANALYSE BLUE SCORE", use_container_width=True)
+        
+        if submitted:
+            st.success("Analyse générée avec succès !")
+            fm = goal_matrix(hxg_input, axg_input)
+            mk = market_probs(fm)
+            
+            # Dashboard Blue Score Visuel
+            st.markdown(
+                f"""
+                <div style="background: linear-gradient(135deg, #0b1d3a, #163b6d); padding: 20px; border-radius: 12px; color: white; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+                    <h2 style="margin: 0; font-family: sans-serif; letter-spacing: 2px; color: #00d2ff;">🔵 BLUE SCORE ANALYTICS</h2>
+                    <p style="font-size: 14px; color: #cbd5e1; margin-top: 5px;">Modèle Prédictif Avancé — BetScope Pro</p>
+                    <hr style="border: 0.5px solid rgba(255,255,255,0.2);">
+                    <h3 style="margin: 10px 0;">{m_home} &nbsp;VS&nbsp; {m_away}</h3>
+                    
+                    <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; margin-top: 15px;">
+                        <div>
+                            <span style="display: block; font-size: 12px; color: #94a3b8;">1 (DOM)</span>
+                            <strong style="font-size: 18px; color: #4ade80;">{mk["1"] * 100:.2f}%</strong>
+                        </div>
+                        <div>
+                            <span style="display: block; font-size: 12px; color: #94a3b8;">X (NUL)</span>
+                            <strong style="font-size: 18px; color: #facc15;">{mk["X"] * 100:.2f}%</strong>
+                        </div>
+                        <div>
+                            <span style="display: block; font-size: 12px; color: #94a3b8;">2 (EXT)</span>
+                            <strong style="font-size: 18px; color: #f87171;">{mk["2"] * 100:.2f}%</strong>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 15px; background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px;">
+                        <span style="font-size: 14px; color: #38bdf8;">🔥 Indice BTTS (Les deux équipes marquent) : </span>
+                        <strong style="font-size: 16px; color: #fff;">{mk["BTTS Oui"] * 100:.1f}%</strong>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            st.markdown("#### 🎯 Top Scores Recommandés (Blue Score)")
+            top_scores = exact_scores(fm, n=3)
+            col1, col2, col3 = st.columns(3)
+            cols = [col1, col2, col3]
+            for i, item in enumerate(top_scores):
+                prob_val = item["Probabilité"]
+                implied_odds = round(100 / prob_val, 2) if prob_val > 0 else 99.0
+                with cols[i]:
+                    st.markdown(
+                        f"<div style='background: #1e293b; padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #334155;'>"
+                        f"<span style='color: #94a3b8; font-size: 12px;'>Option {i+1}</span><br>"
+                        f"<strong style='font-size: 20px; color: #38bdf8;'>{item['Score']}</strong><br>"
+                        f"<span style='color: #4ade80; font-size: 14px;'>Prob: {prob_val:.1f}%</span><br>"
+                        f"<span style='color: #fbbf24; font-size: 12px;'>Côte est. : {implied_odds}</span>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+else:
+    st.success(f"{len(matches)} match(s) trouvé(s) via l'API.")
+    labels = [
+        f"{i+1}. {m.get('homeTeam', {}).get('name')} vs {m.get('awayTeam', {}).get('name')}"
+        for i, m in enumerate(matches)
+    ]
+    selected_label = st.selectbox("Choisir le match", labels)
+    idx = labels.index(selected_label)
+
+    if st.button("🧠 ANALYSER LE MATCH", use_container_width=True):
+        with st.spinner("Analyse statistique en cours..."):
+            report = analyze_match(matches[idx], use_web=use_web)
+
+        st.subheader(report["match"])
+        st.write(
+            f"**Compétition :** {report['competition']}  |  "
+            f"**Stade :** {report['venue'] or 'non fourni'}"
+        )
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Qualité données", f"{report['data_quality']} %")
+        c2.metric("Confiance", report["confidence"])
+        
+        h_name = list(report['expected_goals'].keys())[0]
+        a_name = list(report['expected_goals'].keys())[1]
+        c3.metric("xG Prédit", f"{report['expected_goals'][h_name]} - {report['expected_goals'][a_name]}")
+
+        # Dashboard Blue Score avec les données de l'API
+        hxg_val = report['expected_goals'][h_name]
+        axg_val = report['expected_goals'][a_name]
+        fm_api = goal_matrix(hxg_val, axg_val)
+        mk_api = market_probs(fm_api)
+
+        st.markdown(
+            f"""
+            <div style="background: linear-gradient(135deg, #0b1d3a, #163b6d); padding: 20px; border-radius: 12px; color: white; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); margin-top: 20px;">
+                <h2 style="margin: 0; font-family: sans-serif; letter-spacing: 2px; color: #00d2ff;">🔵 BLUE SCORE ANALYTICS</h2>
+                <p style="font-size: 14px; color: #cbd5e1; margin-top: 5px;">Modèle Prédictif Avancé — BetScope Pro</p>
+                <hr style="border: 0.5px solid rgba(255,255,255,0.2);">
+                <h3 style="margin: 10px 0;">{h_name} &nbsp;VS&nbsp; {a_name}</h3>
+                
+                <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; margin-top: 15px;">
+                    <div>
+                        <span style="display: block; font-size: 12px; color: #94a3b8;">1 (DOM)</span>
+                        <strong style="font-size: 18px; color: #4ade80;">{mk_api["1"] * 100:.2f}%</strong>
+                    </div>
+                    <div>
+                        <span style="display: block; font-size: 12px; color: #94a3b8;">X (NUL)</span>
+                        <strong style="font-size: 18px; color: #facc15;">{mk_api["X"] * 100:.2f}%</strong>
+                    </div>
+                    <div>
+                        <span style="display: block; font-size: 12px; color: #94a3b8;">2 (EXT)</span>
+                        <strong style="font-size: 18px; color: #f87171;">{mk_api["2"] * 100:.2f}%</strong>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 15px; background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px;">
+                    <span style="font-size: 14px; color: #38bdf8;">🔥 Indice BTTS (Les deux équipes marquent) : </span>
+                    <strong style="font-size: 16px; color: #fff;">{mk_api["BTTS Oui"] * 100:.1f}%</strong>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.markdown("#### 🎯 Top Scores Recommandés (Blue Score)")
+        top_scores_api = report['exact_scores'][:3]
+        col1, col2, col3 = st.columns(3)
+        cols = [col1, col2, col3]
+        for i, item in enumerate(top_scores_api):
+            prob_val = item["Probabilité"]
+            implied_odds = round(100 / prob_val, 2) if prob_val > 0 else 99.0
+            with cols[i]:
+                st.markdown(
+                    f"<div style='background: #1e293b; padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #334155;'>"
+                    f"<span style='color: #94a3b8; font-size: 12px;'>Option {i+1}</span><br>"
+                    f"<strong style='font-size: 20px; color: #38bdf8;'>{item['Score']}</strong><br>"
+                    f"<span style='color: #4ade80; font-size: 14px;'>Prob: {prob_val:.1f}%</span><br>"
+                    f"<span style='color: #fbbf24; font-size: 12px;'>Côte est. : {implied_odds}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
