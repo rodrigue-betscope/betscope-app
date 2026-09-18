@@ -137,14 +137,12 @@ def fd_headers(api_key):
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_matches(api_key, date_str, competition_codes):
+def get_matches(api_key, date_str):
+    # Récupération globale par date pour contourner les restrictions de filtres d'API
     params = {
         "dateFrom": date_str,
         "dateTo": date_str,
     }
-
-    if competition_codes:
-        params["competitions"] = ",".join(competition_codes)
 
     data = api_get(
         f"{FD_BASE}/matches",
@@ -984,19 +982,24 @@ if load:
         )
     else:
         try:
+            with st.spinner(
+                "Chargement des matchs..."
+            ):
+                # Récupération de tous les matchs de la date
+                raw_matches = get_matches(
+                    football_key,
+                    date_value.strftime("%Y-%m-%d"),
+                )
+
+            # Filtrage local en Python selon les compétitions cochées
             codes = [
                 COMPETITIONS[name]
                 for name in selected_names
             ]
-
-            with st.spinner(
-                "Chargement des matchs..."
-            ):
-                matches = get_matches(
-                    football_key,
-                    date_value.strftime("%Y-%m-%d"),
-                    tuple(codes),
-                )
+            matches = [
+                m for m in raw_matches
+                if m.get("competition", {}).get("code") in codes
+            ]
 
             st.session_state.matches = matches
             st.session_state.loaded_date = str(
