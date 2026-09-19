@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-RODRIGUE PRO FOOTBALL AI — V3 RAPIDAPI DYNAMIC
-==============================================
-Application Streamlit d'analyse football multi-facteurs avec API-Football (RapidAPI).
+RODRIGUE PRO FOOTBALL AI — V3 API-SPORTS DIRECT
+===============================================
+Application Streamlit d'analyse football multi-facteurs avec API-Sports.
 """
 
 import os
@@ -24,13 +24,14 @@ st.set_page_config(
     layout="wide",
 )
 
-RAPIDAPI_HOST = "api-football-v1.p.rapidapi.com"
+# Configuration pour API-Sports (Dashboard officiel)
+API_HOST = "v3.football.api-sports.io"
 SERP_URL = "https://serpapi.com/search.json"
 TIMEOUT = 20
 MAX_GOALS = 8
 HISTORY_LIMIT = 15
 
-# Correspondance des ligues avec les IDs officiels de API-Football
+# Correspondance des ligues avec les IDs officiels d'API-Football / API-Sports
 LEAGUES = {
     "Premier League": 39,
     "LaLiga": 140,
@@ -90,43 +91,41 @@ def api_get(url, headers=None, params=None):
     return response.json()
 
 # ============================================================
-# API-FOOTBALL (RAPIDAPI)
+# API-SPORTS (OFFICIEL)
 # ============================================================
 
-def rapid_headers(api_key):
+def api_sports_headers(api_key):
     if not api_key:
-        raise RuntimeError("Clé RapidAPI manquante.")
+        raise RuntimeError("Clé API-Sports manquante.")
     return {
-        "X-RapidAPI-Key": api_key,
-        "X-RapidAPI-Host": RAPIDAPI_HOST,
+        "x-apisports-key": api_key,
     }
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_matches_rapid(api_key, date_str):
-    url = f"https://{RAPIDAPI_HOST}/v3/fixtures"
-    data = api_get(url, rapid_headers(api_key), {"date": date_str})
+def get_matches_api(api_key, date_str):
+    url = f"https://{API_HOST}/fixtures"
+    data = api_get(url, api_sports_headers(api_key), {"date": date_str})
     return data.get("response", [])
 
 @st.cache_data(ttl=900, show_spinner=False)
-def get_team_history_rapid(api_key, team_id, limit=HISTORY_LIMIT):
-    url = f"https://{RAPIDAPI_HOST}/v3/fixtures"
-    data = api_get(url, rapid_headers(api_key), {"team": team_id, "last": limit})
+def get_team_history_api(api_key, team_id, limit=HISTORY_LIMIT):
+    url = f"https://{API_HOST}/fixtures"
+    data = api_get(url, api_sports_headers(api_key), {"team": team_id, "last": limit})
     return data.get("response", [])
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def get_standings_rapid(api_key, league_id):
+def get_standings_api(api_key, league_id):
     if not league_id:
         return []
-    # Année en cours dynamique (ex: 2026)
     season = datetime.now().year
-    url = f"https://{RAPIDAPI_HOST}/v3/standings"
-    data = api_get(url, rapid_headers(api_key), {"league": league_id, "season": season})
+    url = f"https://{API_HOST}/standings"
+    data = api_get(url, api_sports_headers(api_key), {"league": league_id, "season": season})
     response = data.get("response", [])
     if response:
         return response[0].get("league", {}).get("standings", [[]])[0]
     return []
 
-def format_match_from_rapid(item):
+def format_match_from_api(item):
     fixture = item.get("fixture", {})
     teams = item.get("teams", {})
     league = item.get("league", {})
@@ -156,7 +155,7 @@ def format_match_from_rapid(item):
         }
     }
 
-def team_match_row_rapid(fixture_item, team_id):
+def team_match_row_api(fixture_item, team_id):
     f = fixture_item.get("fixture", {})
     teams = fixture_item.get("teams", {})
     goals = fixture_item.get("goals", {})
@@ -197,9 +196,9 @@ def team_match_row_rapid(fixture_item, team_id):
         "competition": fixture_item.get("league", {}).get("name", ""),
     }
 
-def summarize_history_rapid(api_key, team_id):
-    matches = get_team_history_rapid(api_key, team_id, HISTORY_LIMIT)
-    rows = [team_match_row_rapid(m, team_id) for m in matches]
+def summarize_history_api(api_key, team_id):
+    matches = get_team_history_api(api_key, team_id, HISTORY_LIMIT)
+    rows = [team_match_row_api(m, team_id) for m in matches]
     rows = [r for r in rows if r]
 
     if not rows:
@@ -236,9 +235,9 @@ def summarize_history_rapid(api_key, team_id):
         "rows": rows,
     }
 
-def standing_row_rapid(api_key, league_id, team_id):
+def standing_row_api(api_key, league_id, team_id):
     try:
-        rows = get_standings_rapid(api_key, league_id)
+        rows = get_standings_api(api_key, league_id)
     except Exception:
         return None
 
@@ -289,7 +288,7 @@ def extract_absence_evidence(search_results):
 # MODELE & MARCHES (Poisson / Buts)
 # ============================================================
 
-def expected_goals(home_stats, away_stats, home_odds=None, away_odds=None):
+def expected_goals(home_stats, away_stats):
     base = 1.35
     hxg = 0.50 * (home_stats["home_gf"] or home_stats["gf"] or base) + 0.30 * (away_stats["away_ga"] or base) + 0.20 * base
     axg = 0.50 * (away_stats["away_gf"] or away_stats["gf"] or base) + 0.30 * (home_stats["home_ga"] or base) + 0.20 * base
@@ -332,20 +331,20 @@ def market_probs(matrix):
 def exact_scores(matrix, n=10):
     return sorted([{"Score": f"{h}-{a}", "Probabilité": pct(p)} for (h, a), p in matrix.items()], key=lambda x: x["Probabilité"], reverse=True)[:n]
 
-def analyze_match(match, rapid_key, serp_key="", use_web=True, home_odds=None, draw_odds=None, away_odds=None):
+def analyze_match(match, api_key, serp_key="", use_web=True):
     home = match["homeTeam"]
     away = match["awayTeam"]
     h_id, a_id = home["id"], away["id"]
     h_name, a_name = home["name"], away["name"]
     comp = match["competition"]
 
-    h_stats = summarize_history_rapid(rapid_key, h_id)
-    a_stats = summarize_history_rapid(rapid_key, a_id)
+    h_stats = summarize_history_api(api_key, h_id)
+    a_stats = summarize_history_api(api_key, a_id)
 
-    h_table = standing_row_rapid(rapid_key, comp["id"], h_id)
-    a_table = standing_row_rapid(rapid_key, comp["id"], a_id)
+    h_table = standing_row_api(api_key, comp["id"], h_id)
+    a_table = standing_row_api(api_key, comp["id"], a_id)
 
-    hxg, axg = expected_goals(h_stats, a_stats, home_odds, away_odds)
+    hxg, axg = expected_goals(h_stats, a_stats)
     matrix = goal_matrix(hxg, axg)
     markets = market_probs(matrix)
 
@@ -375,12 +374,12 @@ def analyze_match(match, rapid_key, serp_key="", use_web=True, home_odds=None, d
 # INTERFACE STREAMLIT
 # ============================================================
 
-st.title("⚽ RODRIGUE PRO FOOTBALL AI — RAPIDAPI V3")
-st.caption("Moteur pro multi-compétitions via API-Football (RapidAPI)")
+st.title("⚽ RODRIGUE PRO FOOTBALL AI — API-SPORTS DIRECT")
+st.caption("Moteur pro multi-compétitions via API-Sports")
 
 with st.sidebar:
     st.header("🔐 API & PARAMÈTRES")
-    rapid_key = st.text_input("RapidAPI Key (API-Football)", type="password")
+    api_key = st.text_input("Clé API-Sports", type="password", value="")
     serp_key = st.text_input("SerpApi Key (optionnel)", type="password")
     st.divider()
     date_value = st.date_input("📅 Date des matchs", datetime.now().date())
@@ -389,16 +388,16 @@ with st.sidebar:
     load = st.button("🔎 CHARGER LES MATCHS", use_container_width=True, type="primary")
 
 if load:
-    if not rapid_key:
-        st.error("Entre ta clé RapidAPI.")
+    if not api_key:
+        st.error("Entre ta clé API-Sports.")
     elif not selected_names:
         st.error("Sélectionne au moins une compétition.")
     else:
         try:
-            with st.spinner("Chargement des matchs depuis API-Football..."):
-                raw = get_matches_rapid(rapid_key, date_value.strftime("%Y-%m-%d"))
+            with st.spinner("Chargement des matchs depuis API-Sports..."):
+                raw = get_matches_api(api_key, date_value.strftime("%Y-%m-%d"))
                 selected_ids = [LEAGUES[n] for n in selected_names]
-                matches = [format_match_from_rapid(m) for m in raw if m.get("league", {}).get("id") in selected_ids]
+                matches = [format_match_from_api(m) for m in raw if m.get("league", {}).get("id") in selected_ids]
 
             st.session_state.matches = matches
             st.session_state.loaded_date = str(date_value)
@@ -420,7 +419,7 @@ if matches:
     if st.button("🧠 ANALYSER LE MATCH", use_container_width=True, type="primary"):
         try:
             with st.spinner("Analyse en cours..."):
-                st.session_state.analysis = analyze_match(selected_match, rapid_key, serp_key, use_web)
+                st.session_state.analysis = analyze_match(selected_match, api_key, serp_key, use_web)
         except Exception as e:
             st.error(f"Erreur d'analyse : {e}")
 
