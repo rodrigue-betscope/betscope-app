@@ -175,7 +175,7 @@ def status_text() -> str:
 
 
 # ============================================================
-# API-FOOTBALL
+# API-FOOTBALL (COMPATIBLE PLAN GRATUIT)
 # ============================================================
 
 def football_get(endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -223,17 +223,43 @@ def get_fixture(fixture_id: int) -> Optional[Dict[str, Any]]:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_team_last_matches(team_id: int, n: int = DEFAULT_LAST_MATCHES) -> List[Dict[str, Any]]:
-    data = football_get("fixtures", {"team": team_id, "last": n})
-    return data.get("response", [])
+    current_season = datetime.now().year
+    data = football_get("fixtures", {"team": team_id, "season": current_season})
+    response = data.get("response", [])
+
+    if not response:
+        data = football_get("fixtures", {"team": team_id, "season": current_season - 1})
+        response = data.get("response", [])
+
+    finished = []
+    for m in response:
+        status = ((m.get("fixture") or {}).get("status") or {}).get("short", "")
+        if status in {"FT", "AET", "PEN"}:
+            finished.append(m)
+
+    finished.sort(key=lambda x: (x.get("fixture") or {}).get("date", ""), reverse=True)
+    return finished[:n]
 
 
 @st.cache_data(ttl=900, show_spinner=False)
 def get_h2h(home_id: int, away_id: int, n: int = DEFAULT_H2H) -> List[Dict[str, Any]]:
-    data = football_get(
-        "fixtures/headtohead",
-        {"h2h": f"{home_id}-{away_id}", "last": n},
-    )
-    return data.get("response", [])
+    try:
+        data = football_get(
+            "fixtures/headtohead",
+            {"h2h": f"{home_id}-{away_id}"},
+        )
+        response = data.get("response", [])
+        
+        finished = []
+        for m in response:
+            status = ((m.get("fixture") or {}).get("status") or {}).get("short", "")
+            if status in {"FT", "AET", "PEN"}:
+                finished.append(m)
+                
+        finished.sort(key=lambda x: (x.get("fixture") or {}).get("date", ""), reverse=True)
+        return finished[:n]
+    except Exception:
+        return []
 
 
 @st.cache_data(ttl=900, show_spinner=False)
