@@ -223,12 +223,13 @@ def get_fixture(fixture_id: int) -> Optional[Dict[str, Any]]:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_team_last_matches(team_id: int, n: int = DEFAULT_LAST_MATCHES) -> List[Dict[str, Any]]:
-    current_season = datetime.now().year
-    data = football_get("fixtures", {"team": team_id, "season": current_season})
+    # Utilisation forcée de la saison 2024 (compatible plan gratuit)
+    target_season = 2024
+    data = football_get("fixtures", {"team": team_id, "season": target_season})
     response = data.get("response", [])
 
     if not response:
-        data = football_get("fixtures", {"team": team_id, "season": current_season - 1})
+        data = football_get("fixtures", {"team": team_id, "season": 2023})
         response = data.get("response", [])
 
     finished = []
@@ -776,7 +777,9 @@ def build_analysis(fixture_id: int) -> Dict[str, Any]:
     home_id = int(home.get("id"))
     away_id = int(away.get("id"))
     league_id = int(league.get("id"))
-    season = int(league.get("season"))
+    
+    # Saison forcée à 2024 pour éviter le blocage du plan gratuit d'API-Football
+    season = 2024
 
     home_matches = get_team_last_matches(home_id, DEFAULT_LAST_MATCHES)
     away_matches = get_team_last_matches(away_id, DEFAULT_LAST_MATCHES)
