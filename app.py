@@ -62,29 +62,44 @@ CONFIDENCE_THRESHOLD = 80.0
 
 
 # ============================================================
-# SECRETS STREAMLIT
+# SECRETS STREAMLIT (ROBUSTE & UNIVERSEL)
 # ============================================================
 
 def secret_value(*names: str) -> Optional[str]:
-    """Cherche une clé dans plusieurs noms possibles."""
+    """Cherche une clé dans plusieurs noms possibles et dans la section [api]."""
     try:
+        # 1. Recherche directe à la racine de st.secrets
         for name in names:
             try:
-                value = st.secrets.get(name)
+                if name in st.secrets:
+                    val = st.secrets[name]
+                    if val:
+                        return str(val).strip()
             except Exception:
-                value = None
-            if value:
-                return str(value).strip()
+                pass
 
-        # Supporte aussi [api] dans secrets.toml
+        # 2. Recherche insensible à la casse ou variante de noms à la racine
         try:
-            api_section = st.secrets.get("api")
-            if api_section:
+            for k, v in st.secrets.items():
+                if k.lower() in [n.lower() for n in names] and v:
+                    return str(v).strip()
+        except Exception:
+            pass
+
+        # 3. Supporte la section [api] dans secrets.toml (ex: st.secrets["api"]["football_key"])
+        try:
+            if "api" in st.secrets:
+                api_section = st.secrets["api"]
                 for name in names:
                     if name in api_section and api_section[name]:
                         return str(api_section[name]).strip()
+                # Recherche élargie dans la section [api]
+                for k, v in api_section.items():
+                    if k.lower() in [n.lower() for n in names] and v:
+                        return str(v).strip()
         except Exception:
             pass
+
     except Exception:
         pass
     return None
@@ -94,12 +109,14 @@ API_FOOTBALL_KEY = secret_value(
     "API_FOOTBALL_KEY",
     "FOOTBALL_API_KEY",
     "API_FOOTBALL",
+    "football_key",
 )
 
 SERPAPI_KEY = secret_value(
     "SERPAPI_KEY",
     "SERP_API_KEY",
     "SERPAPI",
+    "serpapi_key",
 )
 
 
@@ -182,7 +199,6 @@ def football_get(endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict
 
     errors = data.get("errors")
     if errors:
-        # errors peut être un dict ou une liste
         if isinstance(errors, dict):
             msg = "; ".join(f"{k}: {v}" for k, v in errors.items())
         else:
@@ -429,7 +445,6 @@ def h2h_summary(matches: List[Dict[str, Any]], home_id: int, away_id: int) -> Di
 
         totals.append(hg + ag)
 
-        # résultat du point de vue de l'équipe home actuelle
         if h_id == home_id:
             if hg > ag:
                 hw += 1
@@ -513,10 +528,8 @@ def market_probabilities(matrix: np.ndarray) -> Dict[str, float]:
 
 def expected_goals_from_stats(home_s: Dict[str, float], away_s: Dict[str, float],
                               h2h: Dict[str, float]) -> Tuple[float, float]:
-    # Baseline de ligue neutre. Le moteur reste conservateur.
     base = 1.35
 
-    # Attaque de l'équipe à domicile vs défense adverse.
     home_attack = max(0.10, home_s["gf_avg"])
     home_def = max(0.10, away_s["ga_avg"])
 
@@ -526,18 +539,15 @@ def expected_goals_from_stats(home_s: Dict[str, float], away_s: Dict[str, float]
     lam_home = base * (home_attack / base) ** 0.55 * (home_def / base) ** 0.45
     lam_away = base * (away_attack / base) ** 0.55 * (away_def / base) ** 0.45
 
-    # Avantage domicile modéré.
     lam_home *= 1.08
     lam_away *= 0.96
 
-    # H2H seulement si suffisamment d'observations.
     if h2h.get("n", 0) >= 3:
         h2h_total = clamp(h2h.get("avg_total", 2.5), 1.2, 4.2)
         scale = clamp(h2h_total / 2.5, 0.88, 1.12)
         lam_home *= scale
         lam_away *= scale
 
-        # Petit ajustement directionnel, jamais dominant.
         lam_home *= clamp(1 + 0.08 * (h2h["home_win"] - 0.33), 0.96, 1.04)
         lam_away *= clamp(1 + 0.08 * (h2h["away_win"] - 0.33), 0.96, 1.04)
 
@@ -558,7 +568,6 @@ def exact_scores(matrix: np.ndarray, top_n: int = 8) -> List[Tuple[str, float]]:
 # ============================================================
 
 def half_time_matrix(lam_home: float, lam_away: float) -> np.ndarray:
-    # Environ 44 % des xG du match pour la première période.
     return score_matrix(lam_home * 0.44, lam_away * 0.44, max_goals=5)
 
 
@@ -571,8 +580,6 @@ def ht_market_probs(ht: np.ndarray) -> Dict[str, float]:
 
 
 def ht_ft_probs(full: np.ndarray, ht: np.ndarray) -> Dict[str, float]:
-    # Approximation cohérente : HT et FT ne sont pas indépendants.
-    # On utilise la matrice HT comme ancre et la matrice FT comme distribution finale.
     result = {
         "1/1": 0.0, "X/X": 0.0, "2/2": 0.0,
         "X/1": 0.0, "X/2": 0.0,
@@ -588,7 +595,6 @@ def ht_ft_probs(full: np.ndarray, ht: np.ndarray) -> Dict[str, float]:
 
             ht_res = "1" if hi > aj else "X" if hi == aj else "2"
 
-            # Distribution FT conditionnée grossièrement par le signe HT.
             for fi in range(full.shape[0]):
                 for fj in range(full.shape[1]):
                     pft = full[fi, fj]
@@ -632,7 +638,6 @@ def data_quality(
 
 
 def confidence_label(p: float, quality: float) -> str:
-    # Important : ce n'est pas une probabilité garantie de réussite.
     if p >= 0.80 and quality >= 80:
         return "Élevée"
     if p >= 0.70 and quality >= 60:
@@ -682,8 +687,6 @@ def select_four_predictions(
             "Type": "htft",
         })
 
-    # On cherche d'abord les marchés au-dessus du seuil.
-    # On limite les répétitions du même type.
     eligible = [
         x for x in candidates
         if x["Probabilité modèle"] * 100 >= threshold
@@ -701,8 +704,6 @@ def select_four_predictions(
         if len(chosen) == 4:
             break
 
-    # S'il n'existe pas 4 marchés >= seuil, on affiche les meilleurs disponibles
-    # mais on conserve leur vraie probabilité et leur niveau.
     if len(chosen) < 4:
         candidates.sort(key=lambda x: x["Probabilité modèle"], reverse=True)
         seen = {(x["Marché"], x["Pronostic"]) for x in chosen}
@@ -759,7 +760,6 @@ def build_analysis(fixture_id: int) -> Dict[str, Any]:
     away_stats = summarize_matches(away_matches, away_id)
     h2h_s = h2h_summary(h2h, home_id, away_id)
 
-    # Statistiques officielles de compétition quand elles sont disponibles.
     try:
         home_comp = get_team_statistics(home_id, league_id, season)
     except Exception:
@@ -902,7 +902,6 @@ except Exception as e:
     st.error(f"Impossible de récupérer les matchs : {e}")
     st.stop()
 
-# Ne garder que les matchs exploitables.
 usable = []
 for f in fixtures:
     status = ((f.get("fixture") or {}).get("status") or {}).get("short", "")
@@ -946,10 +945,6 @@ if st.button("🔎 ANALYSER LE MATCH", type="primary", use_container_width=True)
         f"Coup d'envoi : {analysis['kickoff']}"
     )
 
-    # --------------------------------------------------------
-    # 4 pronostics
-    # --------------------------------------------------------
-
     st.markdown("## 🎯 4 pronostics principaux")
 
     q = analysis["quality"]
@@ -981,19 +976,11 @@ if st.button("🔎 ANALYSER LE MATCH", type="primary", use_container_width=True)
             f"Au moins un marché atteint le seuil de {threshold} % selon le modèle."
         )
 
-    # --------------------------------------------------------
-    # xG Poisson
-    # --------------------------------------------------------
-
     st.markdown("## 🧮 Loi de Poisson")
     c1, c2, c3 = st.columns(3)
     c1.metric(f"xG {home}", f"{analysis['lambda_home']:.2f}")
     c2.metric(f"xG {away}", f"{analysis['lambda_away']:.2f}")
     c3.metric("Qualité données", f"{q:.0f}%")
-
-    # --------------------------------------------------------
-    # Marchés
-    # --------------------------------------------------------
 
     st.markdown("## 📊 Marchés principaux")
 
@@ -1009,10 +996,6 @@ if st.button("🔎 ANALYSER LE MATCH", type="primary", use_container_width=True)
     df_markets["Probabilité"] = df_markets["Probabilité"].map(lambda x: f"{x:.1f}%")
     st.dataframe(df_markets, use_container_width=True, hide_index=True)
 
-    # --------------------------------------------------------
-    # Mi-temps
-    # --------------------------------------------------------
-
     st.markdown("## ⏱️ Mi-temps")
 
     ht_rows = [
@@ -1020,10 +1003,6 @@ if st.button("🔎 ANALYSER LE MATCH", type="primary", use_container_width=True)
         for k, v in analysis["ht_probs"].items()
     ]
     st.dataframe(pd.DataFrame(ht_rows), use_container_width=True, hide_index=True)
-
-    # --------------------------------------------------------
-    # HT/FT
-    # --------------------------------------------------------
 
     st.markdown("## 🔄 HT / FT")
 
@@ -1037,10 +1016,6 @@ if st.button("🔎 ANALYSER LE MATCH", type="primary", use_container_width=True)
     ]
     st.dataframe(pd.DataFrame(htft_rows), use_container_width=True, hide_index=True)
 
-    # --------------------------------------------------------
-    # Scores exacts
-    # --------------------------------------------------------
-
     st.markdown("## 🎯 Scores exacts les plus probables")
 
     score_rows = [
@@ -1051,10 +1026,6 @@ if st.button("🔎 ANALYSER LE MATCH", type="primary", use_container_width=True)
         for score, prob in analysis["scores"]
     ]
     st.dataframe(pd.DataFrame(score_rows), use_container_width=True, hide_index=True)
-
-    # --------------------------------------------------------
-    # Forme
-    # --------------------------------------------------------
 
     st.markdown("## 📈 Forme récente")
 
@@ -1085,10 +1056,6 @@ if st.button("🔎 ANALYSER LE MATCH", type="primary", use_container_width=True)
 
     st.dataframe(form_df, use_container_width=True, hide_index=True)
 
-    # --------------------------------------------------------
-    # H2H
-    # --------------------------------------------------------
-
     st.markdown("## 🤝 Face-à-face")
     h = analysis["h2h"]
 
@@ -1103,10 +1070,6 @@ if st.button("🔎 ANALYSER LE MATCH", type="primary", use_container_width=True)
         {"Résultat": "Victoire extérieur", "Probabilité historique": f"{h['away_win'] * 100:.1f}%"},
     ])
     st.dataframe(h2h_df, use_container_width=True, hide_index=True)
-
-    # --------------------------------------------------------
-    # Absences / compositions
-    # --------------------------------------------------------
 
     with st.expander("🚑 Absences / blessures"):
         if analysis["injuries"]:
@@ -1133,10 +1096,6 @@ if st.button("🔎 ANALYSER LE MATCH", type="primary", use_container_width=True)
                 )
         else:
             st.info("Les compositions ne sont pas encore disponibles.")
-
-    # --------------------------------------------------------
-    # Recherche Google via SerpApi
-    # --------------------------------------------------------
 
     with st.expander("🌐 Recherche Google / SerpApi"):
         if analysis["web_rows"]:
