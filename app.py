@@ -1,29 +1,12 @@
-#!/usr/bin/env python3
-"""
-Prédictions de football : modèle de Poisson pondéré dans le temps.
-Autonome : dépend uniquement de numpy et pandas.
-
-Utilisation :
-  python predictions_sportives.py --demo
-  python predictions_sportives.py --csv matchs.csv --domicile "PSG" --exterieur "Lyon" --cotes 1.60 4.00 5.50
-  python predictions_sportives.py --csv matchs.csv --backtest
-
-Format du CSV : date,domicile,exterieur,buts_dom,buts_ext
-(date au format AAAA-MM-JJ)
-
-IMPORTANT : aucun modèle ne garantit 80 % de réussite sur toutes les
-prédictions. Le script mesure la précision réelle par backtest : fiez-vous
-à ce chiffre, pas à une promesse.
-"""
-import argparse
+"""Application Streamlit de prédictions de football (modèle de Poisson)."""
+import argparse  # noqa: F401
 import math
 
 import numpy as np
 import pandas as pd
+import streamlit as st
 
 MAX_BUTS = 10
-
-
 # ----------------------------------------------------------------- modèle
 class ModelePoisson:
     def __init__(self, demi_vie_jours=180, prior_matchs=3):
@@ -155,34 +138,39 @@ def donnees_demo(n=600, seed=1):
     return pd.DataFrame(lignes, columns=["date", "domicile", "exterieur", "buts_dom", "buts_ext"])
 
 
-# ------------------------------------------------------------------ main
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--csv")
-    ap.add_argument("--demo", action="store_true")
-    ap.add_argument("--domicile")
-    ap.add_argument("--exterieur")
-    ap.add_argument("--cotes", nargs=3, type=float, metavar=("C1", "CN", "C2"))
-    ap.add_argument("--backtest", action="store_true")
-    a = ap.parse_args()
+# ------------------------------------------------------------ interface
+st.set_page_config(page_title="Prédictions foot", page_icon="⚽")
+st.title("⚽ Prédictions de football")
+st.caption("Modèle de Poisson. Aucune garantie de gain : vérifiez la précision via le backtest.")
 
-    if a.demo:
-        df = donnees_demo()
-        print("Mode démo (données simulées).")
-    elif a.csv:
-        df = pd.read_csv(a.csv)
+fichier = st.file_uploader("CSV : date, domicile, exterieur, buts_dom, buts_ext", type="csv")
+demo = st.checkbox("Utiliser des données de démonstration", value=fichier is None)
+
+if fichier is not None and not demo:
+    df = pd.read_csv(fichier)
+else:
+    df = donnees_demo()
+    st.info("Données simulées (démo).")
+
+modele = ModelePoisson().fit(df)
+equipes = sorted(modele.att.keys())
+
+c1, c2 = st.columns(2)
+dom = c1.selectbox("Équipe à domicile", equipes, index=0)
+ext = c2.selectbox("Équipe à l'extérieur", equipes, index=min(1, len(equipes) - 1))
+
+st.write("Cotes du bookmaker (optionnel)")
+k1, kn, k2 = st.columns(3)
+cote1 = k1.number_input("1", min_value=1.01, value=2.00, step=0.05)
+coten = kn.number_input("N", min_value=1.01, value=3.40, step=0.05)
+cote2 = k2.number_input("2", min_value=1.01, value=3.80, step=0.05)
+
+if st.button("Analyser le match"):
+    if dom == ext:
+        st.error("Choisissez deux équipes différentes.")
     else:
-        ap.error("Fournir --csv ou --demo")
+        st.json(analyser_match(modele, dom, ext, [cote1, coten, cote2]))
 
-    if a.backtest or a.demo:
-        print("Backtest :", backtest(df))
-
-    modele = ModelePoisson().fit(df)
-    if a.demo and not a.domicile:
-        a.domicile, a.exterieur, a.cotes = "Equipe_A", "Equipe_B", [2.0, 3.4, 3.8]
-    if a.domicile and a.exterieur:
-        print(analyser_match(modele, a.domicile, a.exterieur, a.cotes))
-
-
-if __name__ == "__main__":
-    main()
+if st.button("Lancer le backtest (peut être long)"):
+    with st.spinner("Calcul en cours..."):
+        st.json(backtest(df))
