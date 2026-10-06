@@ -21,11 +21,12 @@ if uploaded_file is not None:
   st.image(image, caption="Capture d'écran chargée", use_column_width=True)
 
   if st.button("Lancer l'analyse du match virtuel"):
-    with st.spinner(
-        "L'intelligence artificielle analyse les cotes et les tendances FIFA..."
-    ):
+    with st.spinner("Analyse en cours..."):
       try:
-        # Utilisation du modèle requis gemini-3.8-flash
+        # Optimisation : Redimensionnement de l'image pour éviter le blocage réseau
+        image.thumbnail((1024, 1024))
+
+        # Utilisation du modèle stable
         model = genai.GenerativeModel("gemini-3.8-flash")
 
         prompt = (
