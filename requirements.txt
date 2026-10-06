@@ -1,4 +1,3 @@
+google-generativeai
+pillow
 streamlit
-requests
-pandas
-numpy
