@@ -25,8 +25,8 @@ if uploaded_file is not None:
         "L'intelligence artificielle analyse les cotes et les tendances FIFA..."
     ):
       try:
-        # Utilisation du modèle standard et ultra-rapide gemini-1.5-flash
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Utilisation d'un modèle stable pris en charge
+        model = genai.GenerativeModel("gemini-2.5-flash")
 
         prompt = (
             "Analyse cette capture d'écran de jeux virtuels de football FIFA"
