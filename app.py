@@ -8,7 +8,7 @@ genai.configure(api_key=st.secrets["api"]["gemini_key"])
 st.title("⚽ BetScope - Analyseur de Match par IA")
 st.write("Télécharge une capture d'écran de ton match (liste des équipes, cotes...) pour lancer l'analyse prédictive.")
 
-# 2. Zone de téléchargement de l'image (exactement comme sur l'application de référence)
+# 2. Zone de téléchargement de l'image
 uploaded_file = st.file_uploader("Upload Instant Football screenshot", type=["png", "jpg", "jpeg"])
 
 if uploaded_file is not None:
@@ -34,4 +34,4 @@ if uploaded_file is not None:
                 st.write(response.text)
                 
             except Exception as e:
-                st.error(f une erreur est survenue lors de l'analyse : {e}")
+                st.error(f"Une erreur est survenue lors de l'analyse : {e}")
