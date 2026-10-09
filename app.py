@@ -32,21 +32,18 @@ st.markdown("""
         font-size: 12px;
         float: right;
     }
-    .pay-btn {
-        background-color: #ff7900;
-        color: white;
-        padding: 12px 20px;
-        border-radius: 8px;
+    .payment-box {
+        background-color: #121f24;
+        border: 1px solid #ff7900;
+        padding: 15px;
+        border-radius: 10px;
         text-align: center;
-        font-weight: bold;
-        display: block;
-        text-decoration: none;
-        margin-top: 10px;
+        margin-bottom: 15px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Initialisation des variables en mémoire (pour la démo)
+# Initialisation des variables en mémoire
 if "unlocked" not in st.session_state:
     st.session_state.unlocked = False
 
@@ -56,27 +53,27 @@ if "current_prediction" not in st.session_state:
 if "secret_code" not in st.session_state:
     st.session_state.secret_code = "VIP2026"
 
-# --- BARRE LATÉRALE (ACCÈS ADMIN CACHÉ POUR VOUS) ---
+# --- BARRE LATÉRALE (ESPACE ADMIN POUR VOUS) ---
 with st.sidebar:
     st.header("⚙️ Espace Administrateur")
     admin_password = st.text_input("Mot de passe admin", type="password")
     
-    if admin_password == "monadmin123": # Changez ce mot de passe admin secret
-        st.success("Connecté en tant qu'admin !")
+    if admin_password == "monadmin123": # Changez ce mot de passe admin secret si besoin
+        st.success("Connecté !")
         st.markdown("---")
-        st.subheader("Mettre à jour le pronostic du jour")
+        st.subheader("Mettre à jour le pronostic")
         new_pred = st.text_area("Collez votre analyse ici :", value=st.session_state.current_prediction)
         new_code = st.text_input("Définir le code secret du jour :", value=st.session_state.secret_code)
         
-        if st.button("Enregistrer les modifications"):
+        if st.button("Enregistrer"):
             st.session_state.current_prediction = new_pred
             st.session_state.secret_code = new_code
-            st.success("Pronostic mis à jour avec succès !")
+            st.success("Mis à jour avec succès !")
     else:
         if admin_password != "":
             st.error("Mot de passe incorrect")
 
-# --- INTERFACE PRINCIPALE (CE QUE VOIENT VOS CLIENTS) ---
+# --- INTERFACE PUBLIQUE (POUR VOS CLIENTS) ---
 st.markdown("<h2 style='text-align: center; color: white;'>⚽ DAILY PICKS</h2>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #8a9ba8;'>Carefully selected football predictions</p>", unsafe_allow_html=True)
 
@@ -89,20 +86,33 @@ if not st.session_state.unlocked:
     st.markdown("""
         <div class="locked-box">
             <h3>🔒 LOCKED</h3>
-            <p style="color: #8a9ba8;">Le pronostic VIP du jour est masqué. Payez via Orange Money pour obtenir votre code d'accès instantané.</p>
+            <p style="color: #8a9ba8;">Le pronostic VIP du jour est masqué.</p>
         </div>
     """, unsafe_allow_html=True)
     
-    # Bouton de paiement direct Orange Money (Vous pouvez remplacer le lien par votre lien de paiement direct ou votre numéro)
+    # ENCADRÉ DE PAIEMENT AVEC ORANGE ET MTN
     st.markdown("""
-        <a href="tel:#150#" class="pay-btn">🟠 Payer avec Orange Money (Ex: #150#)</a>
+        <div class="payment-box">
+            <h4 style="color: #ff7900; margin-top: 0;">💳 CHOISISsez VOTRE MOYEN DE PAIEMENT</h4>
+            <p style="color: white; margin-bottom: 10px;">Effectuez votre dépôt sur l'un des numéros ci-dessous :</p>
+            
+            <div style="background-color: #1a2c32; padding: 10px; border-radius: 8px; margin-bottom: 8px;">
+                <span style="color: #ff7900; font-weight: bold;">🟠 Orange Money :</span><br>
+                <b style="color: #2ecc71; font-size: 16px;">6 98 90 22 04</b>
+            </div>
+            
+            <div style="background-color: #1a2c32; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
+                <span style="color: #ffcc00; font-weight: bold;">🟡 MTN Mobile Money :</span><br>
+                <b style="color: #2ecc71; font-size: 16px;">6 83 29 07 39</b>
+            </div>
+            
+            <p style="font-size: 12px; color: #d1d5db; margin-bottom: 0;">Après paiement, contactez-moi avec votre capture pour recevoir votre <b>code secret</b>.</p>
+        </div>
     """, unsafe_allow_html=True)
-    
-    st.info("💡 **Instructions :** Une fois le paiement effectué sur le compte Orange Money, contactez l'administrateur ou entrez votre code secret reçu.")
 
     # Formulaire de déblocage par code secret
     with st.form("unlock_form"):
-        entered_code = st.text_input("Entrez votre code secret :", type="password")
+        entered_code = st.text_input("Entrez le code secret reçu :", type="password")
         submit_btn = st.form_submit_button("🔓 Débloquer le pronostic")
         
         if submit_btn:
