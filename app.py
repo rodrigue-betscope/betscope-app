@@ -3,7 +3,7 @@ import streamlit as st
 # Configuration de la page
 st.set_page_config(page_title="VIP Daily Picks", page_icon="⚽", layout="centered")
 
-# Style CSS sombre (style application de paris)
+# Style CSS sombre
 st.markdown("""
     <style>
     .main { background-color: #0b1315; color: white; }
@@ -43,7 +43,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Initialisation des variables en mémoire
+# Initialisation des variables
 if "unlocked" not in st.session_state:
     st.session_state.unlocked = False
 
@@ -53,12 +53,12 @@ if "current_prediction" not in st.session_state:
 if "secret_code" not in st.session_state:
     st.session_state.secret_code = "VIP2026"
 
-# --- BARRE LATÉRALE (ESPACE ADMIN POUR VOUS) ---
+# --- BARRE LATÉRALE (ESPACE ADMIN) ---
 with st.sidebar:
     st.header("⚙️ Espace Administrateur")
     admin_password = st.text_input("Mot de passe admin", type="password")
     
-    if admin_password == "monadmin123": # Changez ce mot de passe admin secret si besoin
+    if admin_password == "monadmin123":
         st.success("Connecté !")
         st.markdown("---")
         st.subheader("Mettre à jour le pronostic")
@@ -73,7 +73,7 @@ with st.sidebar:
         if admin_password != "":
             st.error("Mot de passe incorrect")
 
-# --- INTERFACE PUBLIQUE (POUR VOS CLIENTS) ---
+# --- INTERFACE PUBLIQUE ---
 st.markdown("<h2 style='text-align: center; color: white;'>⚽ DAILY PICKS</h2>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #8a9ba8;'>Carefully selected football predictions</p>", unsafe_allow_html=True)
 
@@ -90,10 +90,10 @@ if not st.session_state.unlocked:
         </div>
     """, unsafe_allow_html=True)
     
-    # ENCADRÉ DE PAIEMENT AVEC ORANGE ET MTN
+    # ENCADRÉ DE PAIEMENT PROPRE (avec unsafe_allow_html=True)
     st.markdown("""
         <div class="payment-box">
-            <h4 style="color: #ff7900; margin-top: 0;">💳 CHOISISsez VOTRE MOYEN DE PAIEMENT</h4>
+            <h4 style="color: #ff7900; margin-top: 0;">💳 CHOISISSEZ VOTRE MOYEN DE PAIEMENT</h4>
             <p style="color: white; margin-bottom: 10px;">Effectuez votre dépôt sur l'un des numéros ci-dessous :</p>
             
             <div style="background-color: #1a2c32; padding: 10px; border-radius: 8px; margin-bottom: 8px;">
@@ -110,7 +110,7 @@ if not st.session_state.unlocked:
         </div>
     """, unsafe_allow_html=True)
 
-    # Formulaire de déblocage par code secret
+    # Formulaire de déblocage
     with st.form("unlock_form"):
         entered_code = st.text_input("Entrez le code secret reçu :", type="password")
         submit_btn = st.form_submit_button("🔓 Débloquer le pronostic")
