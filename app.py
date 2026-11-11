@@ -1,7 +1,8 @@
 import streamlit as st
+from scipy.stats import poisson
 
 # Configuration de la page
-st.set_page_config(page_title="VIP Daily Picks", page_icon="⚽", layout="centered")
+st.set_page_config(page_title="VIP Daily Picks & Moteur Poisson", page_icon="⚽", layout="centered")
 
 # Style CSS sombre pour un look professionnel
 st.markdown("""
@@ -27,20 +28,53 @@ st.markdown("<p style='text-align: center; color: #8a9ba8;'>Carefully selected f
 
 st.markdown("---")
 
-# ================= 1. ESPACE ADMIN (POUR COLLER VOS MATCHS FACILEMENT) =================
-# Vous mettez votre mot de passe admin ici pour ouvrir le panneau de modification
-with st.expander("🔐 Espace Administrateur (Cliquez ici pour changer les matchs)"):
+# ================= 1. ESPACE ADMIN (MODIFICATION & MOTEUR MATHÉMATIQUE) =================
+with st.expander("🔐 Espace Administrateur & Moteur d'Analyse"):
     admin_pwd = st.text_input("Mot de passe admin", type="password")
     if admin_pwd == "monadmin123":
         st.success("Connecté en mode Admin !")
-        new_match = st.text_area("Collez vos nouveaux matchs analysés ici :", value=st.session_state.current_prediction)
-        new_code = st.text_input("Définir le code secret de déblocage :", value=st.session_state.secret_code)
         
-        if st.button("Mettre à jour le pronostic"):
-            st.session_state.current_prediction = new_match
-            st.session_state.secret_code = new_code
-            st.success("Pronostic mis à jour avec succès !")
-            st.rerun()
+        tab_admin, tab_poisson = st.tabs(["📝 Gestion du Coupon", "🧮 Moteur de Calcul Poisson"])
+        
+        with tab_admin:
+            new_match = st.text_area("Collez vos nouveaux matchs analysés ici :", value=st.session_state.current_prediction, height=150)
+            new_code = st.text_input("Définir le code secret de déblocage :", value=st.session_state.secret_code)
+            
+            if st.button("Mettre à jour le pronostic"):
+                st.session_state.current_prediction = new_match
+                st.session_state.secret_code = new_code
+                st.success("Pronostic mis à jour avec succès !")
+                st.rerun()
+                
+        with tab_poisson:
+            st.subheader("Calcul de Probabilités (Loi de Poisson)")
+            c1, c2 = st.columns(2)
+            lambda_dom = c1.number_input("Espérance buts Domicile (λ1)", min_value=0.1, max_value=6.0, value=1.6, step=0.1)
+            lambda_ext = c2.number_input("Espérance buts Extérieur (λ2)", min_value=0.1, max_value=6.0, value=1.1, step=0.1)
+            
+            if st.button("Calculer les Marchés"):
+                # Matrices de score mi-temps (50% de la moyenne) et fin de match
+                max_goals = 8
+                mt_dom, mt_ext = lambda_dom * 0.45, lambda_ext * 0.45
+                
+                # Distribution mi-temps
+                prob_mt_nul = sum(poisson.pmf(i, mt_dom) * poisson.pmf(i, mt_ext) for i in range(5))
+                
+                # Distribution fin de match
+                matrix = [[poisson.pmf(i, lambda_dom) * poisson.pmf(j, lambda_ext) for j in range(max_goals)] for i in range(max_goals)]
+                
+                u05 = matrix[0][0]
+                u15 = u05 + matrix[1][0] + matrix[0][1]
+                u25 = u15 + matrix[2][0] + matrix[1][1] + matrix[0][2]
+                u35 = u25 + matrix[3][0] + matrix[2][1] + matrix[1][2] + matrix[0][3]
+                o55 = 1 - sum(matrix[i][j] for i in range(max_goals) for j in range(max_goals) if i + j <= 5)
+                
+                # Affichage des probabilités mathématiques
+                st.write(f"**Mi-temps Nul :** {prob_mt_nul*100:.1f}%")
+                st.write(f"**Under 0.5 :** {u05*100:.1f}% | **Under 1.5 :** {u15*100:.1f}%")
+                st.write(f"**Under 2.5 :** {u25*100:.1f}% | **Under 3.5 :** {u35*100:.1f}%")
+                st.write(f"**Over 5.5 :** {o55*100:.1f}%")
+
     elif admin_pwd != "":
         st.error("Mot de passe incorrect")
 
@@ -50,7 +84,6 @@ st.markdown("### 🔒 TODAY'S COUPON")
 if not st.session_state.unlocked:
     st.info("🔒 **Le pronostic VIP du jour est verrouillé.** Effectuez votre dépôt pour obtenir le code secret.")
     
-    # Bloc de paiement propre et bien lisible (sans bug HTML)
     st.warning("""
     **💳 CHOISISSEZ VOTRE MOYEN DE PAIEMENT :**
     
@@ -60,7 +93,6 @@ if not st.session_state.unlocked:
     *Après votre dépôt, contactez-moi avec votre capture pour recevoir votre code secret.*
     """)
 
-    # Formulaire de déblocage
     with st.form("unlock_form"):
         entered_code = st.text_input("Entrez le code secret reçu :", type="password")
         submit_btn = st.form_submit_button("🔓 Débloquer le pronostic")
@@ -75,7 +107,6 @@ if not st.session_state.unlocked:
 else:
     st.success("✅ COUPON DÉBLOQUÉ AVEC SUCCÈS")
     
-    # Affichage des matchs que vous avez collés
     st.markdown("#### Vos matchs analysés du jour :")
     st.code(st.session_state.current_prediction, language=None)
     
